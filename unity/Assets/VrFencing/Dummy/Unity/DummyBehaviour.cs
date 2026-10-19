@@ -141,7 +141,8 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the sword arm, and with it the hand, wrist, forearm and upper arm zones, by turning the joint
-        /// transforms. Nothing is rebuilt. The MVP Dummy stays in <see cref="SwordArmPose.ArmInLine"/>.
+        /// transforms. Nothing is rebuilt and nothing is allocated: the layout's arm moves in place, as the Armed Dummy
+        /// re-poses it every frame. The MVP Dummy stays in <see cref="SwordArmPose.ArmInLine"/>.
         /// </summary>
         /// <exception cref="InvalidOperationException">The Dummy is not configured yet.</exception>
         public void SetArmPose(SwordArmPose armPose)
@@ -151,7 +152,7 @@ namespace VrFencing.Dummy
                 throw new InvalidOperationException("Configure the Dummy before posing its arm.");
             }
 
-            Layout = Layout.WithArmPose(armPose);
+            Layout.PoseArm(armPose);
             PoseJoints();
         }
 
