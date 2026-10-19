@@ -15,6 +15,8 @@ namespace VrFencing.Blade
     {
         private readonly Dictionary<(BladeEventType, HapticPattern), ClipPlayer> _players = new Dictionary<(BladeEventType, HapticPattern), ClipPlayer>();
         private ClipPlayer _playing;
+        private ClipPlayer _pressPlayer;
+        private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
         /// <summary>Plays the pattern for an event, replacing whatever is playing. Off plays nothing.</summary>
@@ -29,21 +31,55 @@ namespace VrFencing.Blade
             {
                 if (!_players.TryGetValue((eventType, pattern), out var player))
                 {
-                    player = new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.GetSegments(eventType, pattern)));
+                    var segments = BladeHaptics.GetSegments(eventType, pattern);
+                    player = new ClipPlayer(BladeHaptics.BuildClipJson(segments), segments);
                     _players[(eventType, pattern)] = player;
                 }
 
-                _playing?.Player.Stop();
-                player.Player.amplitude = Mathf.Clamp01(strength);
-                player.Player.Play(swordHand == Hand.Left ? Controller.Left : Controller.Right);
-                _playing = player;
+                StartPlaying(player, strength, swordHand);
+                _eventEndsAt = Time.time + player.DurationSeconds;
             }
             catch (Exception error)
             {
-                // Haptics are feedback, not the judgement: Touches still count and flash without them.
-                _hasFailed = true;
-                Debug.LogError($"[Blade] Haptics failed, off for this session: {error.Message}");
+                Fail(error);
             }
+        }
+
+        /// <summary>
+        /// One pulse of the press buzz (<see cref="BladeHaptics.PressPulse"/>) while the point is pinned, at
+        /// <paramref name="strength"/>. An event pattern still playing (the Touch) is not cut short.
+        /// </summary>
+        public void PlayPress(float strength, Hand swordHand)
+        {
+            if (_hasFailed || Time.time < _eventEndsAt)
+            {
+                return;
+            }
+
+            try
+            {
+                _pressPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.PressPulse), BladeHaptics.PressPulse);
+                StartPlaying(_pressPlayer, strength, swordHand);
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
+        private void StartPlaying(ClipPlayer player, float strength, Hand swordHand)
+        {
+            _playing?.Player.Stop();
+            player.Player.amplitude = Mathf.Clamp01(strength);
+            player.Player.Play(swordHand == Hand.Left ? Controller.Left : Controller.Right);
+            _playing = player;
+        }
+
+        private void Fail(Exception error)
+        {
+            // Haptics are feedback, not the judgement: Touches still count and flash without them.
+            _hasFailed = true;
+            Debug.LogError($"[Blade] Haptics failed, off for this session: {error.Message}");
         }
 
         public void Dispose()
@@ -54,6 +90,8 @@ namespace VrFencing.Blade
             }
 
             _players.Clear();
+            _pressPlayer?.Dispose();
+            _pressPlayer = null;
             _playing = null;
         }
 
@@ -61,14 +99,20 @@ namespace VrFencing.Blade
         {
             private readonly HapticClip _clip;
 
-            public ClipPlayer(string clipJson)
+            public ClipPlayer(string clipJson, IReadOnlyList<HapticSegment> segments)
             {
                 _clip = ScriptableObject.CreateInstance<HapticClip>();
                 _clip.json = clipJson;
                 Player = new HapticClipPlayer(_clip);
+                foreach (var segment in segments)
+                {
+                    DurationSeconds += segment.DurationSeconds;
+                }
             }
 
             public HapticClipPlayer Player { get; }
+
+            public float DurationSeconds { get; }
 
             public void Dispose()
             {

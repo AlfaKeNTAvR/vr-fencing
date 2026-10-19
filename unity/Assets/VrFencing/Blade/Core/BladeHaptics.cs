@@ -110,6 +110,34 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
+        /// The short buzz repeated every <see cref="PressPulseIntervalSeconds"/> while the point is pinned and the hand
+        /// presses on (PER-48), played at <see cref="GetPressStrength"/>. Gaps between pulses keep it a buzz, not a hum.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> PressPulse { get; } = new[] { new HapticSegment(1.0f, 0.6f, 0.035f) };
+
+        /// <summary>How often the press buzz repeats while pinned.</summary>
+        public const float PressPulseIntervalSeconds = 0.06f;
+
+        /// <summary>The press buzz at the lightest press, as a fraction of full: still felt.</summary>
+        public const float PressFloor = 0.25f;
+
+        /// <summary>
+        /// How hard the press buzz plays (PER-48): from <see cref="PressFloor"/> as the point lands, rising in a straight
+        /// line with the push to full at <see cref="BladeContactBend.MaxPushMeters"/>, and full while the hand is past
+        /// it (the drawn blade lags the hand).
+        /// </summary>
+        public static float GetPressStrength(float pushMeters, bool isDecoupled)
+        {
+            if (isDecoupled)
+            {
+                return 1.0f;
+            }
+
+            var pushFraction = Clamp01(Math.Max(0.0f, pushMeters) / BladeContactBend.MaxPushMeters);
+            return PressFloor + ((1.0f - PressFloor) * pushFraction);
+        }
+
+        /// <summary>
         /// A Meta Haptics Studio clip (.haptic, version 1) for the segments: stepped amplitude and frequency envelopes.
         /// Plain text, so the Unity layer can build clips at runtime without assets.
         /// </summary>

@@ -5,24 +5,32 @@ namespace VrFencing.Blade
 {
     /// <summary>
     /// Visual-only blade flex (Nikita's call, PER-22): the drawn point lags behind the straight blade like a springy
-    /// blade's tip, bending a few centimeters on fast moves and springing back, and bows on a Touch. Touch detection
-    /// always uses the straight blade; this only moves what is drawn.
+    /// blade's tip, bending a few centimeters on fast moves and springing back, including after the point slides off a
+    /// body (<see cref="BladeContactBend"/>). Touch detection always uses the straight blade; this only moves what is drawn.
     ///
     /// The bend is the drawn point's offset from the straight point, kept perpendicular to the blade and at most
     /// <see cref="MaxBendMeters"/> (the 4.5-7 cm tip bend scale from the rules research). It follows a damped spring
-    /// driven by the straight point's motion. Positions are in any one frame (world in the app), time in seconds.
+    /// driven by the straight point's motion. Positions are in any one frame (the Strip frame in the app), time in seconds.
+    ///
+    /// A held blade must look still (PER-48): tracking jitters the point by up to about 7 mm, and a lightly damped spring
+    /// fed raw frame-to-frame acceleration shook visibly. So the point's motion is smoothed first, speeds below
+    /// <see cref="DeadbandMetersPerSecond"/> are ignored, and the spring is well damped: only real fast moves bend it.
     /// </summary>
     public sealed class BladeFlex
     {
         /// <summary>The upper end of the 4.5-7 cm tip bend scale.</summary>
         public const float MaxBendMeters = 0.07f;
 
-        /// <summary>How far the point bows on a Touch, inside the 4.5-7 cm scale.</summary>
-        public const float TouchBendMeters = 0.05f;
+        /// <summary>Point speeds up to this are hand jitter or slow aiming, not a move that bends the blade.</summary>
+        public const float DeadbandMetersPerSecond = 0.35f;
 
-        // A 7 Hz spring, lightly damped: a sharp stop overshoots once or twice and settles in about a quarter second.
+        // A 7 Hz spring, well damped: a sharp stop overshoots once, a little, and settles in about a fifth of a second.
         private const float NaturalFrequencyHertz = 7.0f;
-        private const float DampingRatio = 0.3f;
+        private const float DampingRatio = 0.6f;
+
+        // The point's position is low-passed with this time constant before its speed is taken: frame-to-frame
+        // tracking noise differentiated twice is far larger than any real acceleration.
+        private const float SmoothingSeconds = 0.03f;
 
         // Integrate in short steps so the spring stays stable even on a long frame.
         private const float MaxSubstepSeconds = 0.004f;
@@ -30,8 +38,8 @@ namespace VrFencing.Blade
 
         private Vector3 _bend;
         private Vector3 _bendVelocity;
-        private Vector3? _previousStraightTip;
-        private Vector3 _previousStraightTipVelocity;
+        private Vector3? _smoothedTip;
+        private Vector3? _previousDrivingVelocity;
 
         /// <summary>The drawn point minus the straight point.</summary>
         public Vector3 Bend => _bend;
@@ -41,8 +49,20 @@ namespace VrFencing.Blade
         {
             _bend = Vector3.Zero;
             _bendVelocity = Vector3.Zero;
-            _previousStraightTip = null;
-            _previousStraightTipVelocity = Vector3.Zero;
+            _smoothedTip = null;
+            _previousDrivingVelocity = null;
+        }
+
+        /// <summary>
+        /// Starts the spring from <paramref name="bend"/> at rest (made perpendicular to the blade and limited), with the
+        /// blade's motion history restarted at <paramref name="straightBlade"/>: the point was held elsewhere (pinned on
+        /// a body) and now springs back.
+        /// </summary>
+        public void SpringBackFrom(BladeSegment straightBlade, Vector3 bend)
+        {
+            Reset();
+            _bend = bend;
+            KeepPerpendicularAndLimited(straightBlade.Direction);
         }
 
         /// <summary>
@@ -58,17 +78,24 @@ namespace VrFencing.Blade
 
             var frameSeconds = Math.Min(deltaSeconds, MaxFrameSeconds);
             var tip = straightBlade.TipPosition;
-            if (!_previousStraightTip.HasValue)
+            if (!_smoothedTip.HasValue)
             {
-                _previousStraightTip = tip;
-                _previousStraightTipVelocity = Vector3.Zero;
+                _smoothedTip = tip;
                 return;
             }
 
-            var tipVelocity = (tip - _previousStraightTip.Value) / frameSeconds;
-            var tipAcceleration = (tipVelocity - _previousStraightTipVelocity) / frameSeconds;
-            _previousStraightTip = tip;
-            _previousStraightTipVelocity = tipVelocity;
+            var previousSmoothedTip = _smoothedTip.Value;
+            var smoothedTip = Vector3.Lerp(previousSmoothedTip, tip, frameSeconds / (SmoothingSeconds + frameSeconds));
+            _smoothedTip = smoothedTip;
+            var drivingVelocity = ApplyDeadband((smoothedTip - previousSmoothedTip) / frameSeconds);
+            if (!_previousDrivingVelocity.HasValue)
+            {
+                _previousDrivingVelocity = drivingVelocity;
+                return;
+            }
+
+            var tipAcceleration = (drivingVelocity - _previousDrivingVelocity.Value) / frameSeconds;
+            _previousDrivingVelocity = drivingVelocity;
 
             var angularFrequency = 2.0f * (float)Math.PI * NaturalFrequencyHertz;
             var substeps = (int)Math.Ceiling(frameSeconds / MaxSubstepSeconds);
@@ -83,24 +110,6 @@ namespace VrFencing.Blade
             KeepPerpendicularAndLimited(straightBlade.Direction);
         }
 
-        /// <summary>Bows the point by <see cref="TouchBendMeters"/> toward <paramref name="direction"/> (made perpendicular to the blade), then it springs back.</summary>
-        public void Kick(BladeSegment straightBlade, Vector3 direction)
-        {
-            var bladeDirection = straightBlade.Direction;
-            var sideways = direction - (Vector3.Dot(direction, bladeDirection) * bladeDirection);
-            if (sideways.LengthSquared() < 1e-10f)
-            {
-                return;
-            }
-
-            // An undamped spring started at speed v swings out to v / w; damping takes the first swing down by
-            // exp(-z / sqrt(1 - z^2) * atan(sqrt(1 - z^2) / z)). Start fast enough that the first swing is the bow.
-            var angularFrequency = 2.0f * (float)Math.PI * NaturalFrequencyHertz;
-            var dampedFraction = Math.Sqrt(1.0 - (DampingRatio * DampingRatio));
-            var firstSwingFraction = (float)Math.Exp(-DampingRatio / dampedFraction * Math.Atan(dampedFraction / DampingRatio));
-            _bendVelocity += Vector3.Normalize(sideways) * (TouchBendMeters * angularFrequency / firstSwingFraction);
-        }
-
         /// <summary>
         /// Where the drawn blade's centerline is at <paramref name="fraction"/> of the way from the guard (0) to the point
         /// (1): the straight blade plus the bend shaped like a cantilever under an end load, 0 at the guard and the full
@@ -111,6 +120,13 @@ namespace VrFencing.Blade
             var clamped = Math.Max(0.0f, Math.Min(1.0f, fraction));
             var shape = clamped * clamped * (3.0f - clamped) * 0.5f;
             return Vector3.Lerp(straightBlade.GuardPosition, straightBlade.TipPosition, clamped) + (_bend * shape);
+        }
+
+        /// <summary>Takes <see cref="DeadbandMetersPerSecond"/> off the speed, keeping the direction: slow motion drives nothing, and there is no jump at the edge.</summary>
+        private static Vector3 ApplyDeadband(Vector3 velocity)
+        {
+            var speed = velocity.Length();
+            return speed <= DeadbandMetersPerSecond ? Vector3.Zero : velocity * ((speed - DeadbandMetersPerSecond) / speed);
         }
 
         private void KeepPerpendicularAndLimited(Vector3 bladeDirection)

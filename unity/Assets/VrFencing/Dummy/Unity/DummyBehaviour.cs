@@ -105,6 +105,12 @@ namespace VrFencing.Dummy
             return Layout?.GetZonesOnStrip(DistanceMeters) ?? Array.Empty<ZoneCapsule>();
         }
 
+        /// <summary>Every capsule of the Dummy in the Strip frame at the current distance: what the drawn blade point stops against.</summary>
+        public IReadOnlyList<Capsule> GetBodyOnStrip()
+        {
+            return Layout?.GetBodyOnStrip(DistanceMeters) ?? Array.Empty<Capsule>();
+        }
+
         /// <summary>
         /// Moves the sword arm, and with it the hand, wrist, forearm and upper arm zones, by turning the joint
         /// transforms. Nothing is rebuilt. The MVP Dummy stays in <see cref="SwordArmPose.ArmInLine"/>.

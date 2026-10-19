@@ -109,7 +109,7 @@ Every frame the straight blade (guard front to point) is moved into the Strip fr
 
 | Event | When | Goes to | Feedback |
 |---|---|---|---|
-| Touch | Moving into the surface at least the minimum speed, approach and blade both within the rule's angles | Drill runner as point-first | Haptic (default Heavy), the zone flashes white, the point flashes green, the drawn blade bows about 5 cm |
+| Touch | Moving into the surface at least the minimum speed, approach and blade both within the rule's angles | Drill runner as point-first | Haptic (default Heavy), the zone flashes white, the point flashes green |
 | Glance | The point reached the zone but failed the Touch test | Not reported (only the point scores) | Light haptic tick, the point flashes blue |
 | Flat contact | The blade body (all but the last 3 cm) crosses a zone while the point is in none | Drill runner as flat | Haptic (default Double tap), at most once per 0.15 s |
 
@@ -120,13 +120,26 @@ The approach is the point's motion over the last 40 ms before it entered (stretc
 | Loose (default) | 0.02 m/s | 70 degrees | 75 degrees | 4 mm, 6 mm, 3 cm |
 | Strict | 0.05 m/s | 40 degrees | 45 degrees | same |
 
-Haptics play on the sword hand through the Meta Haptics SDK (OVRInput vibration does nothing under OpenXR). Strength rises with tip speed from the "Haptic strength when slow" floor (default 40%) to full at "Full haptic strength at" (default 2.0 m/s), on top of each event's pattern (Off, Tick, Crisp, Heavy, Double tap). The blade drawn bends up to 7 cm on fast moves and springs back; detection always uses the straight blade.
+Haptics play on the sword hand through the Meta Haptics SDK (OVRInput vibration does nothing under OpenXR). Strength rises with tip speed from the "Haptic strength when slow" floor (default 40%) to full at "Full haptic strength at" (default 2.0 m/s), on top of each event's pattern (Off, Tick, Crisp, Heavy, Double tap). The blade drawn bends up to 7 cm on fast moves and springs back; detection always uses the straight blade. A held blade stays still: the flex ignores point speeds under 0.35 m/s (tracking jitter, slow aiming), smooths the point over 30 ms and is damped (7 Hz spring, damping ratio 0.6) (PER-48).
+
+The drawn blade never passes through the Dummy (any capsule, Target Zone or not; `BladeContactBend` and `DrawnBlade` in the Blade Core, generic capsules so a blade can join them later). The hand is not stopped; the drawn blade is:
+
+| Situation | Drawn blade | Haptic |
+|---|---|---|
+| The point meets a body (found along its whole path since the last frame, so a fast thrust cannot tunnel) | The point pins on that near-side surface | The event haptic (Touch, glance) as before |
+| The hand pushes on, up to 15 cm past the surface | The blade keeps its 90 cm length and bows upward from the grip (by more than 10 cm at 15 cm of push); it leaves the guard along the hand | A buzz every 0.06 s, from 25% as the point lands to 100% at 15 cm of push |
+| The hand pushes past 15 cm, even through the body | The drawn blade holds at the most bow and lags the hand; a faint ghost hilt shows where the hand is | Full-strength buzz |
+| The hand turns the blade more than 20 degrees off the line to the point (about 30 cm sideways) | The point slides over the surface, never through it | Buzz continues |
+| The hand comes back out or goes around (the straight point is outside every body with a clear path to the pin) | The point lets go and the blade springs back | Stops |
+| The blade body is pushed or swept into a body | Each drawn point is held on the side it came from until the hand goes back or around | Flat-contact haptic as before |
+
+Each release logs `[Blade] Point released: CameOut` (or `BodyMoved` when the Dummy changes distance), and crossing the 15 cm limit logs a line both ways.
 
 Every event prints a `[Blade]` line to `adb logcat -s Unity`: event, zone, tip speed, approach and blade angles, distance from the zone center, and the rule.
 
 ## The menus on the headset
 
-World-space panels float about 1.1 m in front of the Fencer, a little below eye level; they follow the head's position and turn with it once the Fencer looks more than 40 degrees away. A laser from the off-hand controller points, its trigger presses (hold it on a settings step button to repeat). Everything mirrors with the sword hand setting. Placing the Strip hides the panels, since placement uses the same trigger.
+World-space panels float about 1.1 m in front of the Fencer, a little below eye level; they follow the head's position and turn with it once the Fencer looks more than 40 degrees away. A laser from the off-hand controller points (tilted down from the controller's forward axis by the "Menu laser tilt" Setting, default 15 degrees; Meta's SDK has no separate aim pose for controllers under OpenXR, and its controller rotation already follows the aim pose's), its trigger presses (hold it on a settings step button to repeat). Everything mirrors with the sword hand setting. Placing the Strip hides the panels, since placement uses the same trigger.
 
 | Screen | Holds |
 |---|---|

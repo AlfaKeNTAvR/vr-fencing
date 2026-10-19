@@ -1,19 +1,22 @@
 using System;
 using UnityEngine;
 using VrFencing.Settings;
+using VrFencing.Strip;
 
 namespace VrFencing.Blade
 {
     /// <summary>
     /// Draws the épée on its mount transform (front of the guard at the origin, blade along +z): grip and pommel behind
-    /// the guard, the bell guard, a tapering blade drawn in pieces so it can bend (<see cref="BladeFlex"/>), and a red
-    /// point that flashes on a Touch or glance. Primitives get the URP material from Resources; the default primitive
+    /// the guard, the bell guard, a tapering blade drawn in pieces so it can bend (<see cref="DrawnBlade"/>), and a red
+    /// point that flashes on a Touch or glance. While the hand pushes past the most bow, the hilt is drawn where the
+    /// blade stops and a faint ghost hilt shows where the hand really is. Primitives get the URP material from Resources; the default primitive
     /// material is not URP and renders magenta and doubled per eye on the Quest.
     /// </summary>
     internal sealed class BladeVisual : IDisposable
     {
         private const string MaterialResourcePath = "VrFencingBlade";
-        private const int BladePieceCount = 12;
+        private const string GhostMaterialResourcePath = "VrFencingBladeGhost";
+        private const int BladePieceCount = DrawnBlade.SampleCount;
         private const float BladeBaseDiameterMeters = 0.010f;
         private const float BladePointDiameterMeters = 0.005f;
         private const float PointDiameterMeters = 0.009f;
@@ -29,9 +32,12 @@ namespace VrFencing.Blade
         private static readonly Color PointColor = new Color(0.9f, 0.12f, 0.12f);
         private static readonly Color TouchColor = new Color(0.1f, 0.95f, 0.2f);
         private static readonly Color GlanceColor = new Color(0.3f, 0.5f, 1.0f);
+        private static readonly Color GhostColor = new Color(0.85f, 0.9f, 1.0f, 0.25f);
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         private readonly Transform _mount;
+        private readonly Transform _hilt;
+        private readonly GameObject _ghost;
         private readonly Transform[] _bladePieces = new Transform[BladePieceCount];
         private readonly Transform _point;
         private readonly Renderer _pointRenderer;
@@ -47,22 +53,29 @@ namespace VrFencing.Blade
                 Debug.LogError($"[Blade] Material 'Resources/{MaterialResourcePath}' is missing; the blade is not drawn.");
             }
 
-            // Unity's cylinder primitive is 2 m tall along its local y; turned onto z, the blade axis.
-            var alongBlade = Quaternion.Euler(90.0f, 0.0f, 0.0f);
-            CreatePart(PrimitiveType.Cylinder, "Guard", material, GuardColor, new Vector3(0.0f, 0.0f, -BladePose.GuardDepthMeters * 0.5f), alongBlade,
-                new Vector3(BladePose.GuardDiameterMeters, BladePose.GuardDepthMeters * 0.5f, BladePose.GuardDiameterMeters));
-            var gripCenter = -BladePose.GuardDepthMeters - (GripLengthMeters * 0.5f);
-            CreatePart(PrimitiveType.Cylinder, "Grip", material, GripColor, new Vector3(0.0f, 0.0f, gripCenter), alongBlade,
-                new Vector3(GripDiameterMeters, GripLengthMeters * 0.5f, GripDiameterMeters));
-            CreatePart(PrimitiveType.Sphere, "Pommel", material, GuardColor, new Vector3(0.0f, 0.0f, gripCenter - (GripLengthMeters * 0.5f)), Quaternion.identity,
-                Vector3.one * PommelDiameterMeters);
+            // The drawn hilt sits at the drawn guard, which lags the hand when it pushes past the most bow (PER-48).
+            _hilt = new GameObject("Hilt").transform;
+            _hilt.SetParent(_mount, false);
+            CreateHilt(_hilt, material, GuardColor, GripColor);
+
+            // A faint hilt where the hand really is, shown only while the drawn blade lags it.
+            var ghostMaterial = Resources.Load<Material>(GhostMaterialResourcePath);
+            if (ghostMaterial == null)
+            {
+                Debug.LogError($"[Blade] Material 'Resources/{GhostMaterialResourcePath}' is missing; the hand's ghost hilt is not drawn.");
+            }
+
+            _ghost = new GameObject("Hand Ghost");
+            _ghost.transform.SetParent(_mount, false);
+            CreateHilt(_ghost.transform, ghostMaterial, GhostColor, GhostColor);
+            _ghost.SetActive(false);
 
             for (var index = 0; index < BladePieceCount; index++)
             {
-                _bladePieces[index] = CreatePart(PrimitiveType.Cylinder, $"Blade {index}", material, BladeColor, Vector3.zero, Quaternion.identity, Vector3.one).transform;
+                _bladePieces[index] = CreatePart(PrimitiveType.Cylinder, $"Blade {index}", _mount, material, BladeColor, Vector3.zero, Quaternion.identity, Vector3.one).transform;
             }
 
-            _pointRenderer = CreatePart(PrimitiveType.Cylinder, "Point", material, PointColor, Vector3.zero, Quaternion.identity, Vector3.one);
+            _pointRenderer = CreatePart(PrimitiveType.Cylinder, "Point", _mount, material, PointColor, Vector3.zero, Quaternion.identity, Vector3.one);
             _point = _pointRenderer.transform;
         }
 
@@ -77,19 +90,29 @@ namespace VrFencing.Blade
             _flashEndsAt = nowSeconds + FlashSeconds;
         }
 
-        /// <summary>Lays the blade pieces along the bent centerline. <paramref name="straightBlade"/> is in world space.</summary>
-        public void Draw(BladeSegment straightBlade, BladeFlex flex, float nowSeconds)
+        /// <summary>
+        /// Lays the blade pieces along the drawn centerline. <paramref name="drawnBlade"/> is in the Strip frame,
+        /// <paramref name="stripInRoom"/> places that frame in the world.
+        /// </summary>
+        public void Draw(DrawnBlade drawnBlade, TrackedPose stripInRoom, float nowSeconds)
         {
-            for (var index = 0; index < BladePieceCount; index++)
+            // The drawn guard keeps the hand's blade direction, so only its position moves off the mount.
+            _hilt.localPosition = ToMount(stripInRoom, drawnBlade.GuardPosition);
+            if (_ghost.activeSelf != drawnBlade.IsDecoupled)
             {
-                var start = flex.GetCenterlinePoint(straightBlade, (float)index / BladePieceCount);
-                var end = flex.GetCenterlinePoint(straightBlade, (float)(index + 1) / BladePieceCount);
-                var diameter = Mathf.Lerp(BladeBaseDiameterMeters, BladePointDiameterMeters, (index + 0.5f) / BladePieceCount);
-                PlaceAlong(_bladePieces[index], ToMount(start), ToMount(end), diameter);
+                _ghost.SetActive(drawnBlade.IsDecoupled);
             }
 
-            var tip = ToMount(flex.GetCenterlinePoint(straightBlade, 1.0f));
-            var beforeTip = ToMount(flex.GetCenterlinePoint(straightBlade, 0.98f));
+            for (var index = 0; index < BladePieceCount; index++)
+            {
+                var start = ToMount(stripInRoom, drawnBlade.GetSample(index));
+                var end = ToMount(stripInRoom, drawnBlade.GetSample(index + 1));
+                var diameter = Mathf.Lerp(BladeBaseDiameterMeters, BladePointDiameterMeters, (index + 0.5f) / BladePieceCount);
+                PlaceAlong(_bladePieces[index], start, end, diameter);
+            }
+
+            var tip = ToMount(stripInRoom, drawnBlade.GetCenterlinePoint(1.0f));
+            var beforeTip = ToMount(stripInRoom, drawnBlade.GetCenterlinePoint(0.98f));
             var pointDirection = (tip - beforeTip).normalized;
             PlaceAlong(_point, tip - (pointDirection * PointLengthMeters), tip, PointDiameterMeters);
 
@@ -113,8 +136,9 @@ namespace VrFencing.Blade
             }
         }
 
-        private Vector3 ToMount(System.Numerics.Vector3 worldPoint)
+        private Vector3 ToMount(TrackedPose stripInRoom, System.Numerics.Vector3 pointInStrip)
         {
+            var worldPoint = StripFrame.ToRoom(stripInRoom, pointInStrip);
             return _mount.InverseTransformPoint(worldPoint.ToUnity());
         }
 
@@ -127,14 +151,28 @@ namespace VrFencing.Blade
             piece.localScale = new Vector3(diameter, length * 0.5f, diameter);
         }
 
-        private Renderer CreatePart(PrimitiveType type, string partName, Material material, Color color, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        /// <summary>Guard, grip and pommel behind the guard's front at <paramref name="parent"/>'s origin, the blade along +z.</summary>
+        private void CreateHilt(Transform parent, Material material, Color guardColor, Color gripColor)
+        {
+            // Unity's cylinder primitive is 2 m tall along its local y; turned onto z, the blade axis.
+            var alongBlade = Quaternion.Euler(90.0f, 0.0f, 0.0f);
+            CreatePart(PrimitiveType.Cylinder, "Guard", parent, material, guardColor, new Vector3(0.0f, 0.0f, -BladePose.GuardDepthMeters * 0.5f), alongBlade,
+                new Vector3(BladePose.GuardDiameterMeters, BladePose.GuardDepthMeters * 0.5f, BladePose.GuardDiameterMeters));
+            var gripCenter = -BladePose.GuardDepthMeters - (GripLengthMeters * 0.5f);
+            CreatePart(PrimitiveType.Cylinder, "Grip", parent, material, gripColor, new Vector3(0.0f, 0.0f, gripCenter), alongBlade,
+                new Vector3(GripDiameterMeters, GripLengthMeters * 0.5f, GripDiameterMeters));
+            CreatePart(PrimitiveType.Sphere, "Pommel", parent, material, guardColor, new Vector3(0.0f, 0.0f, gripCenter - (GripLengthMeters * 0.5f)), Quaternion.identity,
+                Vector3.one * PommelDiameterMeters);
+        }
+
+        private Renderer CreatePart(PrimitiveType type, string partName, Transform parent, Material material, Color color, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
         {
             var part = GameObject.CreatePrimitive(type);
             part.name = partName;
 
             // Touches are judged on the Core blade segment, not by physics.
             UnityEngine.Object.Destroy(part.GetComponent<Collider>());
-            part.transform.SetParent(_mount, false);
+            part.transform.SetParent(parent, false);
             part.transform.SetLocalPositionAndRotation(localPosition, localRotation);
             part.transform.localScale = localScale;
 
