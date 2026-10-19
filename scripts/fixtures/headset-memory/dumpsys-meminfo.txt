@@ -1,0 +1,41 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 5123456 Realtime: 5123456
+
+** MEMINFO in pid 9004 [com.alfakentavr.vrfencing] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    98304    98200        0     2048    99840   131072   110000    21072
+  Dalvik Heap     6144     6000        0      512     9216    12288     8192     4096
+ Dalvik Other     2048     2000        0        0     3072
+        Stack     1024     1024        0        0     1024
+       Ashmem      128      100        0        0      512
+      Gfx dev    20480    20480        0        0    20480
+    Other dev      512      400        0        0     2048
+     .so mmap    81920     4096    70000     1024   160000
+    .jar mmap     1024        0      512        0    16384
+    .apk mmap    40960        0    40000        0    40960
+    .dex mmap     2048        8     2000        0     4096
+    .oat mmap      512        0      100        0    10240
+    .art mmap     4096     3500      100      256    16384
+   Other mmap     2048      100     1500        0     4096
+    GL mtrack    44012    44012        0        0    44012
+      Unknown    16384    16300        0      300    16896
+        TOTAL   327744   196220   114212     4140   450880   143360   118192    25168
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:     9600                          25600
+         Native Heap:    98200                          99840
+                Code:   117116                         231680
+               Stack:     1024                           1024
+            Graphics:    64492                          64492
+       Private Other:    20000
+              System:    17312
+             Unknown:                                    28244
+
+           TOTAL PSS:   327744            TOTAL RSS:   450880       TOTAL SWAP PSS:     4140
+
+ Objects
+               Views:        0         ViewRootImpl:        0

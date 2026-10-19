@@ -1,0 +1,21 @@
+10-19 17:04:59.949  9004  9024 I Unity   : [Life] gpu experiments: destroyStaleXrTexturesOnResume
+10-19 17:05:00.029  9004  9024 I Unity   : [OVRManager] OnApplicationPause(false)
+10-19 17:05:00.029  9004  9024 I Unity   : [Life] OnApplicationPause(false) at frame 0, t 0.21 s.
+10-19 17:05:01.741  9004  9024 I Unity   : [OVRManager] OnApplicationPause(true)
+10-19 17:05:01.741  9004  9024 I Unity   : [Life] OnApplicationPause(true) at frame 72, t 1.92 s.
+10-19 17:05:01.742  9004  9024 I Unity   : [Life] gpu before-pause frame 72 t 1.92 s cams 1 objects 3 enabled 1 rt 5 est 67.7 MB prof 543.7 MB xrTex 3 est 67.7 MB prof 543.7 MB texCur 12.2 MB texTotal 0.0 MB driver 589.5 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 17:05:01.745  9004  9024 I Unity   : [Life] gpu before-pause rt-top XR Texture x3 67.7 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
+10-19 17:05:37.774  9004  9024 I Unity   : [OVRManager] OnApplicationPause(false)
+10-19 17:05:37.774  9004  9024 I Unity   : [Life] OnApplicationPause(false) at frame 72, t 37.95 s.
+10-19 17:05:38.797  9004  9024 I Unity   : [Life] xr-cleanup before: xrTex 6 est 135.4 MB (3 from before the pause, 3 new), frame 135, t 38.97 s. Destroying 3: XR Texture [3] id -4152 1680x1760x2 msaa 4 22.6 MB; XR Texture [2] id -4150 1680x1760x2 msaa 4 22.6 MB; XR Texture [1] id -4144 1680x1760x2 msaa 4 22.6 MB.
+10-19 17:05:41.804  9004  9024 I Unity   : [OVRManager] OnApplicationPause(true)
+10-19 17:05:41.805  9004  9024 I Unity   : [Life] OnApplicationPause(true) at frame 347, t 41.98 s.
+10-19 17:05:41.805  9004  9024 I Unity   : [Life] gpu before-pause frame 347 t 41.98 s cams 1 objects 3 enabled 1 rt 5 est 67.7 MB prof 543.7 MB xrTex 3 est 67.7 MB prof 543.7 MB texCur 12.2 MB texTotal 12.2 MB driver 591.5 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 17:05:41.805  9004  9024 I Unity   : [Life] gpu before-pause rt-top XR Texture x3 67.7 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
+10-19 17:06:22.787  9004  9024 I Unity   : [OVRManager] OnApplicationPause(false)
+10-19 17:06:22.787  9004  9024 I Unity   : [Life] OnApplicationPause(false) at frame 347, t 82.96 s.
+10-19 17:06:23.806  9004  9024 I Unity   : [Life] xr-cleanup before: xrTex 6 est 135.4 MB (3 from before the pause, 3 new), frame 411, t 83.98 s. Destroying 3: XR Texture [6] id -4158 1680x1760x2 msaa 4 22.6 MB; XR Texture [5] id -4156 1680x1760x2 msaa 4 22.6 MB; XR Texture [4] id -4154 1680x1760x2 msaa 4 22.6 MB.
+10-19 17:06:26.787  9004  9024 I Unity   : [OVRManager] OnApplicationPause(true)
+10-19 17:06:26.787  9004  9024 I Unity   : [Life] OnApplicationPause(true) at frame 621, t 86.96 s.
+10-19 17:06:26.788  9004  9024 I Unity   : [Life] gpu before-pause frame 621 t 86.96 s cams 1 objects 3 enabled 1 rt 5 est 67.7 MB prof 543.7 MB xrTex 3 est 67.7 MB prof 543.7 MB texCur 12.2 MB texTotal 12.2 MB driver 593.5 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 17:06:26.788  9004  9024 I Unity   : [Life] gpu before-pause rt-top XR Texture x3 67.7 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
