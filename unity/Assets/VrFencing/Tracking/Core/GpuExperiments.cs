@@ -6,14 +6,15 @@ namespace VrFencing.Tracking
     /// Runtime experiment toggles for bisecting the sleep/wake GPU memory growth on the headset without a rebuild
     /// (PER-93). Read once at startup from the optional file <see cref="FileName"/> in <c>Application.persistentDataPath</c>
     /// (on the Quest <c>/sdcard/Android/data/com.alfakentavr.vrfencing/files/</c>, put there with <c>adb push</c>, then
-    /// relaunch the app). No file means every toggle is off, which is the normal behavior. Every key is optional:
+    /// relaunch the app). No file means the normal behavior: every toggle off except <c>destroyStaleXrTexturesOnResume</c>,
+    /// which is on by default (<see cref="StaleXrTextureCleanup.IsOnByDefault"/>). Every key is optional:
     /// <code>
     /// {
     ///   "passthroughOffAcrossPause": true,
     ///   "urpMsaa": 1,
     ///   "unloadUnusedAssetsOnResume": true,
     ///   "recreateUrpPipelineOnResume": true,
-    ///   "destroyStaleXrTexturesOnResume": true
+    ///   "destroyStaleXrTexturesOnResume": false
     /// }
     /// </code>
     /// <list type="bullet">
