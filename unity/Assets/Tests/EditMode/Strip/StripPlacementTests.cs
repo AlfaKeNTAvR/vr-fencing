@@ -1,5 +1,5 @@
-// Two-point placement and the Strip frame (PER-31): the first press sets the En Garde Line, the second the far end,
-// which give the Strip's direction and length; room points convert to and from the Strip frame.
+// Two-point placement and the Strip frame (PER-31, PER-90): the first press sets the Fencer's En Garde Line, the second the Dummy's,
+// which give the Strip's direction and the gap between the lines; room points convert to and from the Strip frame.
 using System;
 using System.Numerics;
 using NUnit.Framework;
@@ -13,7 +13,7 @@ namespace VrFencing.Tests.Strip
         private const float Tolerance = 1e-4f;
 
         [Test]
-        public void StripFacesFromTheEnGardeLineTowardTheFarEnd()
+        public void StripFacesFromTheFencersEnGardeLineTowardTheDummys()
         {
             var (enGardeLine, placedLength) = StripFrame.FromPlacementPoints(new Vector3(1.0f, 0.9f, 2.0f), new Vector3(4.0f, 1.1f, 6.0f));
 
@@ -24,18 +24,18 @@ namespace VrFencing.Tests.Strip
         }
 
         [Test]
-        public void FarEndLiesOnThePositiveZAxisOfTheStripFrame()
+        public void DummysEnGardeLineLiesOnThePositiveZAxisOfTheStripFrame()
         {
-            var farEnd = new Vector3(-3.0f, 1.2f, -1.0f);
-            var (enGardeLine, placedLength) = StripFrame.FromPlacementPoints(new Vector3(0.5f, 1.0f, 3.0f), farEnd);
+            var dummyLine = new Vector3(-3.0f, 1.2f, -1.0f);
+            var (enGardeLine, placedLength) = StripFrame.FromPlacementPoints(new Vector3(0.5f, 1.0f, 3.0f), dummyLine);
 
-            var farEndInStrip = StripFrame.ToStripFrame(enGardeLine, new Vector3(farEnd.X, 0.0f, farEnd.Z));
+            var dummyLineInStrip = StripFrame.ToStripFrame(enGardeLine, new Vector3(dummyLine.X, 0.0f, dummyLine.Z));
 
-            AssertVector(farEndInStrip, new Vector3(0.0f, 0.0f, placedLength));
+            AssertVector(dummyLineInStrip, new Vector3(0.0f, 0.0f, placedLength));
         }
 
         [Test]
-        public void PositiveXIsTheFencersRightFacingTheFarEnd()
+        public void PositiveXIsTheFencersRightFacingTheDummy()
         {
             // Facing +z in the room, the right is +x (Unity's convention).
             var (enGardeLine, _) = StripFrame.FromPlacementPoints(Vector3.Zero, new Vector3(0.0f, 0.0f, 3.0f));
@@ -83,7 +83,7 @@ namespace VrFencing.Tests.Strip
             var placement = new StripPlacement();
 
             Assert.That(placement.Press(new Vector3(0.0f, 1.0f, 0.0f)), Is.EqualTo(PlacementPressOutcome.EnGardeLineSet));
-            Assert.That(placement.Step, Is.EqualTo(PlacementStep.FarEnd));
+            Assert.That(placement.Step, Is.EqualTo(PlacementStep.DummyEnGardeLine));
             AssertVector(placement.EnGardePointOnFloor.Value, Vector3.Zero);
 
             Assert.That(placement.Press(new Vector3(0.0f, 1.0f, 3.5f)), Is.EqualTo(PlacementPressOutcome.Placed));
@@ -92,16 +92,27 @@ namespace VrFencing.Tests.Strip
         }
 
         [Test]
-        public void FarEndTooCloseIsRejectedAndPlacementKeepsWaiting()
+        public void DummysLineTooCloseForADirectionIsRejectedAndPlacementKeepsWaiting()
         {
             var placement = new StripPlacement();
             placement.Press(Vector3.Zero);
 
-            Assert.That(placement.Press(new Vector3(0.0f, 0.0f, 0.9f)), Is.EqualTo(PlacementPressOutcome.TooShort));
-            Assert.That(placement.Step, Is.EqualTo(PlacementStep.FarEnd));
+            Assert.That(placement.Press(new Vector3(0.0f, 0.0f, 0.15f)), Is.EqualTo(PlacementPressOutcome.TooClose));
+            Assert.That(placement.Step, Is.EqualTo(PlacementStep.DummyEnGardeLine));
             Assert.That(placement.Result, Is.Null);
 
             Assert.That(placement.Press(new Vector3(0.0f, 0.0f, 1.2f)), Is.EqualTo(PlacementPressOutcome.Placed));
+        }
+
+        [Test]
+        public void LinesInsideLungeRangeAreAccepted()
+        {
+            // No minimum gap between the two En Garde Lines (PER-90): a bout may start in lunge range.
+            var placement = new StripPlacement();
+            placement.Press(Vector3.Zero);
+
+            Assert.That(placement.Press(new Vector3(0.0f, 0.0f, 0.5f)), Is.EqualTo(PlacementPressOutcome.Placed));
+            Assert.That(placement.Result.Value.PlacedLengthMeters, Is.EqualTo(0.5f).Within(Tolerance));
         }
 
         [Test]
@@ -110,19 +121,19 @@ namespace VrFencing.Tests.Strip
             var placement = new StripPlacement();
             placement.Press(new Vector3(0.0f, 0.2f, 0.0f));
 
-            // 0.8 m along the floor, 1.5 m up: still too short.
-            Assert.That(placement.Press(new Vector3(0.0f, 1.7f, 0.8f)), Is.EqualTo(PlacementPressOutcome.TooShort));
+            // 0.1 m along the floor, 1.5 m up: still too close.
+            Assert.That(placement.Press(new Vector3(0.0f, 1.7f, 0.1f)), Is.EqualTo(PlacementPressOutcome.TooClose));
         }
 
         [Test]
-        public void PreviewShowsTheStripOnlyWhileAimingAtAValidFarEnd()
+        public void PreviewShowsTheStripOnlyWhileAimingAtAValidDummyLine()
         {
             var placement = new StripPlacement();
             Assert.That(placement.Preview(new Vector3(0.0f, 0.0f, 3.0f)), Is.Null);
 
             placement.Press(Vector3.Zero);
 
-            Assert.That(placement.Preview(new Vector3(0.0f, 0.0f, 0.5f)), Is.Null);
+            Assert.That(placement.Preview(new Vector3(0.0f, 0.0f, 0.1f)), Is.Null);
             Assert.That(placement.Preview(new Vector3(0.0f, 0.0f, 3.0f)).Value.PlacedLengthMeters, Is.EqualTo(3.0f).Within(Tolerance));
         }
 

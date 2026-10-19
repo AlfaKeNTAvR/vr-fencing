@@ -12,21 +12,21 @@ namespace VrFencing.Strip
     public static class StripFrame
     {
         /// <summary>
-        /// The En Garde Line pose and placed length from the two placement points: the first is on the En Garde Line,
-        /// the second at the far end. Both are dropped to the floor; only their horizontal positions count.
+        /// The En Garde Line pose and placed length from the two placement points: the first is on the Fencer's En Garde
+        /// Line, the second on the Dummy's. Both are dropped to the floor; only their horizontal positions count.
         /// </summary>
         /// <exception cref="ArgumentException">The points are at the same spot on the floor, so there is no direction.</exception>
-        public static (TrackedPose EnGardeLine, float PlacedLengthMeters) FromPlacementPoints(Vector3 enGardePoint, Vector3 farEndPoint)
+        public static (TrackedPose EnGardeLine, float PlacedLengthMeters) FromPlacementPoints(Vector3 enGardePoint, Vector3 dummyEnGardePoint)
         {
             var origin = new Vector3(enGardePoint.X, 0.0f, enGardePoint.Z);
-            var along = new Vector3(farEndPoint.X - enGardePoint.X, 0.0f, farEndPoint.Z - enGardePoint.Z);
+            var along = new Vector3(dummyEnGardePoint.X - enGardePoint.X, 0.0f, dummyEnGardePoint.Z - enGardePoint.Z);
             var length = along.Length();
             if (length < 1e-4f)
             {
                 throw new ArgumentException("The placement points are at the same spot; the Strip has no direction.");
             }
 
-            // Yaw that turns +z toward the far end. Unity's y rotation and System.Numerics' agree: +z goes to (sin, 0, cos).
+            // Yaw that turns +z toward the Dummy's line. Unity's y rotation and System.Numerics' agree: +z goes to (sin, 0, cos).
             var yaw = (float)Math.Atan2(along.X, along.Z);
             var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw);
             return (new TrackedPose(origin, rotation), length);

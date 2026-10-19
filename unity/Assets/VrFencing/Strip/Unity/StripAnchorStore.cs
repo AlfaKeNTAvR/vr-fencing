@@ -4,24 +4,33 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
+using VrFencing.Settings;
 
 namespace VrFencing.Strip
 {
     /// <summary>
-    /// Saves the Strip per room as a Meta spatial anchor at its En Garde Line, and restores it on launch.
-    /// Which saved Strip belongs to this room is decided in the Core (<see cref="SavedStrips"/>); this only talks to
-    /// the anchors API and the saved Strips file under persistentDataPath. Every step is logged with a "[Strip]" tag,
-    /// since anchor persistence can only be checked on the headset (adb logcat -s Unity).
+    /// Saves the Strip per room as a Meta spatial anchor at the Fencer's En Garde Line, and restores it on launch.
+    /// Which saved Strip belongs to this room is decided in the Core (<see cref="SavedStrips.ChooseForRoom"/>): Meta
+    /// keeps one map for the whole home, so other rooms' anchors localize too, at their real places, and only the
+    /// distance from the Fencer tells the rooms apart (PER-91). This only talks to the anchors API and the saved Strips
+    /// file under persistentDataPath. Every step is logged with a "[Strip]" tag, since anchor persistence can only be
+    /// checked on the headset (adb logcat -s Unity).
     ///
     /// Needs anchor support in the Meta project config and the com.oculus.permission.USE_ANCHOR_API permission,
     /// both already on (Assets/Oculus/OculusProjectConfig.asset, Assets/Plugins/Android/AndroidManifest.xml).
     /// </summary>
     internal sealed class StripAnchorStore
     {
-        /// <summary>How long one saved anchor may take to localize before it counts as not in this room.</summary>
+        /// <summary>How long one saved anchor may take to localize before it counts as not found.</summary>
         private const double LocalizeTimeoutSeconds = 10.0;
 
         private OVRSpatialAnchor _anchor;
+
+        // The current anchor is this room's Strip (restored as this room's, or placed here), so re-placing replaces it.
+        // False for another room's Strip the Fencer chose to keep: placing then adds this room instead.
+        private bool _isThisRoomsStrip;
+
+        private OVRSpatialAnchor.UnboundAnchor? _lastStripAnchor;
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, SavedStrips.FileName);
 
@@ -29,16 +38,22 @@ namespace VrFencing.Strip
         public Transform AnchorTransform => _anchor != null ? _anchor.transform : null;
 
         /// <summary>
-        /// Loads every saved Strip's anchor, localizes them, and binds the newest one found in this room.
-        /// Returns that Strip, or null when no saved Strip is found here (or none was ever saved).
+        /// Loads every saved Strip's anchor, localizes them, and picks this room's Strip by where each was found
+        /// relative to the Fencer. This room's Strip is bound at once; for <see cref="StripRoomMatch.OtherRoom"/> the
+        /// last Strip's anchor waits for <see cref="BindLastStrip"/>.
         /// </summary>
-        public async Task<SavedStrip> RestoreAsync()
+        /// <param name="getFencerOnFloor">
+        /// The Fencer's head dropped to the floor (y = 0), in the room; read after the anchors are found, when head
+        /// tracking has settled.
+        /// </param>
+        public async Task<StripRoomChoice> RestoreAsync(Func<Vector3> getFencerOnFloor)
         {
+            var notFound = new StripRoomChoice(StripRoomMatch.NotFound, null);
             var saved = LoadSavedStrips();
             if (saved.Strips.Count == 0)
             {
                 Debug.Log("[Strip] No saved Strips yet.");
-                return null;
+                return notFound;
             }
 
             var unboundAnchors = new List<OVRSpatialAnchor.UnboundAnchor>();
@@ -46,7 +61,7 @@ namespace VrFencing.Strip
             if (!loadResult.Success || !loadResult.TryGetValue(out var loadedAnchors))
             {
                 Debug.LogWarning($"[Strip] Loading {saved.Strips.Count} saved anchor(s) failed: {loadResult.Status}.");
-                return null;
+                return notFound;
             }
 
             Debug.Log($"[Strip] Loaded {loadedAnchors.Count} of {saved.Strips.Count} saved anchor(s); localizing.");
@@ -56,44 +71,84 @@ namespace VrFencing.Strip
                 .Select(anchor => (Anchor: anchor, Task: anchor.Localized ? OVRTask.FromResult(true) : anchor.LocalizeAsync(LocalizeTimeoutSeconds)))
                 .ToList();
             var localized = new Dictionary<Guid, OVRSpatialAnchor.UnboundAnchor>();
+            var positions = new Dictionary<Guid, System.Numerics.Vector3>();
             foreach (var (anchor, task) in localizations)
             {
-                var isLocalized = await task;
-                Debug.Log($"[Strip] Anchor {anchor.Uuid}: {(isLocalized ? "found in this room" : "not found")}.");
-                if (isLocalized)
+                if (!await task || !anchor.TryGetPose(out var pose))
                 {
-                    localized[anchor.Uuid] = anchor;
+                    Debug.Log($"[Strip] Anchor {anchor.Uuid}: not found.");
+                    continue;
                 }
+
+                localized[anchor.Uuid] = anchor;
+                positions[anchor.Uuid] = pose.position.ToNumerics();
             }
 
-            var restored = saved.ChooseRestored(localized.Keys);
-            if (restored == null)
+            var fencerOnFloor = getFencerOnFloor();
+            var fencer = fencerOnFloor.ToNumerics();
+            foreach (var (anchorId, position) in positions)
             {
-                Debug.Log("[Strip] No saved Strip found in this room.");
-                return null;
+                var alongFloor = new Vector2(position.X - fencerOnFloor.x, position.Z - fencerOnFloor.z).magnitude;
+                Debug.Log(
+                    $"[Strip] Anchor {anchorId}: found {alongFloor:0.0} m from the Fencer along the floor, {position.Y - fencerOnFloor.y:+0.0;-0.0} m in height; " +
+                    (StripRoomCheck.IsInFencersRoom(position, fencer) ? "this room." : "another room."));
             }
 
-            var anchorObject = new GameObject("Strip Anchor");
-            var spatialAnchor = anchorObject.AddComponent<OVRSpatialAnchor>();
-            localized[restored.AnchorId].BindTo(spatialAnchor);
-            _anchor = spatialAnchor;
-            Debug.Log($"[Strip] Restored Strip {restored.AnchorId} ({restored.PlacedLengthMeters:0.00} m placed, saved {restored.SavedAtUtc:u}).");
-            return restored;
+            var choice = saved.ChooseForRoom(positions, fencer);
+            switch (choice.Match)
+            {
+                case StripRoomMatch.ThisRoom:
+                    Bind(localized[choice.Strip.AnchorId]);
+                    _isThisRoomsStrip = true;
+                    Debug.Log($"[Strip] Restored this room's Strip {DescribeStrip(choice.Strip)}.");
+                    break;
+
+                case StripRoomMatch.OtherRoom:
+                    _lastStripAnchor = localized[choice.Strip.AnchorId];
+                    Debug.Log($"[Strip] No saved Strip in this room; the last Strip found is {DescribeStrip(choice.Strip)}.");
+                    break;
+
+                default:
+                    Debug.Log("[Strip] No saved Strip found.");
+                    break;
+            }
+
+            return choice;
         }
 
         /// <summary>
-        /// Creates an anchor at <paramref name="placed"/>'s En Garde Line and saves it, replacing this room's previous
-        /// Strip. Returns whether it was saved. If saving fails, the new anchor still holds the Strip for this session.
+        /// Binds the last Strip's anchor found by <see cref="RestoreAsync"/> in another room, so the Fencer keeps using
+        /// it. It stays that room's Strip: placing a Strip here later adds this room. False if there is none.
+        /// </summary>
+        public bool BindLastStrip()
+        {
+            if (!_lastStripAnchor.HasValue)
+            {
+                return false;
+            }
+
+            Bind(_lastStripAnchor.Value);
+            _lastStripAnchor = null;
+            _isThisRoomsStrip = false;
+            return true;
+        }
+
+        /// <summary>
+        /// Creates an anchor at <paramref name="placed"/>'s En Garde Line and saves it as this room's Strip. It replaces
+        /// this room's previous Strip; a Strip kept from another room is left saved for that room (PER-91). Returns
+        /// whether it was saved. If saving fails, the new anchor still holds the Strip for this session.
         /// </summary>
         public async Task<bool> SaveAsync(PlacedStrip placed, Pose enGardeLineInRoom)
         {
             var previousAnchor = _anchor;
-            var previousAnchorId = previousAnchor != null && previousAnchor.Created ? previousAnchor.Uuid : (Guid?)null;
+            var replacedAnchorId = _isThisRoomsStrip && previousAnchor != null && previousAnchor.Created ? previousAnchor.Uuid : (Guid?)null;
+            _lastStripAnchor = null;
 
             var anchorObject = new GameObject("Strip Anchor");
             anchorObject.transform.SetPositionAndRotation(enGardeLineInRoom.position, enGardeLineInRoom.rotation);
             var spatialAnchor = anchorObject.AddComponent<OVRSpatialAnchor>();
             _anchor = spatialAnchor;
+            _isThisRoomsStrip = true;
 
             if (!await spatialAnchor.WhenLocalizedAsync())
             {
@@ -110,7 +165,8 @@ namespace VrFencing.Strip
                 return false;
             }
 
-            var saved = LoadSavedStrips().WithSaved(new SavedStrip(spatialAnchor.Uuid, placed.PlacedLengthMeters, DateTime.UtcNow), previousAnchorId);
+            var newStrip = new SavedStrip(spatialAnchor.Uuid, placed.PlacedLengthMeters, DateTime.UtcNow, SavedStripLayout.EnGardeLines);
+            var saved = LoadSavedStrips().WithSaved(newStrip, replacedAnchorId);
             try
             {
                 saved.Save(FilePath);
@@ -122,10 +178,12 @@ namespace VrFencing.Strip
                 return false;
             }
 
-            Debug.Log($"[Strip] Saved Strip {spatialAnchor.Uuid} ({placed.PlacedLengthMeters:0.00} m placed); {saved.Strips.Count} room(s) remembered.");
-            if (previousAnchorId.HasValue)
+            Debug.Log(
+                $"[Strip] Saved Strip {spatialAnchor.Uuid} (En Garde Lines {placed.PlacedLengthMeters:0.00} m apart), " +
+                $"{(replacedAnchorId.HasValue ? "replacing this room's previous Strip" : "as a new room")}; {saved.Strips.Count} room(s) remembered.");
+            if (replacedAnchorId.HasValue)
             {
-                await EraseAsync(previousAnchor, previousAnchorId.Value);
+                await EraseAsync(previousAnchor, replacedAnchorId.Value);
             }
             else
             {
@@ -133,6 +191,21 @@ namespace VrFencing.Strip
             }
 
             return true;
+        }
+
+        private void Bind(OVRSpatialAnchor.UnboundAnchor unbound)
+        {
+            var anchorObject = new GameObject("Strip Anchor");
+            var spatialAnchor = anchorObject.AddComponent<OVRSpatialAnchor>();
+            unbound.BindTo(spatialAnchor);
+            DropAnchorObject(_anchor);
+            _anchor = spatialAnchor;
+        }
+
+        private static string DescribeStrip(SavedStrip strip)
+        {
+            var second = strip.Layout == SavedStripLayout.EnGardeLines ? "between the En Garde Lines" : "to the far end (saved before PER-90)";
+            return $"{strip.AnchorId} ({strip.PlacedLengthMeters:0.00} m {second}, saved {strip.SavedAtUtc:u})";
         }
 
         /// <summary>Removes an anchor from the scene. Its saved copy, if any, stays on the headset.</summary>

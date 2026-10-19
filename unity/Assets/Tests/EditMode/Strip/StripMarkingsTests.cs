@@ -44,7 +44,7 @@ namespace VrFencing.Tests.Strip
             var lines = renderers.Where(slab => slab.name.Contains("Line")).ToArray();
             var zones = renderers.Where(slab => slab.name.StartsWith("Warning Zone")).ToArray();
 
-            Assert.That(lines, Has.Length.EqualTo(6));
+            Assert.That(lines, Has.Length.EqualTo(7));
             Assert.That(zones, Has.Length.EqualTo(2));
             foreach (var line in lines)
             {
@@ -67,6 +67,15 @@ namespace VrFencing.Tests.Strip
                 .Min(line => line.transform.localPosition.y - (line.transform.localScale.y * 0.5f));
 
             Assert.That(lowestLineBottom, Is.GreaterThan(highestZoneTop));
+        }
+
+        [Test]
+        public void BothEnGardeLinesAreDrawnWhereThePlacementPointsWere()
+        {
+            var renderers = BuildMarkings();
+
+            Assert.That(renderers.Single(slab => slab.name == "En Garde Line").transform.localPosition.z, Is.EqualTo(0.0f).Within(1e-4f));
+            Assert.That(renderers.Single(slab => slab.name == "Dummy En Garde Line").transform.localPosition.z, Is.EqualTo(4.0f).Within(1e-4f));
         }
 
         [Test]

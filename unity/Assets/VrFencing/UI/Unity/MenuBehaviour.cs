@@ -88,6 +88,7 @@ namespace VrFencing.UI
         private RunningPanel _runningPanel;
         private DummyCueDisplay _cueDisplay;
         private GripScreen _gripScreen;
+        private NewStripScreen _newStripScreen;
         private CalibrationTargetView _calibrationTarget;
         private ThrustCalibration _calibration;
         private int _calibrationStartFrame;
@@ -159,7 +160,7 @@ namespace VrFencing.UI
         private void Update()
         {
             var head = _cameraRig != null ? _cameraRig.centerEyeAnchor : null;
-            var screen = _navigator.GetShownPanel(_strip.IsPlacing, Runner.IsRunning);
+            var screen = _navigator.GetShownPanel(_strip.IsPlacing, Runner.IsRunning, _strip.IsAskingForNewStrip);
             if (screen != _shownScreen)
             {
                 ShowScreen(screen);
@@ -189,7 +190,7 @@ namespace VrFencing.UI
             }
 
             _pointer.Tick(GetOffHandController(), head, IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
-                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning), _settings.LaserTiltDegrees, nowSeconds, Time.deltaTime);
+                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning, _strip.IsAskingForNewStrip), _settings.LaserTiltDegrees, nowSeconds, Time.deltaTime);
 
             if (OVRInput.GetDown(MenuButton, OVRInput.Controller.Touch))
             {
@@ -309,6 +310,7 @@ namespace VrFencing.UI
             _calibrationTarget = new CalibrationTargetView(transform);
             _results = new ResultsScreen(_mainPanel, RunAgain, () => OpenPage(MenuScreen.History), () => OpenPage(MenuScreen.Home));
             _history = new HistoryScreen(_mainPanel, () => OpenPage(MenuScreen.Home));
+            _newStripScreen = new NewStripScreen(_mainPanel, () => _strip.PlaceNewStrip(), () => _strip.KeepLastStrip());
 
             _runningPanelRoot = new GameObject("Running Panel").transform;
             _runningPanelRoot.SetParent(transform, false);
@@ -343,6 +345,7 @@ namespace VrFencing.UI
             _results.SetVisible(screen == MenuScreen.Results);
             _history.SetVisible(screen == MenuScreen.History);
             _gripScreen.SetVisible(screen == MenuScreen.Grip);
+            _newStripScreen.SetVisible(screen == MenuScreen.NewStripPrompt);
             _shownScreen = screen;
             _isDirty = true;
         }
@@ -362,6 +365,9 @@ namespace VrFencing.UI
                     break;
                 case MenuScreen.Grip:
                     _gripScreen.Refresh(_settings, _gripMessage);
+                    break;
+                case MenuScreen.NewStripPrompt:
+                    _newStripScreen.Refresh(_strip.NewStripQuestionDetails);
                     break;
                 case MenuScreen.History:
                     var history = _sessionRecorder.LoadHistory();

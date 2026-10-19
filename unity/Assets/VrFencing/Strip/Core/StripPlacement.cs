@@ -6,11 +6,11 @@ namespace VrFencing.Strip
     /// <summary>Which press two-point placement is waiting for.</summary>
     public enum PlacementStep
     {
-        /// <summary>The first press sets the En Garde Line.</summary>
+        /// <summary>The first press sets the Fencer's En Garde Line.</summary>
         EnGardeLine,
 
-        /// <summary>The second press sets the far end, and with it direction and length.</summary>
-        FarEnd,
+        /// <summary>The second press sets the Dummy's En Garde Line, and with it the Strip's direction and the gap between the lines.</summary>
+        DummyEnGardeLine,
 
         /// <summary>Both points are set; <see cref="StripPlacement.Result"/> holds the Strip.</summary>
         Done,
@@ -24,14 +24,17 @@ namespace VrFencing.Strip
         /// <summary>The Strip is placed.</summary>
         Placed,
 
-        /// <summary>The far end was closer than <see cref="StripGeometry.MinimumPlacedLengthMeters"/> to the En Garde Line; still waiting for it.</summary>
-        TooShort,
+        /// <summary>
+        /// The Dummy's En Garde Line was closer than <see cref="StripGeometry.MinimumPlacedLengthMeters"/> to the
+        /// Fencer's, too close to give a direction; still waiting for it.
+        /// </summary>
+        TooClose,
 
         /// <summary>Placement was already done; the press changed nothing.</summary>
         Ignored,
     }
 
-    /// <summary>A placed Strip: where its En Garde Line is in the room, and how far the far end is from it.</summary>
+    /// <summary>A placed Strip: where the Fencer's En Garde Line is in the room, and how far the Dummy's En Garde Line is from it.</summary>
     public readonly struct PlacedStrip
     {
         public PlacedStrip(TrackedPose enGardeLine, float placedLengthMeters)
@@ -40,15 +43,17 @@ namespace VrFencing.Strip
             PlacedLengthMeters = placedLengthMeters;
         }
 
-        /// <summary>The Strip frame's pose in the room.</summary>
+        /// <summary>The Strip frame's pose in the room: the Fencer's En Garde Line, facing the Dummy's.</summary>
         public TrackedPose EnGardeLine { get; }
 
+        /// <summary>The gap between the Fencer's and the Dummy's En Garde Lines.</summary>
         public float PlacedLengthMeters { get; }
     }
 
     /// <summary>
-    /// Two-point placement as a small state machine. The Unity layer feeds it the off-hand controller's position on
-    /// each trigger press; points are dropped to the floor.
+    /// Two-point placement as a small state machine (PER-90): the first press marks the Fencer's En Garde Line, the
+    /// second the Dummy's, and the Strip is built around the two (<see cref="StripGeometry"/>). The Unity layer feeds it
+    /// the off-hand controller's position on each trigger press; points are dropped to the floor.
     /// </summary>
     public sealed class StripPlacement
     {
@@ -69,14 +74,14 @@ namespace VrFencing.Strip
             {
                 case PlacementStep.EnGardeLine:
                     _enGardePoint = controllerPositionInRoom;
-                    Step = PlacementStep.FarEnd;
+                    Step = PlacementStep.DummyEnGardeLine;
                     return PlacementPressOutcome.EnGardeLineSet;
 
-                case PlacementStep.FarEnd:
+                case PlacementStep.DummyEnGardeLine:
                     var preview = Preview(controllerPositionInRoom);
                     if (!preview.HasValue)
                     {
-                        return PlacementPressOutcome.TooShort;
+                        return PlacementPressOutcome.TooClose;
                     }
 
                     Result = preview;
@@ -90,11 +95,11 @@ namespace VrFencing.Strip
 
         /// <summary>
         /// The Strip the second press would place with the controller at <paramref name="controllerPositionInRoom"/>,
-        /// for a live preview; null before the En Garde Line is set or while the far end is too close.
+        /// for a live preview; null before the Fencer's En Garde Line is set or while the two lines are too close.
         /// </summary>
         public PlacedStrip? Preview(Vector3 controllerPositionInRoom)
         {
-            if (Step != PlacementStep.FarEnd)
+            if (Step != PlacementStep.DummyEnGardeLine)
             {
                 return null;
             }

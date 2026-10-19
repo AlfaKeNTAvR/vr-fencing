@@ -191,6 +191,21 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void NewStripHereIsAskedOverThePageEvenWhenFolded()
+        {
+            var navigator = new MenuNavigator();
+            navigator.Open(MenuScreen.Settings);
+            navigator.SetCollapsed(true);
+
+            Assert.That(navigator.GetShownPanel(false, false, isAskingForNewStrip: true), Is.EqualTo(MenuScreen.NewStripPrompt));
+            Assert.That(navigator.IsPointerShown(false, false, isAskingForNewStrip: true), Is.True, "The laser answers it.");
+            Assert.That(navigator.GetShownPanel(isPlacingStrip: true, isDrillRunning: false, isAskingForNewStrip: true), Is.EqualTo(MenuScreen.Hidden));
+
+            navigator.SetCollapsed(false);
+            Assert.That(navigator.GetShownPanel(false, false, isAskingForNewStrip: false), Is.EqualTo(MenuScreen.Settings), "Answered: back to the page.");
+        }
+
+        [Test]
         public void AFinishedDrillShowsItsResultsEvenWhenFolded()
         {
             var navigator = new MenuNavigator();
