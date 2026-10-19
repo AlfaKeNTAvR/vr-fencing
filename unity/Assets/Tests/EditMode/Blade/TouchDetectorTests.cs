@@ -111,7 +111,8 @@ namespace VrFencing.Tests.Blade
             var events = Run(new[] { AcrossAt(center.Z - 0.2f), AcrossAt(center.Z + 0.2f) }, zones, TouchRules.Strict);
 
             Assert.That(events.Select(e => e.Type), Is.EqualTo(new[] { BladeEventType.FlatContact }));
-            Assert.That(float.IsNaN(events[0].ApproachAngleDegrees), Is.True);
+            Assert.That(events[0].ApproachAngleDegrees, Is.InRange(0.0f, 10.0f), "Swept straight into the zone.");
+            Assert.That(events[0].BladeAxisAngleDegrees, Is.EqualTo(90.0f).Within(10.0f), "The blade lies across the normal.");
             Assert.That(events[0].DistanceFromZoneCenterMeters, Is.EqualTo(0.1f).Within(0.01f));
         }
 
