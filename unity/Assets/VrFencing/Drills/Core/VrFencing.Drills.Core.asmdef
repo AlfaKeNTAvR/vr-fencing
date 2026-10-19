@@ -1,7 +1,9 @@
 {
     "name": "VrFencing.Drills.Core",
     "rootNamespace": "VrFencing.Drills",
-    "references": [],
+    "references": [
+        "VrFencing.Dummy.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
