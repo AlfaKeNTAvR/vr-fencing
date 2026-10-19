@@ -20,7 +20,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 | Newtonsoft Json `com.unity.nuget.newtonsoft-json` | 3.2.2 | Unity registry (JSON for the Core assemblies; already a dependency of MR Utility Kit and MCP for Unity, now pinned directly) |
 | MCP for Unity `com.coplaydev.unity-mcp` | 10.3.0 | git tag `v10.3.0` of `CoplayDev/unity-mcp` |
 
-- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene. Meta's camera rig with passthrough as the background, and a 10 cm reference cube 1 m in front at 1.2 m height, so a screenshot shows virtual content over the real room.
+- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene. Meta's camera rig with passthrough as the background, and a 10 cm reference cube 1 m in front at 1.2 m height, so a screenshot shows virtual content over the real room. The Dummy stands at lunge distance from the scene origin, which stands in for the En Garde Line until the Strip exists; it reads the Fencer's height and hand from the settings file at start.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
 - Android package id: `com.alfakentavr.vrfencing`.
 

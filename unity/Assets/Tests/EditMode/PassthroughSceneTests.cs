@@ -21,5 +21,16 @@ namespace VrFencing.Tests
             Assert.That(manager.trackingOriginType, Is.EqualTo(OVRManager.TrackingOrigin.FloorLevel),
                 "Eye-level origin puts scene heights relative to the head, not the floor.");
         }
+
+        [Test]
+        public void SceneHasTheDummy()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var dummy = Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>();
+
+            Assert.That(dummy, Is.Not.Null, "No Dummy in the passthrough scene.");
+            Assert.That(dummy.enabled, Is.True);
+        }
     }
 }

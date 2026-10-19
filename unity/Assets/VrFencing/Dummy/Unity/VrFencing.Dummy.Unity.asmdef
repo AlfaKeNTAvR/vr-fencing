@@ -2,7 +2,9 @@
     "name": "VrFencing.Dummy.Unity",
     "rootNamespace": "VrFencing.Dummy",
     "references": [
-        "VrFencing.Dummy.Core"
+        "VrFencing.Dummy.Core",
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

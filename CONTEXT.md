@@ -52,6 +52,10 @@ _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 A named part of the Dummy that a Drill asks the Fencer to Touch: hand, wrist, forearm, upper arm, thigh, foot or body.
 _Avoid_: Hitbox, area
 
+**Dummy Distance**:
+How far the Dummy stands from the Fencer along the Strip, front foot to front foot, named by the action the Fencer needs to Touch its body: extension, lunge or step-lunge distance. Scales with the Fencer's height.
+_Avoid_: Range, measure
+
 **Armed Dummy**:
 The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills.
 _Avoid_: Floating blade, bot, enemy sword, opponent (reserved for a full virtual fencer)
