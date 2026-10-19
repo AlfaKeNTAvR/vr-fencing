@@ -40,6 +40,14 @@ _Avoid_: Trial, round
 One practice sitting, from app launch to close. It can hold several Drill runs; the results history and its last-10-sessions trend count Sessions.
 _Avoid_: Workout, practice (as a noun for this)
 
+**Glance**:
+The point reaching a Target Zone without counting as a Touch: arriving sideways, with the blade not pointing in, or too slowly. Felt as a light tick, never scored.
+_Avoid_: Miss (a Rep with no contact), near-touch
+
+**Flat Contact**:
+The side of the blade, not the point, crossing a Target Zone. Never a Touch.
+_Avoid_: Slap, hit
+
 **Target**:
 A virtual object the Fencer aims Touches at.
 _Avoid_: goal
