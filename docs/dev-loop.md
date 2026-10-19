@@ -26,17 +26,66 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 
 ## The scripts (repo root, bash, run from Git Bash)
 
-All three drive Unity without opening its window. **They fail if the project is already open in the Unity Editor**: close the Editor first, or ask Claude to use the Unity MCP instead. Output goes to `Builds/` (gitignored).
+The three Unity scripts drive Unity without opening its window. **They fail if the project is already open in the Unity Editor**: close the Editor first, or ask Claude to use the Unity MCP instead. They take the shared Unity lock and use the import cache when it is running (see "Dev machine setup"). Output goes to `Builds/` (gitignored).
 
 | Script | What it does | Output |
 |---|---|---|
-| `scripts/run-editmode-tests.sh` | Runs the Edit-mode tests | `Builds/test-results/editmode.xml` (NUnit XML), pass/fail counts printed, non-zero exit on failure |
+| `scripts/run-core-tests.sh` | Runs the Edit-mode tests that need no Unity, with `dotnet test`, in seconds. No Unity, no lock | `Builds/test-results/core-tests.trx`, pass/fail counts printed, non-zero exit on failure |
+| `scripts/run-editmode-tests.sh` | Runs all Edit-mode tests in Unity (the merge gate) | `Builds/test-results/editmode.xml` (NUnit XML), pass/fail counts printed, non-zero exit on failure |
 | `scripts/build-apk.sh` | Builds a Development APK | `Builds/Android/vr-fencing-dev.apk` |
 | `scripts/setup-quest-project.sh` | Re-applies the Quest settings and runs Meta's Project Setup Tool "Fix All" (except downloading the XR Simulator installer) | `Builds/logs/project-setup-report.json` lists what is still open |
 
 Logs for each run: `Builds/logs/*.log`. Run the setup script again after upgrading Meta packages. If Unity is not at the default Hub path, set `UNITY_EDITOR=/path/to/Unity.exe`.
 
 A Development Build is used on purpose: Meta XR Operator (the agent's "hands and eyes" inside the running app) is only included in Development Builds.
+
+## Dev machine setup
+
+Two to three coding agents work in parallel, each in its own git worktree, and take turns for Unity. Two user-level installs (PER-26, 2026-10-19) make that cheap.
+
+### The two installs
+
+1. **.NET SDK** (10.0.402), user-level through scoop: `scoop install dotnet-sdk`. It lands in `~\scoop\apps\dotnet-sdk\current`, and scoop sets the user variables `DOTNET_ROOT` and `MSBuildSDKsPath`. An older x86 runtime in `C:\Program Files (x86)\dotnet` can stay; `scripts/run-core-tests.sh` picks the scoop SDK first anyway (or `DOTNET=/path/to/dotnet.exe`). Used only for the fast Core tests.
+2. **Unity Accelerator** v1.5.137, the local import cache: the Windows x64 installer from [Unity's download page](https://docs.unity3d.com/Manual/accelerator-download.html) (`unity-accelerator-v1.5.137+g4eddaf6a-windows-x64-installer.exe`). It needs admin rights, so a person runs it once. Installer choices: the defaults, plus security "allow insecure access with no encryption" (it is only used from this laptop), a dashboard admin login (kept in a password manager, never in the repo or a ticket), and **deny** the Windows Firewall prompt so only this laptop can reach it. It runs as a Windows service listening on `0.0.0.0:10080` (the installer reports it as `<machine name>:10080`); the scripts use `127.0.0.1:10080`. A fresh worktree then imports its ~13 GB `Library` from the cache in minutes instead of 1 to 3 hours.
+
+To reproduce on a new machine: do both installs as above, open a new Git Bash (so the new PATH and variables are seen), and check:
+
+```bash
+~/scoop/apps/dotnet-sdk/current/dotnet.exe --version     # 10.0.402 or later
+timeout 2 bash -c 'exec 3<> /dev/tcp/127.0.0.1/10080' && echo "Accelerator listening"
+scripts/run-core-tests.sh                                 # passes in under a minute
+```
+
+### The import cache
+
+The Unity scripts probe `127.0.0.1:10080` (2 s at most) before starting Unity. When the Accelerator answers they pass `-EnableCacheServer -cacheServerEndpoint 127.0.0.1:10080 -cacheServerEnableDownload true -cacheServerEnableUpload true -cacheServerWaitForUploadCompletion`, so imports download from the cache and new imports are uploaded before Unity quits. When it does not answer they print "Accelerator not reachable" and import without it, as before. The flags live in the scripts, not in the project's Editor settings, so `QuestProjectSetup` cannot undo them. `UNITY_CACHE_SERVER=off` turns it off for one run; `UNITY_CACHE_SERVER=host:port` points elsewhere.
+
+### The Unity lock
+
+The laptop has RAM for one Unity process. Every Unity script takes a shared lock before it starts Unity and frees it when Unity exits (also on Ctrl+C or an error, which stops that Unity). The lock is the folder `vr-fencing-unity.lock` in the main repo's git directory (`git rev-parse --git-common-dir`, so every worktree sees the same one); its `owner` file holds the script, worktree, start time and the Windows PIDs of the script's shell and of Unity. A second script waits and prints who holds the lock once a minute:
+
+```
+Unity lock: waiting 60s for build-apk.sh (worktree /c/.../worktrees/agent-x, since 2026-10-19T19:19:15Z, shell PID 59328)
+```
+
+A lock whose shell and Unity are both gone (a crashed or killed holder) is stale: the next script removes it and goes on. Remove it by hand only if no Unity is running: `rm -rf "$(git rev-parse --git-common-dir)/vr-fencing-unity.lock"`. The lock covers the scripts only, not a Unity Editor window opened by hand. `UNITY_LOCK_DIR` overrides the location.
+
+### The fast Core tests
+
+`scripts/run-core-tests.sh` compiles the Core assemblies (every asmdef with `noEngineReferences`) and the Edit-mode test files that need no Unity into one test project, `tools/CoreTests/CoreTests.csproj` (outside `unity/Assets`, so Unity never imports it), and runs them with `dotnet test`: about 15 s, 546 tests as of PER-85 (the Unity run has those plus the Unity-side ones). It uses Newtonsoft.Json 13.0.2 from NuGet (the version Unity's `com.unity.nuget.newtonsoft-json` 3.2.2 ships), NUnit 3 and C# 9, as Unity does. The first run downloads those packages from nuget.org into the user's NuGet cache.
+
+A test file is left out automatically when it uses `UnityEngine`, `UnityEditor`, `TMPro`, `Oculus` or `Meta`, names a type declared in a Unity assembly or `Assets/Editor`, or names a helper from a test file that was left out. `ModuleLayoutTests.cs` is left out by name (it checks the assemblies the Editor loads); add others to `MANUAL_EXCLUSIONS` in the script. `scripts/run-core-tests.sh --list` prints which files run and why the others do not. Extra arguments go to `dotnet test`, for example `scripts/run-core-tests.sh --filter FullyQualifiedName~Blade`.
+
+Use it while iterating; `scripts/run-editmode-tests.sh` in Unity stays the gate before a merge.
+
+### Rules for parallel agents
+
+- One ticket per worktree, on its own branch.
+- Avoid running tickets at the same time that touch the same files.
+- Iterate with `scripts/run-core-tests.sh`; it needs no lock and runs in any number of worktrees at once.
+- Only one Unity process at a time: always go through the scripts (they take the lock), and do not open the Editor while an agent runs one.
+- Rebase onto the latest `main` before the Unity gate (Edit-mode tests and the APK build), so the gate tests what will be merged.
+- Merge one branch at a time; the next one rebases and passes the gate again.
 
 ## Installing on the headset
 
