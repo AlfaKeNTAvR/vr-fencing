@@ -21,7 +21,7 @@ mkdir -p "$LOG_DIR"
 echo "Applying Quest project setup (log: $log_file)"
 status=0
 # No -quit: the setup method exits itself after the asynchronous Fix All finishes.
-"$UNITY_EDITOR" -batchmode -nographics \
+run_unity -batchmode -nographics \
     -projectPath "$(to_native_path "$PROJECT_DIR")" \
     -buildTarget Android \
     -executeMethod VrFencing.EditorTools.QuestProjectSetup.ApplyInBatchmode \
