@@ -48,6 +48,10 @@ _Avoid_: Trial, round
 One practice sitting, from app launch to close. It can hold several Drill runs; the results history and its last-10-sessions trend count Sessions.
 _Avoid_: Workout, practice (as a noun for this)
 
+**Fencer Recording**:
+A capture of the Fencer's tracked body, head and sword-hand controller, frame by frame in the Strip frame, made on the headset and replayed in the PC Editor as a moving opponent.
+_Avoid_: Replay file, motion capture, take
+
 **Glance**:
 The point reaching a Target Zone without counting as a Touch: arriving sideways, with the blade not pointing in, too slowly, or too lightly (a brush that never presses the point in). Felt as a light tick, never scored.
 _Avoid_: Miss (a Rep with no contact), near-touch
