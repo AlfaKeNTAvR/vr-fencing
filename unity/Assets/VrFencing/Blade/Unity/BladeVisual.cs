@@ -7,7 +7,8 @@ namespace VrFencing.Blade
 {
     /// <summary>
     /// Draws the épée on its mount transform (front of the guard at the origin, blade along +z): grip and pommel behind
-    /// the guard, the bell guard, a tapering blade drawn in pieces so it can bend (<see cref="DrawnBlade"/>), and a red
+    /// the guard, the bell guard, a tapering blade of triangular section (like a real épée's, flat face up on the grip)
+    /// drawn as one mesh along the drawn centerline so it can bend (<see cref="DrawnBlade"/>), and a red
     /// point that flashes on a Touch or glance. While the drawn blade lags the hand (bent as far as it goes, or held off
     /// a body), the hilt is drawn where the blade stops and a faint ghost hilt shows where the hand really is. Primitives get the URP material from Resources; the default primitive
     /// material is not URP and renders magenta and doubled per eye on the Quest.
@@ -17,8 +18,11 @@ namespace VrFencing.Blade
         private const string MaterialResourcePath = "VrFencingBlade";
         private const string GhostMaterialResourcePath = "VrFencingBladeGhost";
         private const int BladePieceCount = DrawnBlade.SampleCount;
-        private const float BladeBaseDiameterMeters = 0.010f;
-        private const float BladePointDiameterMeters = 0.005f;
+        // The triangle's side at the guard and at the point: an épée blade is about 1 cm across at the forte and a few
+        // millimeters at the point.
+        private const float BladeBaseSideMeters = 0.011f;
+        private const float BladePointSideMeters = 0.004f;
+        private const int CrossSectionCorners = 3;
         private const float PointDiameterMeters = 0.009f;
         private const float PointLengthMeters = 0.015f;
         private const float GripDiameterMeters = 0.024f;
@@ -38,7 +42,9 @@ namespace VrFencing.Blade
         private readonly Transform _mount;
         private readonly Transform _hilt;
         private readonly GameObject _ghost;
-        private readonly Transform[] _bladePieces = new Transform[BladePieceCount];
+        private readonly Mesh _bladeMesh;
+        private readonly Vector3[] _bladeVertices = new Vector3[(BladePieceCount + 1) * CrossSectionCorners * 2];
+        private readonly Vector3[] _centerline = new Vector3[BladePieceCount + 1];
         private readonly Transform _point;
         private readonly Renderer _pointRenderer;
         private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
@@ -70,10 +76,7 @@ namespace VrFencing.Blade
             CreateHilt(_ghost.transform, ghostMaterial, GhostColor, GhostColor);
             _ghost.SetActive(false);
 
-            for (var index = 0; index < BladePieceCount; index++)
-            {
-                _bladePieces[index] = CreatePart(PrimitiveType.Cylinder, $"Blade {index}", _mount, material, BladeColor, Vector3.zero, Quaternion.identity, Vector3.one).transform;
-            }
+            _bladeMesh = CreateBladeMesh(_mount, material);
 
             _pointRenderer = CreatePart(PrimitiveType.Cylinder, "Point", _mount, material, PointColor, Vector3.zero, Quaternion.identity, Vector3.one);
             _point = _pointRenderer.transform;
@@ -107,13 +110,12 @@ namespace VrFencing.Blade
                 _ghost.SetActive(drawnBlade.IsDecoupled);
             }
 
-            for (var index = 0; index < BladePieceCount; index++)
+            for (var index = 0; index <= BladePieceCount; index++)
             {
-                var start = ToMount(stripInRoom, drawnBlade.GetSample(index));
-                var end = ToMount(stripInRoom, drawnBlade.GetSample(index + 1));
-                var diameter = Mathf.Lerp(BladeBaseDiameterMeters, BladePointDiameterMeters, (index + 0.5f) / BladePieceCount);
-                PlaceAlong(_bladePieces[index], start, end, diameter);
+                _centerline[index] = ToMount(stripInRoom, drawnBlade.GetSample(index));
             }
+
+            UpdateBladeMesh();
 
             var tip = ToMount(stripInRoom, drawnBlade.GetCenterlinePoint(1.0f));
             var beforeTip = ToMount(stripInRoom, drawnBlade.GetCenterlinePoint(0.98f));
@@ -134,6 +136,11 @@ namespace VrFencing.Blade
 
         public void Dispose()
         {
+            if (_bladeMesh != null)
+            {
+                UnityEngine.Object.Destroy(_bladeMesh);
+            }
+
             if (_mount != null)
             {
                 UnityEngine.Object.Destroy(_mount.gameObject);
@@ -153,6 +160,90 @@ namespace VrFencing.Blade
             piece.localPosition = (start + end) * 0.5f;
             piece.localRotation = length > 1e-6f ? Quaternion.FromToRotation(Vector3.up, axis / length) : Quaternion.identity;
             piece.localScale = new Vector3(diameter, length * 0.5f, diameter);
+        }
+
+        /// <summary>
+        /// The blade's mesh: a triangle around every centerline point, its flat face toward the mount's up, tapering to
+        /// the point. Each face has its own vertices so it shades flat, like the blade's faces.
+        /// </summary>
+        private Mesh CreateBladeMesh(Transform parent, Material material)
+        {
+            var blade = new GameObject("Blade");
+            blade.transform.SetParent(parent, false);
+            var mesh = new Mesh { name = "Blade" };
+            mesh.MarkDynamic();
+            mesh.vertices = _bladeVertices;
+            var triangles = new int[BladePieceCount * CrossSectionCorners * 6];
+            var cursor = 0;
+            for (var piece = 0; piece < BladePieceCount; piece++)
+            {
+                for (var face = 0; face < CrossSectionCorners; face++)
+                {
+                    // Face `face` runs from corner `face` to the next; vertex (ring, face, 0 or 1) at FaceVertex.
+                    var a = FaceVertex(piece, face, 0);
+                    var b = FaceVertex(piece, face, 1);
+                    var c = FaceVertex(piece + 1, face, 0);
+                    var d = FaceVertex(piece + 1, face, 1);
+                    // Wound so Unity's normal, Cross(second - first, third - first), points out of the blade.
+                    triangles[cursor++] = a;
+                    triangles[cursor++] = b;
+                    triangles[cursor++] = c;
+                    triangles[cursor++] = b;
+                    triangles[cursor++] = d;
+                    triangles[cursor++] = c;
+                }
+            }
+
+            mesh.triangles = triangles;
+            blade.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var bladeRenderer = blade.AddComponent<MeshRenderer>();
+            if (material != null)
+            {
+                bladeRenderer.sharedMaterial = material;
+            }
+            else
+            {
+                bladeRenderer.enabled = false;
+            }
+
+            bladeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            bladeRenderer.receiveShadows = false;
+            SetColor(bladeRenderer, BladeColor);
+            return mesh;
+        }
+
+        private static int FaceVertex(int ring, int face, int end)
+        {
+            return (((ring * CrossSectionCorners) + face) * 2) + end;
+        }
+
+        private void UpdateBladeMesh()
+        {
+            for (var ring = 0; ring <= BladePieceCount; ring++)
+            {
+                var before = _centerline[Mathf.Max(0, ring - 1)];
+                var after = _centerline[Mathf.Min(BladePieceCount, ring + 1)];
+                var tangent = after - before;
+                tangent = tangent.sqrMagnitude > 1e-12f ? tangent.normalized : Vector3.forward;
+                var up = Vector3.ProjectOnPlane(Vector3.up, tangent);
+                up = up.sqrMagnitude > 1e-8f ? up.normalized : Vector3.ProjectOnPlane(Vector3.right, tangent).normalized;
+                var side = Vector3.Cross(up, tangent);
+
+                // An equilateral triangle: a flat face on top (two upper corners), the third corner below.
+                var sideLength = Mathf.Lerp(BladeBaseSideMeters, BladePointSideMeters, (float)ring / BladePieceCount);
+                var circumradius = sideLength / Mathf.Sqrt(3.0f);
+                for (var corner = 0; corner < CrossSectionCorners; corner++)
+                {
+                    var angle = (90.0f + 60.0f + (corner * 120.0f)) * Mathf.Deg2Rad;
+                    var position = _centerline[ring] + (((Mathf.Cos(angle) * side) + (Mathf.Sin(angle) * up)) * circumradius);
+                    _bladeVertices[FaceVertex(ring, corner, 0)] = position;
+                    _bladeVertices[FaceVertex(ring, (corner + CrossSectionCorners - 1) % CrossSectionCorners, 1)] = position;
+                }
+            }
+
+            _bladeMesh.vertices = _bladeVertices;
+            _bladeMesh.RecalculateNormals();
+            _bladeMesh.RecalculateBounds();
         }
 
         /// <summary>Guard, grip and pommel behind the guard's front at <paramref name="parent"/>'s origin, the blade along +z.</summary>

@@ -24,9 +24,13 @@ namespace VrFencing.Blade
     /// stopped (the haptics stand in) and Touch detection still uses the straight blade.
     ///
     /// <list type="bullet">
-    /// <item>The drawn blade is one smooth curve of the blade's full length (<see cref="BladeArc"/>) that leaves the
-    /// guard along the hand and ends on the pin. It bends in the plane of the push: sideways when the pin is off the
-    /// hand's line, bowing out when pushed straight in (toward the given bow direction, then wherever it last bowed).</item>
+    /// <item>The drawn blade is the elastica of a blade clamped at the guard and pinned at the point (<see cref="BladeArc"/>,
+    /// PER-50): one smooth curve of the blade's full length that leaves the guard along the hand, ends on the pin, and
+    /// has no curvature at the point. It bends in the plane of the hand's blade and the line to the point, and bulges to
+    /// the side the hand's blade points to from that line, so it curves over toward the point. Pushed straight in, the
+    /// side is the blade's set (toward the grip's palm side, turning with the wrist) unless the hand is moving sideways
+    /// (it bulges the way the hand moves). The side holds through a press (hysteresis) and changes only when the point
+    /// is clearly on the other side of the hand's line (<see cref="FlipMeters"/>), or that side is blocked by a body.</item>
     /// <item>The point slides along the surface, never through it, when the blade turns more than
     /// <see cref="MaxSidewaysDegrees"/> off the line from the guard to the point (friction gives way).</item>
     /// <item>The curve never bends more than <see cref="BladeArc.MaxCurvaturePerMeter"/> (the bow of
@@ -44,10 +48,16 @@ namespace VrFencing.Blade
     public sealed class BladeContactBend
     {
         /// <summary>
-        /// The most push the drawn blade bows for: about the deepest bow of a real épée pressed hard (10-15 cm of push,
-        /// PER-48). Past it the drawn blade lags the hand.
+        /// The most push the drawn blade bows for: a real épée on a hard Touch bows in one big arc (PER-50 reference
+        /// images); 20 cm of push straight in bulges it about 24 cm. Past it the drawn blade lags the hand.
         /// </summary>
-        public const float MaxPushMeters = 0.15f;
+        public const float MaxPushMeters = 0.20f;
+
+        /// <summary>
+        /// The bulge changes side during a press only once the point is this far past the hand's line on the bulge's
+        /// side: closer, tracking jitter or a small wobble would flip it back and forth.
+        /// </summary>
+        public const float FlipMeters = 0.03f;
 
         /// <summary>
         /// Friction at the point: the largest angle between the hand's blade and the line from the guard to the pinned
@@ -71,12 +81,15 @@ namespace VrFencing.Blade
         private const int ClearPathSamples = 10;
         private const int SearchSteps = 24;
 
-        // The bow plane follows the line to the point once that is this far off the blade; nearer the blade, it keeps
-        // where it last bowed, so tracking jitter on a straight push does not swing the bow around.
+        // Past the band round the hand's line, the bow plane turns toward the point gradually: it weighs the last plane
+        // as this much more offset, so it does not swing round at once.
         private const float PlaneSettleMeters = 0.02f;
 
-        // A first guess that bows the blade toward the bow direction when it is pushed straight in.
-        private const float StartingBow = 0.5f;
+        // The blade's set: a real épée carries a slight bend so it buckles the same way every time. Ours bulges toward
+        // the grip's palm side (away from the thumb, which pushes on the top of a French or pistol grip), weighted as
+        // this much sideways point motion in one frame: a point moving sideways faster than about 0.4 m/s at 72 Hz as
+        // it lands decides instead (the blade drags behind the hand).
+        private const float SetBiasMeters = 0.005f;
 
         private readonly Vector3[] _samples = new Vector3[DrawnBlade.SampleCount + 1];
         private readonly Vector3[] _candidate = new Vector3[DrawnBlade.SampleCount + 1];
@@ -88,12 +101,12 @@ namespace VrFencing.Blade
         private bool _hasShape;
         private Vector3 _guardDirection = Vector3.UnitZ;
         private Vector3 _fallbackDirection = Vector3.UnitZ;
-        private Vector3 _bowDirection = Vector3.UnitY;
+        private Vector3 _bowDirection = -Vector3.UnitY;
         private Vector3 _candidateBowDirection;
-        private float _sidewaysAmount;
-        private float _bowAmount;
-        private float _candidateSideways;
-        private float _candidateBow;
+        private ElasticaShape _shape;
+        private ElasticaShape _candidateShape;
+        private Vector3 _lastGripUp = Vector3.UnitY;
+        private Vector3 _lastBladeDirection = Vector3.UnitZ;
         private float _bowMeters;
         private IReadOnlyList<BladeObstacle> _bodies;
         private Vector3[] _drawnBefore;
@@ -139,13 +152,13 @@ namespace VrFencing.Blade
         /// or, while pinned, slides it, checks for release and reshapes the drawn blade.
         /// </summary>
         /// <param name="bodies">Every obstacle the blade cannot pass, in the blade's frame, in the same order every step.</param>
-        /// <param name="bowDirection">Which way the blade bows when first pushed straight in (the grip's up); made perpendicular to the blade.</param>
+        /// <param name="gripUp">The grip's up (the thumb's side): the blade's set bulges it the other way when pushed straight in.</param>
         /// <param name="drawnBefore">
         /// The blade as drawn before this step (<see cref="DrawnBlade.SampleCount"/> + 1 points), if any: a new pin is only
         /// taken when the pinned shape can be reached from it without passing through a body.
         /// </param>
         /// <returns>Why the point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection, Vector3[] drawnBefore = null)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, Vector3[] drawnBefore = null)
         {
             if (bodies == null)
             {
@@ -165,6 +178,8 @@ namespace VrFencing.Blade
                     return release;
                 }
 
+                // The blade is clamped in the hand: rolling the wrist turns the bulge with it.
+                _bowDirection = TurnWithGrip(_bowDirection, straightBlade.Direction, gripUp);
                 SlideIfPastFriction(straightBlade, bodies[_pinnedBody]);
                 Reshape(straightBlade, bodies);
                 return PinRelease.None;
@@ -177,9 +192,10 @@ namespace VrFencing.Blade
                 _pinnedBody = body;
                 _hasShape = false;
                 _fallbackDirection = straightBlade.Direction;
-                _bowDirection = FindPerpendicularDirection(bowDirection, straightBlade.Direction);
-                _sidewaysAmount = 0.0f;
-                _bowAmount = StartingBow;
+                _bowDirection = FindStartingBow(straightBlade.Direction, gripUp, tip - previousTip.Value);
+                _lastBladeDirection = straightBlade.Direction;
+                _lastGripUp = gripUp;
+                _shape = default;
                 _drawnBefore = drawnBefore;
                 var isShaped = Reshape(straightBlade, bodies);
                 _drawnBefore = null;
@@ -342,15 +358,14 @@ namespace VrFencing.Blade
             _hasShape = true;
             _guardDirection = pose.Direction;
             _bowDirection = _candidateBowDirection;
-            _sidewaysAmount = _candidateSideways;
-            _bowAmount = _candidateBow;
+            _shape = _candidateShape;
             _bowMeters = FindBowMeters();
         }
 
         /// <summary>
-        /// Builds the curve from <paramref name="pose"/>'s guard to the pin into the candidate shape and says whether it
-        /// is allowed: it reaches the pin, bends within the limits, and is outside every body. If the side it bows to is
-        /// blocked, it tries bowing to the other side.
+        /// Builds the elastica from <paramref name="pose"/>'s guard to the pin into the candidate shape and says whether
+        /// it is allowed: it reaches the pin, bends within the limits, and is outside every body. If the side it bulges
+        /// to cannot reach the pin or is blocked, it tries the other side (the blade snaps through).
         /// </summary>
         private bool TryShape(BladeSegment pose)
         {
@@ -362,30 +377,26 @@ namespace VrFencing.Blade
             }
 
             var across = FindBowPlane(direction, chord);
-            var sideways = _sidewaysAmount;
-            var bow = _bowAmount;
-            if (BuildCandidate(pose.GuardPosition, direction, across, chord, sideways, bow))
-            {
-                return true;
-            }
-
-            return BuildCandidate(pose.GuardPosition, direction, across, chord, 0.0f, _bowAmount >= 0.0f ? -StartingBow : StartingBow);
+            return BuildCandidate(pose.GuardPosition, direction, across, chord, _shape)
+                || BuildCandidate(pose.GuardPosition, direction, -across, chord, default);
         }
 
-        private bool BuildCandidate(Vector3 guard, Vector3 direction, Vector3 across, Vector3 chord, float sideways, float bow)
+        private bool BuildCandidate(Vector3 guard, Vector3 direction, Vector3 across, Vector3 chord, ElasticaShape start)
         {
             var along = Vector3.Dot(chord, direction);
             var acrossAmount = Vector3.Dot(chord, across);
-            if (!BladeArc.TrySolve(along, acrossAmount, ref sideways, ref bow)
-                || BladeArc.FindMaxCurvature(sideways, bow) > BladeArc.MaxCurvaturePerMeter)
+            var shape = start;
+            if (!BladeArc.TrySolve(along, acrossAmount, ref shape)
+                || BladeArc.FindMaxCurvature(shape) > BladeArc.MaxCurvaturePerMeter)
             {
                 return false;
             }
 
-            BladeArc.FillSamples(guard, direction, across, sideways, bow, _candidate);
+            BladeArc.FillSamples(guard, direction, across, shape, _candidate);
 
             // Put the end exactly on the pin: the small rest (solver tolerance, and the part of the line to the point out
-            // of the bow plane) is spread in like a light sideways push, zero at the guard.
+            // of the bend plane while the bulge holds its side) is spread in like a light sideways push: zero at the
+            // guard, and no curvature at the point.
             var rest = _pinnedPoint - _candidate[DrawnBlade.SampleCount];
             for (var index = 1; index <= DrawnBlade.SampleCount; index++)
             {
@@ -394,29 +405,65 @@ namespace VrFencing.Blade
             }
 
             _candidateBowDirection = across;
-            _candidateSideways = sideways;
-            _candidateBow = bow;
+            _candidateShape = shape;
             // The point's own path is the slide's, along the surface; only the rest of the blade is swept here.
             return _bodies.Count == 0
                 || DrawnShape.IsClear(_candidate, _hasShape ? _samples : _drawnBefore, _bodies, DrawnBlade.BladeRadiusMeters, 1, sweepsTip: false);
         }
 
         /// <summary>
-        /// The bow plane's sideways direction (perpendicular to the blade at the guard): toward the point when it is well
-        /// off the blade's line, else where the blade last bowed; turned on the same side as the last, so a point
-        /// crossing the line does not flip the bow over.
+        /// The side the blade bulges to (perpendicular to the blade at the guard). Naturally, away from where the point is
+        /// off the hand's line, so the blade curves over toward the point; within <see cref="FlipMeters"/> of the line it
+        /// keeps the plane and side it had (the set, or where it last bulged). It changes side only once the point is
+        /// <see cref="FlipMeters"/> past the hand's line on the bulge's side.
         /// </summary>
         private Vector3 FindBowPlane(Vector3 direction, Vector3 chord)
         {
             var last = FindPerpendicularDirection(_bowDirection, direction);
-            var offLine = chord - (Vector3.Dot(chord, direction) * direction);
-            if (Vector3.Dot(offLine, last) < 0.0f)
+            var natural = -(chord - (Vector3.Dot(chord, direction) * direction));
+            var agreement = Vector3.Dot(natural, last);
+            if (agreement < -FlipMeters)
             {
-                offLine = -offLine;
+                return Vector3.Normalize(natural);
             }
 
-            var blended = (last * PlaneSettleMeters) + offLine;
+            // Within the band round the hand's line, jitter must not turn the plane: keep it. Past the band, follow the
+            // point round the blade, keeping the side.
+            var offLine = natural.Length();
+            if (offLine <= FlipMeters)
+            {
+                return last;
+            }
+
+            var toward = (natural - (Math.Min(0.0f, agreement) * last)) * ((offLine - FlipMeters) / offLine);
+            var blended = (last * PlaneSettleMeters) + toward;
             return blended.LengthSquared() > 1e-10f ? Vector3.Normalize(blended) : last;
+        }
+
+        /// <summary>
+        /// The side a new press bulges to: the blade's set (away from the grip's up), unless the point was moving sideways
+        /// as it landed: then the blade drags behind the hand and bulges the way it moved.
+        /// </summary>
+        private static Vector3 FindStartingBow(Vector3 bladeDirection, Vector3 gripUp, Vector3 tipStep)
+        {
+            var set = -FindPerpendicularDirection(gripUp, bladeDirection);
+            var sideways = tipStep - (Vector3.Dot(tipStep, bladeDirection) * bladeDirection);
+            return FindPerpendicularDirection((set * SetBiasMeters) + sideways, bladeDirection);
+        }
+
+        /// <summary>
+        /// <paramref name="bow"/> turned with the hand since the last step: the same direction relative to the blade and
+        /// the grip's up, as the blade is clamped in the grip.
+        /// </summary>
+        private Vector3 TurnWithGrip(Vector3 bow, Vector3 bladeDirection, Vector3 gripUp)
+        {
+            var lastUp = FindPerpendicularDirection(_lastGripUp, _lastBladeDirection);
+            var lastSide = Vector3.Cross(_lastBladeDirection, lastUp);
+            var up = FindPerpendicularDirection(gripUp, bladeDirection);
+            var side = Vector3.Cross(bladeDirection, up);
+            _lastBladeDirection = bladeDirection;
+            _lastGripUp = gripUp;
+            return FindPerpendicularDirection((Vector3.Dot(bow, lastUp) * up) + (Vector3.Dot(bow, lastSide) * side), bladeDirection);
         }
 
         private float FindBowMeters()

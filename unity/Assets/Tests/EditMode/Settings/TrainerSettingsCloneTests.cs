@@ -25,6 +25,8 @@ namespace VrFencing.Tests.Settings
             settings.WarningZone.MinimumLengthMeters = 0.6f;
             settings.WarningZone.OffStripToleranceMeters = 0.2f;
             settings.Blade.TouchRule = TouchRule.Strict;
+            settings.Blade.TouchPressure = TouchPressure.OnContact;
+            settings.Blade.Flex = BladeFlexSoftness.Soft;
             settings.Blade.Mount = BladeMount.FrenchPosted;
             settings.Blade.PitchDegrees = 5.0f;
             settings.Blade.YawDegrees = 15.0f;

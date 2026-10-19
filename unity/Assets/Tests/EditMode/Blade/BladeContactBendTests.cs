@@ -54,7 +54,7 @@ namespace VrFencing.Tests.Blade
                 Assert.That(bend.GuardPosition, Is.EqualTo(blade.GuardPosition), "Within the most bow the drawn blade stays in the hand.");
                 bows.Add(bend.BowMeters);
                 Assert.That(MeasureDrawnLength(bend, blade), Is.EqualTo(BladePose.BladeLengthMeters).Within(0.003f), $"Guard at {guardZ}");
-                Assert.That(bend.GetCenterlinePoint(blade, 0.5f).Y, Is.GreaterThan(1.0f), "It bows toward the bow direction.");
+                Assert.That(bend.GetCenterlinePoint(blade, 0.5f).Y, Is.LessThan(1.0f), "Pushed straight in, it bows to its set: away from the grip's up (PER-50).");
             }
 
             Assert.That(bows, Is.Ordered.Ascending);
@@ -70,7 +70,9 @@ namespace VrFencing.Tests.Blade
 
             var nearGuard = bend.GetCenterlinePoint(blade, 0.02f) - blade.GuardPosition;
 
-            Assert.That(SegmentMath.FindAngleDegrees(nearGuard, blade.Direction), Is.LessThan(3.0f));
+            // The first drawn piece is a 3.75 cm chord, and the elastica curves most near the guard (PER-50): its chord
+            // turns a few degrees even though the blade leaves the guard exactly along the hand.
+            Assert.That(SegmentMath.FindAngleDegrees(nearGuard, blade.Direction), Is.LessThan(5.0f));
             Assert.That(bend.GetCenterlinePoint(blade, 0.0f), Is.EqualTo(blade.GuardPosition));
         }
 

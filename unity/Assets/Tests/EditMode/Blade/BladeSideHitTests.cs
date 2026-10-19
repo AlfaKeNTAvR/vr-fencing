@@ -28,11 +28,10 @@ namespace VrFencing.Tests.Blade
         [Test]
         public void TheCurvatureLimitIsTheBowOfTheDeepestStraightPush()
         {
-            var a = 0.0f;
-            var b = 1.0f;
-            Assert.That(BladeArc.TrySolve(BladePose.BladeLengthMeters - BladeContactBend.MaxPushMeters, 0.0f, ref a, ref b), Is.True);
-            Assert.That(BladeArc.FindMaxCurvature(a, b), Is.EqualTo(BladeArc.MaxCurvaturePerMeter).Within(BladeArc.MaxCurvaturePerMeter * 0.01f));
-            Assert.That(1.0f / BladeArc.MaxCurvaturePerMeter, Is.InRange(0.10f, 0.20f), "The tightest bend has a 10-20 cm radius.");
+            var shape = default(ElasticaShape);
+            Assert.That(BladeArc.TrySolve(BladePose.BladeLengthMeters - BladeContactBend.MaxPushMeters, 0.0f, ref shape), Is.True);
+            Assert.That(BladeArc.FindMaxCurvature(shape), Is.EqualTo(BladeArc.MaxCurvaturePerMeter).Within(BladeArc.MaxCurvaturePerMeter * 0.01f));
+            Assert.That(1.0f / BladeArc.MaxCurvaturePerMeter, Is.InRange(0.15f, 0.30f), "The tightest bend has a 15-30 cm radius.");
         }
 
         [Test]

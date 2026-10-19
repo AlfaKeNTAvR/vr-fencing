@@ -1,9 +1,11 @@
 // Visual-only blade flex (bends a few cm on fast moves, springs back) and the segment and capsule geometry under the
 // swept tests.
+using System.Linq;
 using System.Numerics;
 using NUnit.Framework;
 using VrFencing.Blade;
 using VrFencing.Dummy;
+using VrFencing.Settings;
 
 namespace VrFencing.Tests.Blade
 {
@@ -125,6 +127,77 @@ namespace VrFencing.Tests.Blade
             }
 
             Assert.That(maxBend, Is.LessThan(0.0005f));
+        }
+
+        [Test]
+        public void AWristCircleMakesTheTipTraceALargerLaggingCircle()
+        {
+            // PER-50: a circle parry, the point circling 15 cm round at 2 Hz (brisk: 3 Hz). Inertia throws the point
+            // outward, so it traces a visibly larger circle than the straight blade's.
+            Assert.That(MeasureCircleBend(BladeFlexSoftness.Normal, 2.0f), Is.InRange(0.01f, BladeFlex.MaxBendMeters));
+            Assert.That(MeasureCircleBend(BladeFlexSoftness.Normal, 3.0f), Is.InRange(0.025f, BladeFlex.MaxBendMeters));
+            Assert.That(MeasureCircleBend(BladeFlexSoftness.Soft, 2.0f), Is.GreaterThan(MeasureCircleBend(BladeFlexSoftness.Normal, 2.0f)));
+            Assert.That(MeasureCircleBend(BladeFlexSoftness.Stiff, 2.0f), Is.LessThan(MeasureCircleBend(BladeFlexSoftness.Normal, 2.0f)));
+        }
+
+        [Test]
+        public void ASuddenStopRingsSeveralDecayingCycles()
+        {
+            // 2 m/s sideways for half a second, then a dead stop.
+            var flex = new BladeFlex();
+            var x = 0.0f;
+            for (var frame = 0; frame < 36; frame++)
+            {
+                flex.Step(AlongZAt(x), FrameSeconds);
+                x += 2.0f * FrameSeconds;
+            }
+
+            var crossings = 0;
+            var peaks = new System.Collections.Generic.List<float>();
+            var peak = 0.0f;
+            var lastSign = 0;
+            for (var frame = 0; frame < 72; frame++)
+            {
+                flex.Step(AlongZAt(x), FrameSeconds);
+                var sign = System.Math.Sign(flex.Bend.X);
+                if (sign != 0 && lastSign != 0 && sign != lastSign)
+                {
+                    crossings++;
+                    peaks.Add(peak);
+                    peak = 0.0f;
+                }
+
+                if (sign != 0)
+                {
+                    lastSign = sign;
+                }
+
+                peak = System.Math.Max(peak, System.Math.Abs(flex.Bend.X));
+            }
+
+            Assert.That(peaks.First(), Is.GreaterThan(0.01f), "The stop whips the point over by more than a centimeter.");
+            Assert.That(crossings, Is.GreaterThanOrEqualTo(6), "Several cycles, not one overshoot.");
+            Assert.That(peaks, Is.Ordered.Descending, "Each swing smaller than the last.");
+            Assert.That(flex.Bend.Length(), Is.LessThan(0.002f), "Settled within a second.");
+        }
+
+        private static float MeasureCircleBend(BladeFlexSoftness softness, float hertz)
+        {
+            var flex = new BladeFlex();
+            flex.SetSoftness(softness);
+            var largest = 0.0f;
+            for (var frame = 0; frame < 3 * 72; frame++)
+            {
+                var angle = 2.0 * System.Math.PI * hertz * frame * FrameSeconds;
+                var offset = new Vector3(0.15f * (float)System.Math.Cos(angle), 0.15f * (float)System.Math.Sin(angle), 0.0f);
+                flex.Step(new BladeSegment(new Vector3(0.0f, 1.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.9f) + offset), FrameSeconds);
+                if (frame >= 2 * 72)
+                {
+                    largest = System.Math.Max(largest, flex.Bend.Length());
+                }
+            }
+
+            return largest;
         }
 
         private static float NextJitter(System.Random random)

@@ -65,6 +65,8 @@ namespace VrFencing.Settings
                 Blade = new BladeSettings
                 {
                     TouchRule = Blade.TouchRule,
+                    TouchPressure = Blade.TouchPressure,
+                    Flex = Blade.Flex,
                     Mount = Blade.Mount,
                     PitchDegrees = Blade.PitchDegrees,
                     YawDegrees = Blade.YawDegrees,
