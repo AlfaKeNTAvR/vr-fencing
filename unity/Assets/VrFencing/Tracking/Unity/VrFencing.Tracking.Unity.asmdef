@@ -12,7 +12,9 @@
         "VrFencing.Strip.Unity",
         "VrFencing.Settings.Core",
         "VrFencing.Settings.Unity",
-        "Oculus.VR"
+        "Oculus.VR",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

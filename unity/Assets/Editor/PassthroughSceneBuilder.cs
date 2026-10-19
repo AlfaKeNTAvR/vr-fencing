@@ -113,6 +113,11 @@ namespace VrFencing.EditorTools
             // The field is internal to the Meta SDK, so it is set through its serialized name.
             var serializedManager = new SerializedObject(manager);
             serializedManager.FindProperty("requestBodyTrackingPermissionOnStartup").boolValue = true;
+            // Dynamic Resolution off (PER-93): on Quest 3 it allocates the eye textures at its 1.6x maximum (2.56x the
+            // pixels, times 4x MSAA), and a sleep/wake was measured adding about 3.2 GB of GPU memory, enough to make the
+            // 8 GB headset swap and lag. Set through the serialized field so the property setter's runtime plugin call
+            // does not run in the Editor. QuestProjectSetup keeps Meta's "Fix All" from turning it back on.
+            serializedManager.FindProperty("_enableDynamicResolution").boolValue = false;
             serializedManager.ApplyModifiedPropertiesWithoutUndo();
         }
 
