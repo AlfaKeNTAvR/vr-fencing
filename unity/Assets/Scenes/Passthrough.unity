@@ -1034,8 +1034,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8d85e081c8d67724894222cdb71210bb, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   _drillRunner: {fileID: 1825721224}
   _strip: {fileID: 24875195}
 --- !u!114 &1825721227
@@ -1048,8 +1048,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 61742177044c8844bd3e9adab09a7b55, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &1825721228
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1060,8 +1060,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0697a9e3eec566bc9d16f528d1caffcb, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   _bodyTracking: {fileID: 1825721227}
   _strip: {fileID: 24875195}
 --- !u!1 &1930121537
