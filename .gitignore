@@ -38,3 +38,7 @@ unity/Assets/Resources/DevAgentSettings.asset.meta
 # Gradle export and IDE caches
 unity/[Ee]xported[Oo]bj/
 unity/.utmp/
+
+# Fast Core tests (scripts/run-core-tests.sh): keep the project file, ignore its build output
+!tools/CoreTests/CoreTests.csproj
+tools/CoreTests/bin/

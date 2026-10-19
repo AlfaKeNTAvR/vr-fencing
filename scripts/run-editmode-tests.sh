@@ -20,7 +20,7 @@ rm -f "$results_file"
 echo "Running Edit-mode tests (log: $log_file)"
 status=0
 # No -quit here: -runTests exits on its own once the run finishes.
-"$UNITY_EDITOR" -batchmode -nographics \
+run_unity -batchmode -nographics \
     -projectPath "$(to_native_path "$PROJECT_DIR")" \
     -buildTarget Android \
     -runTests -testPlatform EditMode \

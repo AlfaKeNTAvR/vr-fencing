@@ -18,7 +18,7 @@ mkdir -p "$(dirname "$apk_path")" "$LOG_DIR"
 
 echo "Building $apk_path (log: $log_file)"
 status=0
-"$UNITY_EDITOR" -batchmode -nographics -quit \
+run_unity -batchmode -nographics -quit \
     -projectPath "$(to_native_path "$PROJECT_DIR")" \
     -buildTarget Android \
     -executeMethod VrFencing.EditorTools.BuildAndroid.BuildDevelopmentApk \
