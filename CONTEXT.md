@@ -18,6 +18,14 @@ _Avoid_: Hit, score, strike
 The rectangular practice lane the Fencer advances and retreats along, laid out in the real room with a configurable length.
 _Avoid_: Piste (reserve for the regulation 14 m competition lane), track, lane
 
+**En Garde Line**:
+The Fencer's starting line on the Strip, set by the first point when placing it.
+_Avoid_: Start line, spawn point
+
+**Warning Zone**:
+The marked end section of the Strip (2 m on a piste, scaled down on short Strips) that tells the Fencer they are close to the end.
+_Avoid_: Danger zone, edge zone
+
 ### Practice
 
 **Drill**:
