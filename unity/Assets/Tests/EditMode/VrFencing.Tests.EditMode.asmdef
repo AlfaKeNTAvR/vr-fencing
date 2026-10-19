@@ -5,7 +5,8 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Oculus.VR",
-        "VrFencing.Blade"
+        "VrFencing.Blade",
+        "VrFencing.Prototypes.BladeFeel"
     ],
     "includePlatforms": [
         "Editor"
