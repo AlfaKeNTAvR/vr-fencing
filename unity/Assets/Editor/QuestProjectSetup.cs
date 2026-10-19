@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using System.Xml;
 using Meta.XR.Editor.Id;
 using UnityEditor;
 using UnityEditor.Build;
@@ -39,6 +40,10 @@ namespace VrFencing.EditorTools
         private const string OpenXrLoaderType = "UnityEngine.XR.OpenXR.OpenXRLoader";
         private const string MetaXrFeatureSetId = "com.meta.openxr.featureset.metaxr";
         private const double SetupToolTimeoutSeconds = 300;
+        private const string AndroidManifestPath = "Assets/Plugins/Android/AndroidManifest.xml";
+        private const string AndroidXmlNamespace = "http://schemas.android.com/apk/res/android";
+        private const string PlainActivityName = "com.unity3d.player.UnityPlayerActivity";
+        private const string PlainActivityTheme = "@android:style/Theme.Black.NoTitleBar.Fullscreen";
 
         // Project Setup Tool fixes that must never run unattended. Uids come from the
         // tool's JSON report (Builds/logs/project-setup-report.json).
@@ -47,7 +52,18 @@ namespace VrFencing.EditorTools
             // "Newest Meta XR Simulator not installed": downloads a ~1 GB installer into
             // the user's Downloads folder and opens Explorer. Installing is Nikita's call.
             "5c7289ec557af63ae9fe7dc8bb186ecb",
+            // "Always specify single GameActivity application entry": would undo the Activity entry point (PER-71,
+            // see ConfigurePlayerSettings). This task is missing from the JSON report, so its uid is computed the way
+            // Meta's OVRConfigurationTask does: a Hash128 of the task message.
+            ComputeSetupTaskUid("Always specify single \"GameActivity\" application entry on Unity 2023.2+"),
         };
+
+        private static string ComputeSetupTaskUid(string taskMessage)
+        {
+            var hash = new Hash128();
+            hash.Append(taskMessage);
+            return hash.ToString();
+        }
 
         [MenuItem("VR Fencing/Apply Quest project setup")]
         public static void ApplyFromMenu()
@@ -86,6 +102,7 @@ namespace VrFencing.EditorTools
             EnableMetaXrFeatureSet(BuildTargetGroup.Android);
             EnableMetaXrFeatureSet(BuildTargetGroup.Standalone);
             ConfigureMetaProjectConfig();
+            UsePlainActivityInManifest();
             PassthroughSceneBuilder.CreateOrUpdateScene(PassthroughScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(PassthroughScenePath, true) };
             AssetDatabase.SaveAssets();
@@ -107,6 +124,36 @@ namespace VrFencing.EditorTools
             PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.Vulkan });
             // Meta XR Operator's in-app MCP server needs network access (Development Builds only).
             PlayerSettings.Android.forceInternetPermission = true;
+            // Activity, not GameActivity (PER-71): Unity issue UUM-139694 is an intermittent ANR in GameActivity's
+            // onPauseNative/onResumeNative on Quest OpenXR (about 4-5% of sessions), fixed only in 6000.6.0a4. Meta's
+            // Project Setup Tool and the OpenXR Meta Quest validation both ask for GameActivity; their fix is excluded
+            // below and their warning is expected. Revisit when the project moves to a Unity with the fix.
+            PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;
+        }
+
+        /// <summary>
+        /// Points the committed manifest's activity at Unity's plain <c>UnityPlayerActivity</c>, to match the Activity
+        /// entry point. Meta's manifest generator only ever rewrites it the other way (to GameActivity), and a manifest
+        /// naming the GameActivity class in an Activity build fails at launch.
+        /// </summary>
+        private static void UsePlainActivityInManifest()
+        {
+            if (!System.IO.File.Exists(AndroidManifestPath))
+                throw new InvalidOperationException($"Android manifest not found at {AndroidManifestPath}.");
+
+            var manifest = new XmlDocument();
+            manifest.Load(AndroidManifestPath);
+            var activity = manifest.SelectSingleNode("/manifest/application/activity") as XmlElement
+                ?? throw new InvalidOperationException($"No activity in {AndroidManifestPath}.");
+            if (activity.GetAttribute("name", AndroidXmlNamespace) == PlainActivityName)
+                return;
+
+            activity.SetAttribute("name", AndroidXmlNamespace, PlainActivityName);
+            // The AppCompat theme comes with GameActivity's AndroidX dependency, which an Activity build does not have.
+            activity.SetAttribute("theme", AndroidXmlNamespace, PlainActivityTheme);
+            manifest.Save(AndroidManifestPath);
+            AssetDatabase.ImportAsset(AndroidManifestPath);
+            Debug.Log($"[QuestProjectSetup] Manifest activity set to {PlainActivityName}.");
         }
 
         private static void ConfigureUniversalRenderPipeline()
@@ -237,11 +284,16 @@ namespace VrFencing.EditorTools
                 // The manifest "update" fix asks for confirmation, which batchmode cancels;
                 // apply it silently so Assets/Plugins/Android/AndroidManifest.xml matches the config.
                 OVRManifestPreprocessor.GenerateOrUpdateAndroidManifest(silentMode: true);
+                UsePlainActivityInManifest();
 
                 // Fixes can touch the open scene (e.g. OVRManager settings); keep them.
                 EditorSceneManager.SaveOpenScenes();
                 AssetDatabase.SaveAssets();
-                WriteSetupReportThenExit(timedOut || fixAll.IsFaulted ? 1 : 0);
+                // Fails loudly if a Meta SDK update renamed the excluded GameActivity task and Fix All switched back.
+                var isEntryPointKept = PlayerSettings.Android.applicationEntry == AndroidApplicationEntry.Activity;
+                if (!isEntryPointKept)
+                    Debug.LogError("[QuestProjectSetup] The Project Setup Tool switched the Android entry point back to GameActivity; update ExcludedFixTaskUids.");
+                WriteSetupReportThenExit(timedOut || fixAll.IsFaulted || !isEntryPointKept ? 1 : 0);
             }
 
             EditorApplication.update += WaitForFixes;
