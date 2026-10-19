@@ -21,6 +21,11 @@ namespace VrFencing.UI
     /// them again; it is always the left controller's, whichever the sword hand (PER-50). The folded state is
     /// remembered between sessions (PlayerPrefs); a finished Drill opens the panels on its results without changing it.
     ///
+    /// The panels follow the head until the Fencer drags one by the grab bar under it (PER-86): on release every panel
+    /// is pinned at that spot, kept relative to the Strip (<see cref="PanelPlacement"/>) and saved, so it comes back
+    /// after a restart and moves along with a re-placed Strip. The pin button beside the bar toggles pinned and
+    /// following; folding and opening the panels keeps the pin.
+    ///
     /// This is the scene glue: it starts, pauses and cancels Drills on the one <see cref="DrillRunnerBehaviour"/>,
     /// flags Reps and reads results through <see cref="SessionRecorderBehaviour"/>, re-places the Strip, and saves
     /// Settings and hands them to the Strip, the Dummy and the Blade. What the screens say is decided in the UI Core.
@@ -72,6 +77,9 @@ namespace VrFencing.UI
         private OVRCameraRig _cameraRig;
         private Transform _mainPanel;
         private Transform _runningPanelRoot;
+        private PanelGrabBar _mainGrabBar;
+        private PanelGrabBar _runningGrabBar;
+        private PanelPlacement _placement = PanelPlacement.Following;
         private OffHandPointer _pointer;
         private HomeScreen _home;
         private SettingsScreen _settingsScreen;
@@ -109,6 +117,7 @@ namespace VrFencing.UI
             _settings = SettingsFile.Load();
             _registry = DrillCatalog.CreateDefault(includeTestDrills: Debug.isDebugBuild);
             _navigator.SetCollapsed(LoadCollapsed());
+            _placement = PanelPlacementFile.Load();
             _cameraRig = FindFirstObjectByType<OVRCameraRig>();
             if (_cameraRig == null)
             {
@@ -168,18 +177,19 @@ namespace VrFencing.UI
                 TickCalibration(head, nowSeconds);
             }
 
+            var pinnedPose = GetPinnedPose();
             if (screen == MenuScreen.Running)
             {
                 _runningPanel.Refresh(RunStatusText.Format(Runner, _strip.IsFencerOnStrip), Runner.IsPausedByFencer, nowSeconds);
-                _runningFollower.Tick(_runningPanelRoot, head, Time.deltaTime, IsOffHandLeft);
+                PlacePanel(_runningPanelRoot, _runningGrabBar, _runningFollower, pinnedPose, head);
             }
             else if (screen != MenuScreen.Hidden)
             {
-                _mainFollower.Tick(_mainPanel, head, Time.deltaTime, IsOffHandLeft);
+                PlacePanel(_mainPanel, _mainGrabBar, _mainFollower, pinnedPose, head);
             }
 
-            _pointer.Tick(GetOffHandController(), IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
-                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning), _settings.LaserTiltDegrees, nowSeconds);
+            _pointer.Tick(GetOffHandController(), head, IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
+                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning), _settings.LaserTiltDegrees, nowSeconds, Time.deltaTime);
 
             if (OVRInput.GetDown(MenuButton, OVRInput.Controller.Touch))
             {
@@ -207,6 +217,86 @@ namespace VrFencing.UI
             return PlayerPrefs.GetInt(CollapsedPrefKey, 0) == 1;
         }
 
+        /// <summary>
+        /// Where a pinned panel stands in the room now, or null to follow the head. A pin made before any Strip was
+        /// placed moves into the Strip frame (and is saved) once a Strip is in place.
+        /// </summary>
+        private TrackedPose? GetPinnedPose()
+        {
+            var enGardeLine = GetEnGardeLinePose();
+            if (enGardeLine.HasValue && _placement.IsPinned && !_placement.IsInStripFrame)
+            {
+                _placement = _placement.AttachToStrip(enGardeLine.Value);
+                PanelPlacementFile.Save(_placement);
+            }
+
+            return _placement.GetPoseInRoom(enGardeLine);
+        }
+
+        /// <summary>The Strip frame's pose in the room, or null while no Strip is in place (or it is being re-placed).</summary>
+        private TrackedPose? GetEnGardeLinePose()
+        {
+            if (!_strip.IsPlaced || _strip.EnGardeLine == null)
+            {
+                return null;
+            }
+
+            var enGardeLine = _strip.EnGardeLine;
+            return new TrackedPose(enGardeLine.position.ToNumerics(), enGardeLine.rotation.ToNumerics());
+        }
+
+        /// <summary>Puts a shown panel at the pin, or lets it follow the head; a panel being dragged is left to the pointer.</summary>
+        private void PlacePanel(Transform panel, PanelGrabBar grabBar, PanelFollower follower, TrackedPose? pinnedPose, Transform head)
+        {
+            if (grabBar.IsDragging)
+            {
+                return;
+            }
+
+            if (pinnedPose.HasValue)
+            {
+                panel.SetPositionAndRotation(pinnedPose.Value.Position.ToUnity(), pinnedPose.Value.Rotation.ToUnity());
+                return;
+            }
+
+            follower.Tick(panel, head, Time.deltaTime, IsOffHandLeft);
+        }
+
+        /// <summary>A drag ended: every panel is pinned where the dragged one stands.</summary>
+        private void PinPanels(PanelGrabBar grabBar)
+        {
+            var panel = grabBar.Panel;
+            _placement = PanelPlacement.PinAt(new TrackedPose(panel.position.ToNumerics(), panel.rotation.ToNumerics()), GetEnGardeLinePose());
+            PanelPlacementFile.Save(_placement);
+            ShowPinned();
+            Debug.Log(_placement.IsInStripFrame
+                ? "[UI] Menu panels pinned to the Strip."
+                : "[UI] Menu panels pinned in the room; no Strip yet, so the pin is kept once one is placed.");
+        }
+
+        /// <summary>The pin button: pins the panels where they stand, or sets them following the head again.</summary>
+        private void TogglePinned(PanelGrabBar grabBar)
+        {
+            if (!_placement.IsPinned)
+            {
+                PinPanels(grabBar);
+                return;
+            }
+
+            _placement = PanelPlacement.Following;
+            PanelPlacementFile.Save(_placement);
+            _mainFollower.Snap();
+            _runningFollower.Snap();
+            ShowPinned();
+            Debug.Log("[UI] Menu panels follow the head again.");
+        }
+
+        private void ShowPinned()
+        {
+            _mainGrabBar.SetPinned(_placement.IsPinned);
+            _runningGrabBar.SetPinned(_placement.IsPinned);
+        }
+
         private void BuildPanels()
         {
             _mainPanel = new GameObject("Menu Panel").transform;
@@ -223,6 +313,10 @@ namespace VrFencing.UI
             _runningPanelRoot = new GameObject("Running Panel").transform;
             _runningPanelRoot.SetParent(transform, false);
             _runningPanel = new RunningPanel(_runningPanelRoot, TogglePause, () => Runner.Cancel(), () => _sessionRecorder.FlagRep());
+
+            _mainGrabBar = PanelGrabBar.Create(_mainPanel, MainPanelSize, PinPanels, TogglePinned);
+            _runningGrabBar = PanelGrabBar.Create(_runningPanelRoot, RunningPanel.Size, PinPanels, TogglePinned);
+            ShowPinned();
 
             _pointer = new OffHandPointer(transform);
             ShowScreen(MenuScreen.Hidden);

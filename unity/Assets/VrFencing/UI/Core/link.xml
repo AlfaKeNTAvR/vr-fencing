@@ -1,0 +1,4 @@
+<!-- The menu placement file is read and written by Newtonsoft.Json through reflection; keep IL2CPP code stripping from removing its properties. -->
+<linker>
+    <assembly fullname="VrFencing.UI.Core" preserve="all"/>
+</linker>

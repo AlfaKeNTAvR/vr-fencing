@@ -9,6 +9,9 @@ namespace VrFencing.UI
     ///
     /// A trigger that is already held when the pointer turns on (the press that just finished placing the Strip)
     /// must be released before it can press a button.
+    ///
+    /// Pressing the trigger on a panel's grab bar (PER-86) drags that panel until the trigger is released; while
+    /// dragging, the laser ends at the grabbed point and presses nothing else.
     /// </summary>
     internal sealed class OffHandPointer
     {
@@ -24,6 +27,8 @@ namespace VrFencing.UI
 
         private UiButton _hovered;
         private UiButton _held;
+        private PanelGrabBar _hoveredBar;
+        private PanelGrabBar _dragged;
         private double _nextRepeatAtSeconds;
         private bool _wasActive;
         private bool _needsRelease;
@@ -56,10 +61,12 @@ namespace VrFencing.UI
         }
 
         /// <param name="controller">The off-hand controller anchor, or null when it is not tracked.</param>
+        /// <param name="head">The center eye, which a dragged panel turns to face; null when there is no camera rig.</param>
         /// <param name="trigger">The off-hand index trigger.</param>
         /// <param name="isActive">A panel is shown and the trigger is free for the menu.</param>
         /// <param name="tiltDegrees">The laser's tilt down (positive) from the controller's forward axis, the laser tilt Setting.</param>
-        public void Tick(Transform controller, OVRInput.RawButton trigger, bool isActive, float tiltDegrees, double nowSeconds)
+        public void Tick(
+            Transform controller, Transform head, OVRInput.RawButton trigger, bool isActive, float tiltDegrees, double nowSeconds, float deltaSeconds)
         {
             if (!isActive || controller == null)
             {
@@ -77,16 +84,41 @@ namespace VrFencing.UI
             var origin = controller.position;
             // A positive turn about the controller's own x axis tips its forward down, the same for either hand.
             var direction = controller.rotation * Quaternion.Euler(tiltDegrees, 0.0f, 0.0f) * Vector3.forward;
-            var hitButton = FindTarget(origin, direction, out var end);
-            SetHovered(hitButton != null && hitButton.IsInteractable ? hitButton : null);
+            if (_dragged != null)
+            {
+                if (isTriggerHeld && head != null && _dragged.isActiveAndEnabled)
+                {
+                    DrawLaser(origin, _dragged.Drag(origin, direction, head.position, deltaSeconds), showsCursor: true);
+                    return;
+                }
 
+                EndDrag();
+            }
+
+            var hitButton = FindTarget(origin, direction, out var hitBar, out var end);
+            SetHovered(hitButton != null && hitButton.IsInteractable ? hitButton : null);
+            SetHoveredBar(hitBar);
+            DrawLaser(origin, end, showsCursor: end != origin + (direction * MaxLengthMeters));
+
+            var isPressedNow = OVRInput.GetDown(trigger, OVRInput.Controller.Touch);
+            if (!_needsRelease && isPressedNow && _hoveredBar != null && head != null)
+            {
+                _dragged = _hoveredBar;
+                _held = null;
+                _dragged.BeginDrag(origin, end);
+                return;
+            }
+
+            UpdateTrigger(isTriggerHeld, isPressedNow, nowSeconds);
+        }
+
+        private void DrawLaser(Vector3 origin, Vector3 end, bool showsCursor)
+        {
             SetVisible(true);
             _laser.SetPosition(0, origin);
             _laser.SetPosition(1, end);
             _cursor.position = end;
-            _cursor.gameObject.SetActive(end != origin + (direction * MaxLengthMeters));
-
-            UpdateTrigger(isTriggerHeld, OVRInput.GetDown(trigger, OVRInput.Controller.Touch), nowSeconds);
+            _cursor.gameObject.SetActive(showsCursor);
         }
 
         private void UpdateTrigger(bool isHeld, bool isPressedNow, double nowSeconds)
@@ -118,8 +150,11 @@ namespace VrFencing.UI
             }
         }
 
-        /// <summary>The nearest panel hit along the ray: a button, or a panel background that just stops the laser.</summary>
-        private UiButton FindTarget(Vector3 origin, Vector3 direction, out Vector3 end)
+        /// <summary>
+        /// The nearest panel hit along the ray: a button, a grab bar (<paramref name="nearestBar"/>), or a panel
+        /// background that just stops the laser.
+        /// </summary>
+        private UiButton FindTarget(Vector3 origin, Vector3 direction, out PanelGrabBar nearestBar, out Vector3 end)
         {
             // Panels move with the head every frame; colliders follow only after a sync.
             Physics.SyncTransforms();
@@ -127,6 +162,7 @@ namespace VrFencing.UI
 
             end = origin + (direction * MaxLengthMeters);
             UiButton nearestButton = null;
+            nearestBar = null;
             var nearestDistance = float.MaxValue;
             for (var i = 0; i < hitCount; i++)
             {
@@ -137,13 +173,15 @@ namespace VrFencing.UI
                 }
 
                 var button = hit.collider.GetComponent<UiButton>();
-                if (button == null && hit.collider.GetComponent<UiSurface>() == null)
+                var bar = button == null ? hit.collider.GetComponent<PanelGrabBar>() : null;
+                if (button == null && bar == null && hit.collider.GetComponent<UiSurface>() == null)
                 {
                     continue;
                 }
 
                 nearestDistance = hit.distance;
                 nearestButton = button;
+                nearestBar = bar;
                 end = hit.point;
             }
 
@@ -169,11 +207,43 @@ namespace VrFencing.UI
             }
         }
 
+        private void SetHoveredBar(PanelGrabBar bar)
+        {
+            if (_hoveredBar == bar)
+            {
+                return;
+            }
+
+            if (_hoveredBar != null)
+            {
+                _hoveredBar.SetHovered(false);
+            }
+
+            _hoveredBar = bar;
+            if (_hoveredBar != null)
+            {
+                _hoveredBar.SetHovered(true);
+            }
+        }
+
+        /// <summary>Ends a drag, which pins the panel where it stands.</summary>
+        private void EndDrag()
+        {
+            var dragged = _dragged;
+            _dragged = null;
+            if (dragged != null)
+            {
+                dragged.EndDrag();
+            }
+        }
+
         private void Deactivate()
         {
+            EndDrag();
             _wasActive = false;
             _held = null;
             SetHovered(null);
+            SetHoveredBar(null);
             SetVisible(false);
         }
 
