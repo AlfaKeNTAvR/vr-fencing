@@ -51,6 +51,7 @@ namespace VrFencing.Blade
         private Transform _mount;
         private BladeVisual _visual;
         private BladeHapticPlayer _haptics;
+        private ArmedDummyPrototype _armedDummy;
         private TrackedPose? _lastEnGardeLine;
         private float? _lastDummyDistanceMeters;
         private float _lastFlatHapticAt = float.NegativeInfinity;
@@ -67,6 +68,7 @@ namespace VrFencing.Blade
             _settings = settings.Clone();
             _rules = TouchRules.For(_settings.Blade.TouchRule, _settings.Blade.TouchPressure);
             _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
+            _armedDummy?.ApplySettings(_settings);
             _mountInController = BladePose.GetMountInController(_settings.Blade, _settings.Hand);
             AttachToSwordHand();
             RestartMotion();
@@ -90,11 +92,18 @@ namespace VrFencing.Blade
             _mount = new GameObject("Blade Mount").transform;
             _visual = new BladeVisual(_mount);
             _haptics = new BladeHapticPlayer();
+            if (_dummy != null && _drillRunner != null && _drillRunner.Runner != null)
+            {
+                // The Armed Dummy feel test (PER-95): only live while its development Drill runs.
+                _armedDummy = new ArmedDummyPrototype(_dummy, _drillRunner.Runner, _haptics);
+            }
+
             ApplySettings(SettingsFile.Load());
         }
 
         private void OnDestroy()
         {
+            _armedDummy?.Dispose();
             _haptics?.Dispose();
             _visual?.Dispose();
         }
@@ -138,6 +147,9 @@ namespace VrFencing.Blade
             if (hasDummy)
             {
                 RestartOnJump(stripInRoom);
+
+                // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones.
+                _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom);
                 DetectContacts(now, bladeInStrip);
             }
 
@@ -283,6 +295,7 @@ namespace VrFencing.Blade
         {
             _detector.Reset();
             _drawnBlade.Reset();
+            _armedDummy?.Restart();
         }
 
         private static bool IsJump(TrackedPose before, TrackedPose after)

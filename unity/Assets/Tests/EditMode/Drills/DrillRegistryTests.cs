@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using NUnit.Framework;
 using VrFencing.Drills;
+using VrFencing.Dummy;
 using VrFencing.Settings;
 
 namespace VrFencing.Tests.Drills
@@ -47,8 +48,23 @@ namespace VrFencing.Tests.Drills
             var withoutTests = DrillCatalog.CreateDefault(includeTestDrills: false).BuildAll(settings).Select(drill => drill.Id).ToArray();
 
             Assert.That(withTests, Does.Contain(DrillCatalog.FullPisteTestDrillId));
+            Assert.That(withTests, Does.Contain(DrillCatalog.ArmedDummyTestDrillId));
             Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.FullPisteTestDrillId));
-            Assert.That(withTests.Length, Is.EqualTo(withoutTests.Length + 1), "Only the full-piste test Drill is dev-only.");
+            Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.ArmedDummyTestDrillId));
+            Assert.That(withTests.Length, Is.EqualTo(withoutTests.Length + 2), "Only the full-piste and Armed Dummy test Drills are dev-only.");
+        }
+
+        [Test]
+        public void TheArmedDummyTestDrillFitsEveryStripAndCuesTheBodyAtExtensionDistance()
+        {
+            var drill = DrillCatalog.CreateArmedDummyTestDrill(new TrainerSettings { RepsPerDrill = 6 });
+
+            Assert.That(DrillAvailability.Check(drill, 1.0f, shrinkDrillsToFit: false).IsAvailable, Is.True);
+            Assert.That(drill.DummyDistance, Is.EqualTo(DummyDistance.Extension));
+            Assert.That(drill.TargetZones, Is.EqualTo(new[] { TargetZone.Body }));
+            Assert.That(drill.RepCount, Is.EqualTo(6));
+            Assert.That(drill.WindowSeconds, Is.GreaterThanOrEqualTo(6.0f), "Delay, wind-up, a slow thrust and the riposte must fit.");
+            Assert.That(drill.WaitsAtStartMark(isShrunk: false), Is.False);
         }
 
         [Test]

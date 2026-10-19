@@ -50,6 +50,18 @@ namespace VrFencing.Dummy
             return new SwordArmPose(Shoulder, Quaternion.CreateFromAxisAngle(-Vector3.UnitX, radians), Wrist);
         }
 
+        /// <summary>
+        /// The pose <paramref name="fraction"/> of the way from <paramref name="from"/> (0) to <paramref name="to"/> (1),
+        /// each joint turned along its shortest arc, so an armed Dummy moves smoothly between key poses.
+        /// </summary>
+        public static SwordArmPose Slerp(SwordArmPose from, SwordArmPose to, float fraction)
+        {
+            return new SwordArmPose(
+                Quaternion.Normalize(Quaternion.Slerp(from.Shoulder, to.Shoulder, fraction)),
+                Quaternion.Normalize(Quaternion.Slerp(from.Elbow, to.Elbow, fraction)),
+                Quaternion.Normalize(Quaternion.Slerp(from.Wrist, to.Wrist, fraction)));
+        }
+
         private static Quaternion RotationFromForwardTo(Vector3 direction)
         {
             var target = Vector3.Normalize(direction);
@@ -117,6 +129,28 @@ namespace VrFencing.Dummy
         public TrackedPose GetPose(ArmJoint joint)
         {
             return _poses[(int)joint];
+        }
+
+        /// <summary>
+        /// Where the front of the guard of a blade held in the sword hand is, in the Dummy frame: at the end of the hand
+        /// (the hand grips the handle behind the guard), with the blade along the hand's +z (PER-40).
+        /// </summary>
+        public Vector3 GetGuardPosition()
+        {
+            var wrist = GetPose(ArmJoint.Wrist);
+            return wrist.Position + Vector3.Transform(new Vector3(0.0f, 0.0f, EnGardePose.HandLength * _heightMeters), wrist.Rotation);
+        }
+
+        /// <summary>Unit vector along a blade held in the sword hand, from the guard to the point, in the Dummy frame.</summary>
+        public Vector3 GetBladeDirection()
+        {
+            return Vector3.Transform(Vector3.UnitZ, GetPose(ArmJoint.Wrist).Rotation);
+        }
+
+        /// <summary>The point of a held blade of <paramref name="bladeLengthMeters"/>, in the Dummy frame.</summary>
+        public Vector3 GetBladePoint(float bladeLengthMeters)
+        {
+            return GetGuardPosition() + (GetBladeDirection() * bladeLengthMeters);
         }
 
         /// <summary>Whether <paramref name="zone"/> is on the sword arm (hand, wrist, forearm or upper arm).</summary>
