@@ -20,6 +20,12 @@ namespace VrFencing.Tracking
     /// (<see cref="GpuExperiments"/>) can switch on steps around the pause and resume to bisect the cause on the
     /// headset without a rebuild. With no experiments file nothing here changes the app; the snapshots are logging only.
     /// </para>
+    /// <para>
+    /// The PER-93 workaround, <c>destroyStaleXrTexturesOnResume</c>: from each resume on, the XR eye textures are
+    /// scanned every half second (<see cref="StaleXrTextureCleanup"/>), and once the resume's new set has rendered a
+    /// few frames, the set from before the pause is released and destroyed. Every step is logged as
+    /// <c>[Life] xr-cleanup</c>.
+    /// </para>
     /// </summary>
     public sealed class LifecycleLogBehaviour : MonoBehaviour
     {
@@ -31,6 +37,8 @@ namespace VrFencing.Tracking
 
         /// <summary>Render texture groups listed per snapshot; enough to show the eye buffers and URP's targets.</summary>
         private const int RenderTextureGroupsLogged = 6;
+
+        private const double BytesPerMegabyte = 1024.0 * 1024.0;
 
         private const string LaunchMoment = "launch";
         private const string BeforePauseMoment = "before-pause";
@@ -44,10 +52,15 @@ namespace VrFencing.Tracking
         private readonly LifecycleHeartbeat _heartbeat = new LifecycleHeartbeat();
         private readonly GpuSnapshotSchedule _snapshotSchedule = new GpuSnapshotSchedule();
 
-        private GpuExperiments _experiments = GpuExperiments.None;
+        private readonly StaleXrTextureCleanup _staleXrTextureCleanup = new StaleXrTextureCleanup();
 
-        /// <summary>The "XR Texture" render textures alive at the last pause, for the stale XR texture experiment.</summary>
+        private GpuExperiments _experiments = GpuExperiments.Default;
+
+        /// <summary>Instance IDs of the "XR Texture" render textures alive at the last pause, for the stale cleanup.</summary>
         private HashSet<int> _xrTextureIdsBeforePause = new HashSet<int>();
+
+        /// <summary>The XR textures the cleanup destroyed, kept for the report on the scan after.</summary>
+        private int _destroyedXrTextureCount;
 
         /// <summary>Whether the passthrough experiment disabled the layer at the last pause, so only it re-enables it.</summary>
         private bool _isPassthroughDisabledForPause;
@@ -99,6 +112,11 @@ namespace VrFencing.Tracking
                     Time.frameCount, realtimeSeconds, RuntimeReadinessReader.Read(), ReadEyeBuffer()));
             }
 
+            if (_staleXrTextureCleanup.IsScanDue(realtimeSeconds))
+            {
+                ScanForStaleXrTextures(realtimeSeconds);
+            }
+
             if (_snapshotSchedule.TryTakeDue(realtimeSeconds, out var moment))
             {
                 LogGpuSnapshot(moment);
@@ -132,9 +150,9 @@ namespace VrFencing.Tracking
             if (isPaused)
             {
                 _snapshotSchedule.Cancel();
+                CancelStaleXrTextureWatch();
                 var renderTextures = LogGpuSnapshot(BeforePauseMoment);
-                _xrTextureIdsBeforePause = new HashSet<int>(renderTextures
-                    .Where(texture => texture != null && RenderTextureMemory.IsXrTexture(texture.name))
+                _xrTextureIdsBeforePause = new HashSet<int>(GpuDiagnosticsReader.FindXrTextures(renderTextures)
                     .Select(texture => texture.GetInstanceID()));
                 DisablePassthroughForPause();
             }
@@ -143,6 +161,7 @@ namespace VrFencing.Tracking
                 ReenablePassthroughAfterPause();
                 LogPassthroughState();
                 _snapshotSchedule.Schedule(AfterResumeMoment, Time.realtimeSinceStartupAsDouble + SnapshotDelaySeconds);
+                ArmStaleXrTextureWatch();
             }
         }
 
@@ -272,11 +291,6 @@ namespace VrFencing.Tracking
                 Debug.Log("[Life] gpu experiment unloadUnusedAssetsOnResume: Resources.UnloadUnusedAssets and GC.Collect called.");
             }
 
-            if (_experiments.DestroyStaleXrTexturesOnResume)
-            {
-                DestroyStaleXrTextures();
-            }
-
             if (_experiments.RecreateUrpPipelineOnResume)
             {
                 RecreateUrpPipeline();
@@ -284,31 +298,91 @@ namespace VrFencing.Tracking
         }
 
         /// <summary>
-        /// Experiment <c>destroyStaleXrTexturesOnResume</c>: destroys the "XR Texture" render textures that existed
-        /// before the pause, but only when the resume created new ones, so the current eye buffers are never touched.
+        /// Starts watching for the resume's new XR texture set (<c>destroyStaleXrTexturesOnResume</c>), with the set
+        /// recorded at the pause as the one to destroy.
         /// </summary>
-        private void DestroyStaleXrTextures()
+        private void ArmStaleXrTextureWatch()
         {
-            var xrTextures = GpuDiagnosticsReader.FindRenderTextures()
-                .Where(texture => texture != null && RenderTextureMemory.IsXrTexture(texture.name))
-                .ToList();
-            var stale = xrTextures.Where(texture => _xrTextureIdsBeforePause.Contains(texture.GetInstanceID())).ToList();
-            var createdCount = xrTextures.Count - stale.Count;
-            if (stale.Count == 0 || createdCount == 0)
+            if (!_experiments.DestroyStaleXrTexturesOnResume)
             {
-                Debug.Log($"[Life] gpu experiment destroyStaleXrTexturesOnResume: {stale.Count} from before the pause,"
-                    + $" {createdCount} new; nothing destroyed.");
                 return;
             }
 
+            _destroyedXrTextureCount = 0;
+            _staleXrTextureCleanup.Arm(_xrTextureIdsBeforePause, Time.realtimeSinceStartupAsDouble);
+            Debug.Log($"[Life] xr-cleanup watching: {_xrTextureIdsBeforePause.Count} XR textures from before the pause"
+                + $" (ids {string.Join(" ", _xrTextureIdsBeforePause.OrderBy(id => id))}), frame {Time.frameCount}.");
+        }
+
+        /// <summary>A pause during the watch ends it; the pause then records every live XR texture again.</summary>
+        private void CancelStaleXrTextureWatch()
+        {
+            if (!_staleXrTextureCleanup.IsArmed)
+            {
+                return;
+            }
+
+            _staleXrTextureCleanup.Disarm();
+            Debug.Log($"[Life] xr-cleanup cancelled: paused again before the cleanup finished, frame {Time.frameCount}.");
+        }
+
+        /// <summary>
+        /// One scan of the watch: finds the live XR textures and does what <see cref="StaleXrTextureCleanup"/> decides.
+        /// A destroy releases each stale texture's GPU memory and destroys the object; the next scan logs what is left.
+        /// </summary>
+        private void ScanForStaleXrTextures(double realtimeSeconds)
+        {
+            var xrTextures = GpuDiagnosticsReader.FindXrTextures(GpuDiagnosticsReader.FindRenderTextures());
+            var verdict = _staleXrTextureCleanup.Evaluate(
+                xrTextures.Select(texture => texture.GetInstanceID()).ToList(), realtimeSeconds, Time.frameCount);
+            if (verdict.Action == StaleXrTextureAction.Wait)
+            {
+                return;
+            }
+
+            var totals = GpuDiagnosticsReader.Sum(xrTextures);
+            var counts = $"xrTex {totals.Count} est {totals.EstimatedBytes / BytesPerMegabyte:0.0} MB"
+                + $" ({verdict.StaleIds.Count} from before the pause, {verdict.NewCount} new), frame {Time.frameCount},"
+                + $" t {realtimeSeconds:0.00} s";
+            switch (verdict.Action)
+            {
+                case StaleXrTextureAction.Destroy:
+                    DestroyStaleXrTextures(xrTextures, verdict.StaleIds, counts);
+                    break;
+                case StaleXrTextureAction.ReportAfterDestroy:
+                    Debug.Log($"[Life] xr-cleanup after: destroyed {_destroyedXrTextureCount}, now {counts}.");
+                    break;
+                case StaleXrTextureAction.NothingStale:
+                    Debug.Log($"[Life] xr-cleanup done: no XR texture from before the pause is alive; {counts}.");
+                    break;
+                case StaleXrTextureAction.Expired:
+                    Debug.Log($"[Life] xr-cleanup gave up after {StaleXrTextureCleanup.WatchWindowSeconds:0} s:"
+                        + $" no new set rendered, nothing destroyed; {counts}.");
+                    break;
+                default:
+                    Debug.LogError($"[Life] xr-cleanup: unhandled action {verdict.Action}; nothing destroyed.");
+                    _staleXrTextureCleanup.Disarm();
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Releases the GPU memory of the XR textures from before the pause and destroys their objects, logging each
+        /// one and the counts before. Only textures still alive in this scan are touched.
+        /// </summary>
+        private void DestroyStaleXrTextures(IReadOnlyList<RenderTexture> xrTextures, IReadOnlyList<int> staleIds, string counts)
+        {
+            var staleIdSet = new HashSet<int>(staleIds);
+            var stale = xrTextures.Where(texture => staleIdSet.Contains(texture.GetInstanceID())).ToList();
+            Debug.Log($"[Life] xr-cleanup before: {counts}. Destroying {stale.Count}: "
+                + string.Join("; ", stale.Select(GpuDiagnosticsReader.Describe)) + ".");
             foreach (var texture in stale)
             {
                 texture.Release();
                 Destroy(texture);
             }
 
-            Debug.Log($"[Life] gpu experiment destroyStaleXrTexturesOnResume: destroyed {stale.Count} XR textures from"
-                + $" before the pause, {createdCount} new ones kept.");
+            _destroyedXrTextureCount = stale.Count;
         }
 
         /// <summary>
