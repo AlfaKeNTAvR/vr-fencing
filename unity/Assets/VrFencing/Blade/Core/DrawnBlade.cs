@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using VrFencing.Dummy;
 
 namespace VrFencing.Blade
 {
@@ -17,7 +16,8 @@ namespace VrFencing.Blade
     /// <item>every point along the blade is then kept out of every body, pushed back out on the side it was on the
     /// step before, so the blade's body cannot cut through a thin arm either.</item>
     /// </list>
-    /// The bodies are plain capsules, so another blade's capsule can join them later (the Armed Dummy, PER-40).
+    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules and the floor (PER-49), and another blade's
+    /// capsule can join them later (the Armed Dummy, PER-40).
     /// Positions in any one frame (the Strip frame in the app), meters, time in seconds.
     /// </summary>
     public sealed class DrawnBlade
@@ -64,10 +64,10 @@ namespace VrFencing.Blade
         }
 
         /// <summary>Moves to the blade's new straight pose.</summary>
-        /// <param name="bodies">Every capsule the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
+        /// <param name="bodies">Every obstacle the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
         /// <param name="bowDirection">Which way the blade bows when pushed straight in (the grip's up).</param>
         /// <returns>Why a pinned point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<Capsule> bodies, Vector3 bowDirection, float deltaSeconds)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection, float deltaSeconds)
         {
             if (bodies == null)
             {
@@ -119,60 +119,48 @@ namespace VrFencing.Blade
         /// Keeps every drawn point but the guard (the hand) out of every body. A point whose path from its last drawn
         /// position runs into a body is held where it met the surface, even if the hand has carried it right across
         /// in one step; it follows again once that path is clear (the hand came back or went around). A point found
-        /// inside is pushed out on the side it was on the step before.
+        /// inside is pushed out on the side it was on the step before. Planes (the floor) go last in every pass, so
+        /// where a body meets the floor (the Dummy's foot) the floor always holds.
         /// </summary>
-        private void KeepOutOfBodies(IReadOnlyList<Capsule> bodies)
+        private void KeepOutOfBodies(IReadOnlyList<BladeObstacle> bodies)
         {
             for (var pass = 0; pass < ConstraintPasses; pass++)
             {
                 for (var index = 1; index <= SampleCount; index++)
                 {
-                    foreach (var body in bodies)
-                    {
-                        var previous = _hasPreviousSamples ? _previousSamples[index] : (Vector3?)null;
-                        _samples[index] = previous.HasValue
-                            ? HoldOnNearSide(_samples[index], body, previous.Value)
-                            : _samples[index];
-                        _samples[index] = PushOut(_samples[index], body, previous);
-                    }
+                    KeepOutOf(index, bodies, planes: false);
+                    KeepOutOf(index, bodies, planes: true);
                 }
+            }
+        }
+
+        private void KeepOutOf(int index, IReadOnlyList<BladeObstacle> bodies, bool planes)
+        {
+            var previous = _hasPreviousSamples ? _previousSamples[index] : (Vector3?)null;
+            foreach (var body in bodies)
+            {
+                if (body.IsPlane != planes)
+                {
+                    continue;
+                }
+
+                _samples[index] = previous.HasValue
+                    ? HoldOnNearSide(_samples[index], body, previous.Value)
+                    : _samples[index];
+                _samples[index] = body.PushOut(_samples[index], BladeRadiusMeters, previous);
             }
         }
 
         /// <summary>Where the path from <paramref name="previous"/> meets the body, resting on its surface; the point itself if the path is clear.</summary>
-        private static Vector3 HoldOnNearSide(Vector3 point, Capsule body, Vector3 previous)
+        private static Vector3 HoldOnNearSide(Vector3 point, BladeObstacle body, Vector3 previous)
         {
             // Held points rest at the full margin, so their next path starts outside this slightly smaller one.
-            if (!SegmentMath.TryFindCapsuleEntry(previous, point, body, BladeRadiusMeters * 0.5f, out var fraction))
+            if (!body.TryFindEntry(previous, point, BladeRadiusMeters * 0.5f, out var fraction))
             {
                 return point;
             }
 
-            var entry = Vector3.Lerp(previous, point, fraction);
-            var onAxis = SegmentMath.FindClosestPointOnSegment(entry, body.Start, body.End);
-            return onAxis + (SegmentMath.FindOutwardNormal(entry, body) * (body.RadiusMeters + BladeRadiusMeters));
-        }
-
-        private static Vector3 PushOut(Vector3 point, Capsule body, Vector3? previous)
-        {
-            var reach = body.RadiusMeters + BladeRadiusMeters;
-            var onAxis = SegmentMath.FindClosestPointOnSegment(point, body.Start, body.End);
-            if (Vector3.Distance(point, onAxis) >= reach - 1e-5f)
-            {
-                return point;
-            }
-
-            var outward = SegmentMath.FindOutwardNormal(point, body);
-            if (previous.HasValue)
-            {
-                var fromPrevious = previous.Value - onAxis;
-                if (fromPrevious.LengthSquared() > 1e-10f)
-                {
-                    outward = Vector3.Normalize(fromPrevious);
-                }
-            }
-
-            return onAxis + (outward * reach);
+            return body.ProjectOntoSurface(Vector3.Lerp(previous, point, fraction), BladeRadiusMeters);
         }
     }
 }

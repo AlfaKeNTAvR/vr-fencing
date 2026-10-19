@@ -135,6 +135,8 @@ The drawn blade never passes through the Dummy (any capsule, Target Zone or not;
 
 Each release logs `[Blade] Point released: CameOut` (or `BodyMoved` when the Dummy changes distance), and crossing the 15 cm limit logs a line both ways.
 
+The floor (Strip frame y = 0, the tracking floor; the room's y = 0 before a Strip is placed) is an obstacle under the same rule (PER-49): the point pins on it, the blade bows, lags past 15 cm and slides along it, and the whole drawn blade stays above it. Floor contacts are not Touches, never reach the Drill runner and play only the press buzz. Obstacles are `BladeObstacle`s (capsules or planes) in the Blade Core; where a body meets the floor (the Dummy's foot) the floor wins.
+
 Every event prints a `[Blade]` line to `adb logcat -s Unity`: event, zone, tip speed, approach and blade angles, distance from the zone center, and the rule.
 
 ## The menus on the headset

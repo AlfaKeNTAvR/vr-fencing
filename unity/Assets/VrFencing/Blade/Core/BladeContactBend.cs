@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using VrFencing.Dummy;
 
 namespace VrFencing.Blade
 {
@@ -20,7 +19,7 @@ namespace VrFencing.Blade
 
     /// <summary>
     /// Visual-only non-penetration of the point (PER-48): the drawn blade never passes through a body. Where the point
-    /// first meets a body (any capsule: the Dummy's Target Zones and the rest of its silhouette now, another blade
+    /// first meets a body (any <see cref="BladeObstacle"/>: the Dummy's capsules and the floor now, another blade
     /// later) it is pinned on that near-side surface, and the drawn blade bows as the hand pushes on. The hand is not
     /// stopped (the haptics stand in) and Touch detection still uses the straight blade.
     ///
@@ -108,10 +107,10 @@ namespace VrFencing.Blade
         /// Moves to the blade's new straight pose: pins the point where its path from the last pose first meets a body,
         /// or, while pinned, slides it, checks for release and reshapes the bow.
         /// </summary>
-        /// <param name="bodies">Every capsule the blade cannot pass, in the blade's frame, in the same order every step.</param>
+        /// <param name="bodies">Every obstacle the blade cannot pass, in the blade's frame, in the same order every step.</param>
         /// <param name="bowDirection">Which way the blade bows when pushed straight in (the grip's up); made perpendicular to the blade.</param>
         /// <returns>Why the point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<Capsule> bodies, Vector3 bowDirection)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection)
         {
             if (bodies == null)
             {
@@ -186,10 +185,10 @@ namespace VrFencing.Blade
             _bowMeters = 0.0f;
         }
 
-        private PinRelease FindRelease(Vector3 tip, IReadOnlyList<Capsule> bodies)
+        private PinRelease FindRelease(Vector3 tip, IReadOnlyList<BladeObstacle> bodies)
         {
             if (_pinnedBody >= bodies.Count
-                || SegmentMath.FindDistanceToCapsule(_pinnedPoint, bodies[_pinnedBody]) > PointRadiusMeters + BodyMovedMeters)
+                || bodies[_pinnedBody].FindDistance(_pinnedPoint) > PointRadiusMeters + BodyMovedMeters)
             {
                 return PinRelease.BodyMoved;
             }
@@ -212,17 +211,17 @@ namespace VrFencing.Blade
         /// enough to come back inside the angle (or the whole way this step). It moves along the surface, so never
         /// through the body.
         /// </summary>
-        private void SlideIfPastFriction(BladeSegment straightBlade, Capsule body)
+        private void SlideIfPastFriction(BladeSegment straightBlade, BladeObstacle body)
         {
             if (FindChordAngleDegrees(straightBlade, _pinnedPoint) <= MaxSidewaysDegrees)
             {
                 return;
             }
 
-            var normal = SegmentMath.FindOutwardNormal(_pinnedPoint, body);
+            var normal = body.FindOutwardNormal(_pinnedPoint);
             var towardTip = straightBlade.TipPosition - _pinnedPoint;
             var tangential = towardTip - (Vector3.Dot(towardTip, normal) * normal);
-            var fullSlide = ProjectOntoSurface(_pinnedPoint + tangential, body);
+            var fullSlide = body.ProjectOntoSurface(_pinnedPoint + tangential, PointRadiusMeters);
             if (FindChordAngleDegrees(straightBlade, fullSlide) > MaxSidewaysDegrees)
             {
                 _pinnedPoint = fullSlide;
@@ -234,7 +233,7 @@ namespace VrFencing.Blade
             for (var step = 0; step < SearchSteps; step++)
             {
                 var middle = (low + high) * 0.5f;
-                if (FindChordAngleDegrees(straightBlade, ProjectOntoSurface(_pinnedPoint + (middle * tangential), body)) > MaxSidewaysDegrees)
+                if (FindChordAngleDegrees(straightBlade, body.ProjectOntoSurface(_pinnedPoint + (middle * tangential), PointRadiusMeters)) > MaxSidewaysDegrees)
                 {
                     low = middle;
                 }
@@ -244,19 +243,12 @@ namespace VrFencing.Blade
                 }
             }
 
-            _pinnedPoint = ProjectOntoSurface(_pinnedPoint + (high * tangential), body);
+            _pinnedPoint = body.ProjectOntoSurface(_pinnedPoint + (high * tangential), PointRadiusMeters);
         }
 
         private static float FindChordAngleDegrees(BladeSegment straightBlade, Vector3 point)
         {
             return SegmentMath.FindAngleDegrees(straightBlade.Direction, point - straightBlade.GuardPosition);
-        }
-
-        /// <summary>The point moved out from the capsule's axis to rest <see cref="PointRadiusMeters"/> off its surface, on the side it is on.</summary>
-        private static Vector3 ProjectOntoSurface(Vector3 point, Capsule body)
-        {
-            var onAxis = SegmentMath.FindClosestPointOnSegment(point, body.Start, body.End);
-            return onAxis + (SegmentMath.FindOutwardNormal(point, body) * (body.RadiusMeters + PointRadiusMeters));
         }
 
         /// <summary>Works out the push, the drawn guard and the bow that keeps the drawn blade at its full length.</summary>
@@ -330,14 +322,14 @@ namespace VrFencing.Blade
         }
 
         /// <summary>The earliest point along the path where the point's sphere meets a body, resting on its surface.</summary>
-        private static bool TryFindFirstEntry(Vector3 previousTip, Vector3 tip, IReadOnlyList<Capsule> bodies, out Vector3 entryPoint, out int entryBody)
+        private static bool TryFindFirstEntry(Vector3 previousTip, Vector3 tip, IReadOnlyList<BladeObstacle> bodies, out Vector3 entryPoint, out int entryBody)
         {
             entryPoint = Vector3.Zero;
             entryBody = -1;
             var earliest = float.MaxValue;
             for (var index = 0; index < bodies.Count; index++)
             {
-                if (SegmentMath.TryFindCapsuleEntry(previousTip, tip, bodies[index], PointRadiusMeters, out var fraction) && fraction < earliest)
+                if (bodies[index].TryFindEntry(previousTip, tip, PointRadiusMeters, out var fraction) && fraction < earliest)
                 {
                     earliest = fraction;
                     entryPoint = Vector3.Lerp(previousTip, tip, fraction);
@@ -348,12 +340,12 @@ namespace VrFencing.Blade
             return entryBody >= 0;
         }
 
-        private static float FindDistanceToNearestSurface(Vector3 point, IReadOnlyList<Capsule> bodies)
+        private static float FindDistanceToNearestSurface(Vector3 point, IReadOnlyList<BladeObstacle> bodies)
         {
             var nearest = float.MaxValue;
             foreach (var body in bodies)
             {
-                nearest = Math.Min(nearest, SegmentMath.FindDistanceToCapsule(point, body));
+                nearest = Math.Min(nearest, body.FindDistance(point));
             }
 
             return nearest;
