@@ -135,7 +135,7 @@ The épée sits on the sword-hand controller (right by default; the Sword hand S
 
 The left hand mirrors the yaw and the guard's sideways offset. The "Blade pitch" and "Blade yaw" Settings show the chosen grip's angles in use and step them by 1 degree; a step saves that grip's own angle (each grip keeps its own). The old feel-test default (pitch +10, yaw -10, from PER-22) is no longer used: a settings file saved before PER-52 loads on the computed angles.
 
-**Thrust calibration** (Settings, "Calibrate grip"). The grip page shows the chosen grip's computed angles, the Fencer's saved ones, the old feel-test angles and the ones in use, with Calibrate, "Reset to computed" and Back. Calibrate puts the panels and the laser away and shows a dot 2 m from the shoulder (estimated 20 cm below the eyes and 18 cm to the sword side): thrust at it with a straight arm, so the shoulder, hand and point line up, and hold still. The dot turns green while the arm points at it (hand at least 40 cm from the shoulder and within 12 degrees of the shoulder's line to the dot); a hold of 1 s with the controller within 2 cm and 3 degrees takes the thrust. Three dots (straight ahead; 15 degrees inward and 8 up; 15 degrees outward and 10 down). The app then fits the pitch and yaw that put the real, drooped point on the line from the guard to each dot, averages them, saves them for the grip, and says how far apart the single thrusts were (over 8 degrees: try again). The off-hand trigger cancels without changing anything. The `[Blade] Grip calibration` log line prints the fit, its spread and the computed angles.
+**Thrust calibration** (Settings, Blade group, "Calibrate grip"). The grip page shows the chosen grip's computed angles, the Fencer's saved ones, the old feel-test angles and the ones in use, with Calibrate, "Reset to computed" and Back. Calibrate puts the panels and the laser away and shows a dot 2 m from the shoulder (estimated 20 cm below the eyes and 18 cm to the sword side): thrust at it with a straight arm, so the shoulder, hand and point line up, and hold still. The dot turns green while the arm points at it (hand at least 40 cm from the shoulder and within 12 degrees of the shoulder's line to the dot); a hold of 1 s with the controller within 2 cm and 3 degrees takes the thrust. Three dots (straight ahead; 15 degrees inward and 8 up; 15 degrees outward and 10 down). The app then fits the pitch and yaw that put the real, drooped point on the line from the guard to each dot, averages them, saves them for the grip, and says how far apart the single thrusts were (over 8 degrees: try again). The off-hand trigger cancels without changing anything. The `[Blade] Grip calibration` log line prints the fit, its spread and the computed angles.
 
 **Blade droop** (PER-52). A real épée hangs: its point sits 3 to 8 cm below the forte's line. The blade's set (Setting "Blade set (curve)": the gap under the middle on a flat surface, default 0.7 cm, FIE limit 1 cm) curves it toward the grip's palm side and drops the point 4 times that; gravity sags it by 2 cm (Blade flex Stiff), 3 cm (Normal) or 4.5 cm (Soft) with the blade level, less as it points up or down. Detection uses the line from the guard to that real point, so a Touch lands where the drawn point is; the drawn blade hangs in that curve and leaves the guard along the forte. Pushed straight in, the blade bends further the way it hangs (the set plus the sag), so with the thumb up it bows down as in PER-50, and with the wrist rolled it bows between the palm side and the floor.
 
@@ -193,8 +193,21 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | Running (during a Drill) | Small panel low on the off-hand side: Drill and Rep, the cue or why it is paused, Pause/Resume, Cancel, Flag Rep |
 | Results (after each Drill) | Success %, average reaction time and tip speed, the hit map per Target Zone, the last-10-sessions trend; Run again, History, Done |
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
-| Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip. "Calibrate grip" opens the grip page |
-| Grip (from Settings) | The chosen grip's computed, saved, feel-test and in-use pitch and yaw; Calibrate (the thrust calibration), Reset to computed, Back |
+| Settings | Opens on six groups (PER-70); pick one to see its Settings with - and +, saved at once; height and hand rebuild the Dummy and the Strip. Back goes from a group to the groups, and from the groups to Home; opening Settings from Home always starts on the groups |
+| Grip (from Settings, Blade group) | The chosen grip's computed, saved, feel-test and in-use pitch and yaw; Calibrate (the thrust calibration), Reset to computed, Back (to the Blade group) |
+
+The Settings groups, in order (`SettingGroups` in the UI Core; an Edit-mode test fails if a Setting is in no group or in two, so a new Setting must be added to one):
+
+| Group | Settings |
+|---|---|
+| You | Sword hand, Your height, Menu laser tilt |
+| Drills | Reps per Drill, Rest between Reps, Reaction window, Compound second Touch window, Distance choice window, Footwork call window, Shrink Drills to fit the Strip |
+| Strip | Warning Zone on a full piste, Warning Zone at least, Off-strip tolerance |
+| Touch | Touch rule, Touch pressure |
+| Blade | Grip, Blade pitch, Blade yaw, Blade set (curve), Blade flex, and the "Calibrate grip" button (opens the grip page) |
+| Haptics | Haptic Touch, flat contact, glance, strength when slow, full strength at |
+
+A group holds at most 7 Settings, so each fits on one page. Folding the panels with the Menu button keeps the open group.
 
 The Menu button on the left controller (three lines; `OVRInput.RawButton.Start`) folds every panel away (Home, Settings, Results, History and the Running panel, which otherwise sits in view during a Drill) and opens them again (PER-50). It is the left controller's whichever the sword hand (the right controller's matching button is the system's), and is none of the Strip's X, Y, A or B buttons or a trigger. The laser is off while the panels are folded. The folded state is remembered between sessions (Unity PlayerPrefs, key `VrFencing.MenuCollapsed`). When a Drill ends with results, the panels open on the Results even if folded (without changing the remembered state); the Menu button folds them again.
 

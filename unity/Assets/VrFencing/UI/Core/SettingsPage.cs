@@ -7,7 +7,7 @@ using VrFencing.Strip;
 
 namespace VrFencing.UI
 {
-    /// <summary>Every Setting the settings screen shows, in screen order. One per value in <see cref="TrainerSettings"/>.</summary>
+    /// <summary>Every Setting the settings screen shows, each in one <see cref="SettingGroup"/>. One per value in <see cref="TrainerSettings"/>.</summary>
     public enum SettingId
     {
         Hand,

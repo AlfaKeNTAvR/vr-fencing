@@ -25,6 +25,68 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void SettingsOpensOnTheGroupsAndBackStepsOutOneLevel()
+        {
+            var navigator = new MenuNavigator();
+
+            navigator.Open(MenuScreen.Settings);
+            Assert.That(navigator.SettingsGroup, Is.Null, "Settings opens on the list of groups.");
+
+            navigator.OpenSettingsGroup(SettingGroup.Drills);
+            Assert.That(navigator.Page, Is.EqualTo(MenuScreen.Settings));
+            Assert.That(navigator.SettingsGroup, Is.EqualTo(SettingGroup.Drills));
+
+            navigator.GoBackFromSettings();
+            Assert.That(navigator.Page, Is.EqualTo(MenuScreen.Settings));
+            Assert.That(navigator.SettingsGroup, Is.Null, "Back from a group returns to the list of groups.");
+
+            navigator.GoBackFromSettings();
+            Assert.That(navigator.Page, Is.EqualTo(MenuScreen.Home), "Back from the list returns Home.");
+        }
+
+        [Test]
+        public void LeavingSettingsAndComingBackOpensTheGroupList()
+        {
+            var navigator = new MenuNavigator();
+            navigator.OpenSettingsGroup(SettingGroup.Haptics);
+
+            navigator.Open(MenuScreen.Home);
+            navigator.Open(MenuScreen.Settings);
+
+            Assert.That(navigator.SettingsGroup, Is.Null);
+        }
+
+        [Test]
+        public void FoldingTheMenuKeepsTheOpenSettingsGroup()
+        {
+            var navigator = new MenuNavigator();
+            navigator.OpenSettingsGroup(SettingGroup.Blade);
+
+            navigator.ToggleCollapsed();
+            navigator.ToggleCollapsed();
+
+            Assert.That(navigator.GetShownPanel(false, false), Is.EqualTo(MenuScreen.Settings));
+            Assert.That(navigator.SettingsGroup, Is.EqualTo(SettingGroup.Blade));
+        }
+
+        [Test]
+        public void TheGripPageIsOpenedFromAndReturnsToTheBladeGroup()
+        {
+            var navigator = new MenuNavigator();
+            navigator.OpenSettingsGroup(SettingGroup.Blade);
+            navigator.Open(MenuScreen.Grip);
+            navigator.SetCalibrating(true);
+            navigator.SetCalibrating(false);
+            Assert.That(navigator.Page, Is.EqualTo(MenuScreen.Grip), "The calibration ends back on the grip page.");
+
+            // The grip page's Back.
+            navigator.OpenSettingsGroup(SettingGroup.Blade);
+
+            Assert.That(navigator.Page, Is.EqualTo(MenuScreen.Settings));
+            Assert.That(navigator.SettingsGroup, Is.EqualTo(SettingGroup.Blade));
+        }
+
+        [Test]
         public void ARunningDrillShowsTheRunningPanelAndPlacingTheStripHidesEverything()
         {
             var navigator = new MenuNavigator();
