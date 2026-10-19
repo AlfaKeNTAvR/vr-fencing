@@ -60,6 +60,22 @@ For Meta XR Operator on the headset (after install, once per headset reboot):
 "$ADB" shell setprop debug.meta_xr_operator.request_capture_permission 1
 ```
 
+## Pulling the session logs
+
+The Session module writes two JSON Lines files (one JSON object per line) to `Application.persistentDataPath`, which on the Quest is `/sdcard/Android/data/com.alfakentavr.vrfencing/files/`:
+
+- `session-reps.jsonl`: one line per judged Rep (timestamp, session, Drill, Rep index, Target Zone, result, reaction time, tip speed, distance from the zone center, shrink tag, flag button, IOBT arm pose or null).
+- `session-history.jsonl`: one line per finished Drill run with its results (success %, averages, hit map per Target Zone), used for the last-10-sessions trend.
+
+The name is not `reps.jsonl` on purpose: an older throwaway prototype writes that name with a different schema. The newest Rep can lag by one rest period, since it is held back so the flag button can still mark it.
+
+```bash
+"$ADB" pull /sdcard/Android/data/com.alfakentavr.vrfencing/files/session-reps.jsonl Builds/
+"$ADB" pull /sdcard/Android/data/com.alfakentavr.vrfencing/files/session-history.jsonl Builds/
+```
+
+`metavr files pull` works too, with the same device paths.
+
 ## The MCP servers (`.mcp.json`)
 
 MCP servers are plug-ins that give Claude extra tools. They are configured for this repo only, in `.mcp.json` at the repo root; Claude Code asks once whether to trust them.

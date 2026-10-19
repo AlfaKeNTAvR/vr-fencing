@@ -36,6 +36,10 @@ _Avoid_: Exercise, level, lesson
 A single attempt within a Drill, judged as success or failure with timing.
 _Avoid_: Trial, round
 
+**Session**:
+One practice sitting, from app launch to close. It can hold several Drill runs; the results history and its last-10-sessions trend count Sessions.
+_Avoid_: Workout, practice (as a noun for this)
+
 **Target**:
 A virtual object the Fencer aims Touches at.
 _Avoid_: goal
