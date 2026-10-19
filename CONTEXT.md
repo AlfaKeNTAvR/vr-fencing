@@ -48,6 +48,10 @@ _Avoid_: Miss (a Rep with no contact), near-touch
 The side of the blade, not the point, crossing a Target Zone. Never a Touch.
 _Avoid_: Slap, hit
 
+**Footwork Call**:
+A cue that names a footwork action for the Fencer to do at once: advance, retreat, lunge or check (a short move forward that comes straight back). Judged from the head's movement alone, so only roughly.
+_Avoid_: Command, footwork cue
+
 **Target**:
 A virtual object the Fencer aims Touches at.
 _Avoid_: goal
