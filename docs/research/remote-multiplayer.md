@@ -99,6 +99,11 @@ Recommendation: retarget onto our own humanoid (the Dummy, PER-32 / PER-41). Set
 
 Out of app, per Nikita. Discord has a native Horizon Store app (Meta blog, 2026-06-30) [41]; a secondary report says it can stay pinned while other VR apps run [42], but UploadVR (2026-07-02) did not confirm background voice and reported crashes of the running game [43]. Telegram has no Quest app. Test Discord on both headsets with the passthrough app in front; the fallback is a phone call with earbuds under the headset. Our app does not use the microphone, so there is no mic contention.
 
+In-app options if earbuds get annoying (Nikita: headphones are fine for now):
+- **Unity Vivox:** part of the same Unity Gaming Services project as Relay, free up to 5,000 peak concurrent users [44]. Best fit, because it needs no new account and no Meta app ID.
+- **Photon Voice:** what Meta's Player Voice Chat Building Block uses. It pulls in Photon Fusion, which the recommended path does not otherwise need.
+- **Meta Platform SDK voice:** needs a dashboard app ID, which this project avoids.
+
 ## 8. MVP choices that help or block
 
 - **Helps: ADR 0002 (poses as data, plain C# Core).** The Touch detector already consumes `TrackedPose` data, so the remote avatar's interpolated body can feed it unchanged. The judge rule, clock offset filter, Strip-to-Strip transform and claim message are all pure C# and Edit-mode testable.
@@ -110,10 +115,21 @@ Out of app, per Nikita. Discord has a native Horizon Store app (Meta blog, 2026-
 - **Watch: HandMirroring** must stay a local-logic transform; network data is always true, unmirrored poses.
 - **Nothing blocks.** Unity 6000.0 works with `com.unity.services.multiplayer` and NGO 2.x; no Meta app ID is needed anywhere on the recommended path.
 
+## Nikita's setup (answered 2026-10-19)
+
+Worcester, MA to Milwaukee, WI (about 1,350 km straight line), both on Spectrum cable at 500 Mbit/s over Wi-Fi. This is an estimate, not a measurement:
+- Wired round trip is likely 25-40 ms (Boston-Chicago class routes).
+- Wi-Fi adds 5-15 ms per side.
+- The Relay hop adds a little if its region is off the path.
+- Total: expect 40-70 ms round trip, so 20-35 ms one-way. That falls in the "feels fine" band of section 2, and the default 50 ms double window should do.
+
+Fencing near the router (the living room) keeps the Wi-Fi share low. Measure it once the Relay connection exists, by logging the NGO round-trip time.
+
+Strip lengths: Nikita's bedroom is under 3 m, and the living room and lab are 3-6 m. The partner's rooms are not known yet.
+
 ## Open questions
 
-- Partner's state, and both ISPs (fiber/cable vs DSL): decides whether RTT is 30 ms or 120 ms.
-- Room lengths available for each Strip.
+- The partner's room lengths for her Strip.
 - Whether to ever want real Meta avatars or friend invites (would need a dashboard app ID and a release-channel upload).
 - Confirm on device: IOBT high fidelity on the 3S with passthrough running; Discord voice behind the app.
 
@@ -162,3 +178,4 @@ Out of app, per Nikita. Discord has a native Horizon Store app (Meta blog, 2026-
 41. Meta blog, Discord now available on Meta Quest (2026-06-30): https://www.meta.com/blog/discord-launch/
 42. vr.org, Discord native Quest app (2026-07-01, secondary): https://vr.org/articles/discord-native-quest-app-launch-2026
 43. UploadVR, Discord now on Meta Quest (2026-07-02): https://www.uploadvr.com/discord-now-on-meta-quest-with-streaming/
+44. Unity Gaming Services pricing, Vivox free to 5,000 PCU (checked 2026-10-19): https://unity.com/products/gaming-services/pricing
