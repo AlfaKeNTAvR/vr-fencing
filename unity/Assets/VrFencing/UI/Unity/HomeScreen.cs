@@ -1,0 +1,156 @@
+using System;
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using VrFencing.Drills;
+
+namespace VrFencing.UI
+{
+    /// <summary>
+    /// The home screen: the Drill picker (easy to hard, greyed out with the required Strip length when a Drill does
+    /// not fit) and the flow buttons: start the selected Drill, settings, history, re-place the Strip, and the
+    /// off-strip tolerance (the same as the off-hand lower face button).
+    /// </summary>
+    internal sealed class HomeScreen
+    {
+        private const int RowsPerPage = 5;
+
+        private readonly GameObject _root;
+        private readonly TextMeshPro _stripText;
+        private readonly TextMeshPro _messageText;
+        private readonly TextMeshPro _emptyText;
+        private readonly TextMeshPro _pageText;
+        private readonly UiButton[] _rows = new UiButton[RowsPerPage];
+        private readonly UiButton _previousPage;
+        private readonly UiButton _nextPage;
+        private readonly UiButton _start;
+        private readonly UiButton _tolerance;
+
+        private IReadOnlyList<DrillPickerEntry> _entries = Array.Empty<DrillPickerEntry>();
+        private int _pageIndex;
+
+        public HomeScreen(
+            Transform panel,
+            Action<string> startDrill,
+            Action openSettings,
+            Action openHistory,
+            Action replaceStrip,
+            Action cycleTolerance)
+        {
+            _root = new GameObject("Home");
+            _root.transform.SetParent(panel, false);
+            var root = _root.transform;
+
+            UiKit.CreateText(root, "Title", new Vector2(-0.13f, 0.235f), new Vector2(0.46f, 0.06f), 1, UiKit.TitleFontSize,
+                TextAlignmentOptions.MidlineLeft, UiKit.TextColor).text = "Drills";
+            _stripText = UiKit.CreateText(root, "Strip", new Vector2(0.24f, 0.235f), new Vector2(0.26f, 0.06f), 1, UiKit.SmallFontSize,
+                TextAlignmentOptions.MidlineRight, UiKit.DimTextColor);
+
+            for (var row = 0; row < RowsPerPage; row++)
+            {
+                var rowIndex = row;
+                _rows[row] = UiButton.Create(root, $"Drill Row {row}", new Vector2(-0.13f, 0.16f - (row * 0.07f)), new Vector2(0.46f, 0.06f),
+                    UiKit.SmallFontSize, () => SelectRow(rowIndex), hasNote: true);
+            }
+
+            _emptyText = UiKit.CreateText(root, "No Drills", new Vector2(-0.13f, 0.02f), new Vector2(0.44f, 0.2f), 1, UiKit.BodyFontSize,
+                TextAlignmentOptions.Center, UiKit.DimTextColor);
+            _previousPage = UiButton.Create(root, "Previous Page", new Vector2(-0.31f, -0.19f), new Vector2(0.08f, 0.05f), UiKit.SmallFontSize,
+                () => ChangePage(-1));
+            _previousPage.SetLabel("<");
+            _pageText = UiKit.CreateText(root, "Page", new Vector2(-0.13f, -0.19f), new Vector2(0.2f, 0.05f), 1, UiKit.SmallFontSize,
+                TextAlignmentOptions.Center, UiKit.DimTextColor);
+            _nextPage = UiButton.Create(root, "Next Page", new Vector2(0.05f, -0.19f), new Vector2(0.08f, 0.05f), UiKit.SmallFontSize,
+                () => ChangePage(1));
+            _nextPage.SetLabel(">");
+
+            var buttonSize = new Vector2(0.21f, 0.06f);
+            _start = UiButton.Create(root, "Start", new Vector2(0.255f, 0.16f), buttonSize, UiKit.BodyFontSize, () =>
+            {
+                if (SelectedDrillId != null)
+                {
+                    startDrill(SelectedDrillId);
+                }
+            });
+            _start.SetLabel("Start");
+            CreateButton(root, "Settings", new Vector2(0.255f, 0.07f), buttonSize, "Settings", openSettings);
+            CreateButton(root, "History", new Vector2(0.255f, 0.0f), buttonSize, "History", openHistory);
+            CreateButton(root, "Re-place Strip", new Vector2(0.255f, -0.09f), buttonSize, "Re-place Strip", replaceStrip);
+            _tolerance = UiButton.Create(root, "Tolerance", new Vector2(0.255f, -0.16f), buttonSize, UiKit.SmallFontSize, cycleTolerance);
+
+            _messageText = UiKit.CreateText(root, "Message", new Vector2(0.0f, -0.25f), new Vector2(0.72f, 0.045f), 1, UiKit.SmallFontSize,
+                TextAlignmentOptions.Center, UiKit.NoteTextColor);
+        }
+
+        /// <summary>The Drill the Start button runs, or null when none is available.</summary>
+        public string SelectedDrillId { get; private set; }
+
+        public void SetVisible(bool isVisible)
+        {
+            _root.SetActive(isVisible);
+        }
+
+        public void Refresh(IReadOnlyList<DrillPickerEntry> entries, string stripText, float toleranceMeters, string message)
+        {
+            _entries = entries;
+            UiKit.SetText(_stripText, stripText);
+            UiKit.SetText(_messageText, message);
+            _tolerance.SetLabel($"Off-strip: {toleranceMeters:0.0} m");
+            RedrawList();
+        }
+
+        private void RedrawList()
+        {
+            var entries = _entries;
+            SelectedDrillId = DrillPicker.ResolveSelection(entries, SelectedDrillId);
+            _start.SetInteractable(SelectedDrillId != null);
+
+            var page = PageWindow.For(entries.Count, RowsPerPage, _pageIndex);
+            _pageIndex = page.PageIndex;
+            for (var row = 0; row < RowsPerPage; row++)
+            {
+                var isShown = row < page.ItemCount;
+                _rows[row].SetVisible(isShown);
+                if (!isShown)
+                {
+                    continue;
+                }
+
+                var entry = entries[page.FirstItem + row];
+                _rows[row].SetLabel(entry.Drill.Name);
+                _rows[row].SetNote(entry.Note);
+                _rows[row].SetInteractable(entry.IsAvailable);
+                _rows[row].SetSelected(entry.Drill.Id == SelectedDrillId);
+            }
+
+            UiKit.SetText(_emptyText, entries.Count == 0 ? "No Drills yet" : string.Empty);
+            var hasPages = page.PageCount > 1;
+            _previousPage.SetVisible(hasPages);
+            _nextPage.SetVisible(hasPages);
+            _previousPage.SetInteractable(page.HasPrevious);
+            _nextPage.SetInteractable(page.HasNext);
+            UiKit.SetText(_pageText, hasPages ? $"{page.PageIndex + 1} / {page.PageCount}" : string.Empty);
+        }
+
+        private void SelectRow(int row)
+        {
+            var index = PageWindow.For(_entries.Count, RowsPerPage, _pageIndex).FirstItem + row;
+            if (index < _entries.Count && _entries[index].IsAvailable)
+            {
+                SelectedDrillId = _entries[index].Drill.Id;
+                RedrawList();
+            }
+        }
+
+        private void ChangePage(int step)
+        {
+            _pageIndex += step;
+            RedrawList();
+        }
+
+        private static void CreateButton(Transform root, string name, Vector2 center, Vector2 size, string label, Action onClick)
+        {
+            UiButton.Create(root, name, center, size, UiKit.BodyFontSize, onClick).SetLabel(label);
+        }
+    }
+}

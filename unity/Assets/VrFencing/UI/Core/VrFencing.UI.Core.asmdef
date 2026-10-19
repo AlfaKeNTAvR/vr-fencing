@@ -1,12 +1,20 @@
 {
     "name": "VrFencing.UI.Core",
     "rootNamespace": "VrFencing.UI",
-    "references": [],
+    "references": [
+        "VrFencing.Drills.Core",
+        "VrFencing.Dummy.Core",
+        "VrFencing.Session.Core",
+        "VrFencing.Settings.Core",
+        "VrFencing.Strip.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
-    "overrideReferences": false,
-    "precompiledReferences": [],
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Newtonsoft.Json.dll"
+    ],
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [],

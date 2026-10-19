@@ -2,7 +2,19 @@
     "name": "VrFencing.UI.Unity",
     "rootNamespace": "VrFencing.UI",
     "references": [
-        "VrFencing.UI.Core"
+        "VrFencing.UI.Core",
+        "VrFencing.Drills.Core",
+        "VrFencing.Drills.Unity",
+        "VrFencing.Dummy.Core",
+        "VrFencing.Dummy.Unity",
+        "VrFencing.Session.Core",
+        "VrFencing.Session.Unity",
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity",
+        "VrFencing.Strip.Core",
+        "VrFencing.Strip.Unity",
+        "Oculus.VR",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

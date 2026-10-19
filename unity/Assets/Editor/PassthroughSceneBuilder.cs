@@ -1,6 +1,6 @@
 // Builds the passthrough scene: Meta camera rig with passthrough as the
 // background, the Strip, the Dummy standing on it under the En Garde Line, and the
-// Practice object (Drill runner, session recorder, arm tracking).
+// Practice object (Drill runner, session recorder, arm tracking), and the Menu (panels and off-hand pointer).
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -11,6 +11,7 @@ using VrFencing.Dummy;
 using VrFencing.Session;
 using VrFencing.Strip;
 using VrFencing.Tracking;
+using VrFencing.UI;
 
 namespace VrFencing.EditorTools
 {
@@ -25,6 +26,7 @@ namespace VrFencing.EditorTools
         private const string EnGardeLineName = "En Garde Line";
         private const string DummyName = "Dummy";
         private const string PracticeName = "Practice";
+        private const string MenuName = "Menu";
 
         // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset along the Strip.
         private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
@@ -49,8 +51,10 @@ namespace VrFencing.EditorTools
             MakeCameraBackgroundTransparent(cameraRig);
             RemoveObsoleteReferenceCube(scene);
             var enGardeLine = FindOrCreateStrip(scene);
-            PlaceDummyOnStrip(scene, enGardeLine);
-            FindOrCreatePractice(scene, enGardeLine.GetComponentInParent<StripBehaviour>());
+            var dummy = PlaceDummyOnStrip(scene, enGardeLine);
+            var strip = enGardeLine.GetComponentInParent<StripBehaviour>();
+            var practice = FindOrCreatePractice(scene, strip);
+            FindOrCreateMenu(scene, practice, strip, dummy);
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -165,7 +169,7 @@ namespace VrFencing.EditorTools
         /// The Dummy stands under the En Garde Line, so it follows the Strip; it builds its silhouette from the
         /// settings when the app starts. An older scene's Dummy at the root is moved there.
         /// </summary>
-        private static void PlaceDummyOnStrip(Scene scene, Transform enGardeLine)
+        private static DummyBehaviour PlaceDummyOnStrip(Scene scene, Transform enGardeLine)
         {
             var dummy = Object.FindObjectsByType<DummyBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .FirstOrDefault(candidate => candidate.gameObject.scene == scene);
@@ -177,13 +181,14 @@ namespace VrFencing.EditorTools
 
             dummy.transform.SetParent(enGardeLine, false);
             dummy.transform.SetLocalPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
+            return dummy;
         }
 
         /// <summary>
         /// The Practice object hosts the Drill runner, the session recorder that writes the rep log, and the arm
         /// tracking that adds the IOBT arm pose to each logged Rep. Nothing starts a Drill until the UI does.
         /// </summary>
-        private static void FindOrCreatePractice(Scene scene, StripBehaviour strip)
+        private static GameObject FindOrCreatePractice(Scene scene, StripBehaviour strip)
         {
             var practice = scene.GetRootGameObjects().FirstOrDefault(root => root.name == PracticeName);
             if (practice == null)
@@ -201,6 +206,27 @@ namespace VrFencing.EditorTools
             SetReference(armTracking, "_sessionRecorder", sessionRecorder);
             SetReference(armTracking, "_drillRunner", drillRunner);
             SetReference(armTracking, "_strip", strip);
+            return practice;
+        }
+
+        /// <summary>
+        /// The Menu builds its panels and the off-hand pointer at runtime. It drives the Practice object's Drill runner
+        /// and session recorder, re-places the Strip, and hands changed Settings to the Strip and the Dummy.
+        /// </summary>
+        private static void FindOrCreateMenu(Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy)
+        {
+            var menuObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == MenuName);
+            if (menuObject == null)
+            {
+                menuObject = new GameObject(MenuName);
+                SceneManager.MoveGameObjectToScene(menuObject, scene);
+            }
+
+            var menu = GetOrAddComponent<MenuBehaviour>(menuObject);
+            SetReference(menu, "_drillRunner", practice.GetComponent<DrillRunnerBehaviour>());
+            SetReference(menu, "_sessionRecorder", practice.GetComponent<SessionRecorderBehaviour>());
+            SetReference(menu, "_strip", strip);
+            SetReference(menu, "_dummy", dummy);
         }
 
         private static T GetOrAddComponent<T>(GameObject target) where T : Component
