@@ -957,6 +957,8 @@ GameObject:
   - component: {fileID: 1825721223}
   - component: {fileID: 1825721222}
   - component: {fileID: 1825721226}
+  - component: {fileID: 1825721227}
+  - component: {fileID: 1825721228}
   m_Layer: 0
   m_Name: Practice
   m_TagString: Untagged
@@ -979,6 +981,7 @@ MonoBehaviour:
   _sessionRecorder: {fileID: 1825721223}
   _drillRunner: {fileID: 1825721224}
   _strip: {fileID: 24875195}
+  _bodyTracking: {fileID: 1825721227}
 --- !u!114 &1825721223
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1031,9 +1034,35 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8d85e081c8d67724894222cdb71210bb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   _drillRunner: {fileID: 1825721224}
+  _strip: {fileID: 24875195}
+--- !u!114 &1825721227
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1825721221}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61742177044c8844bd3e9adab09a7b55, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!114 &1825721228
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1825721221}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0697a9e3eec566bc9d16f528d1caffcb, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  _bodyTracking: {fileID: 1825721227}
   _strip: {fileID: 24875195}
 --- !u!1 &1930121537
 GameObject:
