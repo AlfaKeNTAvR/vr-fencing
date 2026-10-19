@@ -100,7 +100,7 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
-        public void TheBurgerFoldsThePanelsAwayAndKeepsThePage()
+        public void TheMenuButtonFoldsThePanelsAwayAndKeepsThePage()
         {
             var navigator = new MenuNavigator();
             navigator.Open(MenuScreen.Settings);
@@ -110,22 +110,48 @@ namespace VrFencing.Tests.UI
             Assert.That(navigator.IsCollapsed, Is.True);
             Assert.That(navigator.GetShownPanel(isPlacingStrip: false, isDrillRunning: false), Is.EqualTo(MenuScreen.Hidden));
             Assert.That(navigator.GetShownPanel(isPlacingStrip: false, isDrillRunning: true), Is.EqualTo(MenuScreen.Hidden), "The Running panel folds away too.");
-            Assert.That(navigator.IsBurgerShown(isPlacingStrip: false), Is.True, "The burger stays to open them again.");
+            Assert.That(navigator.IsPointerShown(isPlacingStrip: false, isDrillRunning: false), Is.False, "No laser with nothing to point at.");
 
             navigator.ToggleCollapsed();
 
             Assert.That(navigator.GetShownPanel(false, false), Is.EqualTo(MenuScreen.Settings));
             Assert.That(navigator.GetShownPanel(false, true), Is.EqualTo(MenuScreen.Running));
+            Assert.That(navigator.IsPointerShown(false, false), Is.True);
         }
 
         [Test]
-        public void PlacingTheStripHidesTheBurgerToo()
+        public void PlacingTheStripHidesThePointer()
+        {
+            var navigator = new MenuNavigator();
+
+            Assert.That(navigator.IsPointerShown(isPlacingStrip: true, isDrillRunning: false), Is.False);
+            Assert.That(navigator.GetShownPanel(isPlacingStrip: true, isDrillRunning: false), Is.EqualTo(MenuScreen.Hidden));
+        }
+
+        [Test]
+        public void AFinishedDrillShowsItsResultsEvenWhenFolded()
         {
             var navigator = new MenuNavigator();
             navigator.SetCollapsed(true);
 
-            Assert.That(navigator.IsBurgerShown(isPlacingStrip: true), Is.False);
-            Assert.That(navigator.GetShownPanel(isPlacingStrip: true, isDrillRunning: false), Is.EqualTo(MenuScreen.Hidden));
+            navigator.OnDrillFinished(hasResults: true);
+
+            Assert.That(navigator.IsCollapsed, Is.False);
+            Assert.That(navigator.GetShownPanel(false, false), Is.EqualTo(MenuScreen.Results));
+
+            navigator.ToggleCollapsed();
+            Assert.That(navigator.GetShownPanel(false, false), Is.EqualTo(MenuScreen.Hidden), "The Menu button folds the results again.");
+        }
+
+        [Test]
+        public void ADrillCancelledWithoutResultsKeepsTheMenuFolded()
+        {
+            var navigator = new MenuNavigator();
+            navigator.SetCollapsed(true);
+
+            navigator.OnDrillFinished(hasResults: false);
+
+            Assert.That(navigator.IsCollapsed, Is.True);
         }
 
         [Test]
