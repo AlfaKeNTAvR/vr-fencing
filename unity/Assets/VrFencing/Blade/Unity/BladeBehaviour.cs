@@ -49,6 +49,7 @@ namespace VrFencing.Blade
         private BladeVisual _visual;
         private BladeHapticPlayer _haptics;
         private TrackedPose? _lastEnGardeLine;
+        private float? _lastDummyDistanceMeters;
         private float _lastFlatHapticAt = float.NegativeInfinity;
         // The blade starts drawn; the first untracked frame hides it.
         private bool _isTracked = true;
@@ -131,6 +132,15 @@ namespace VrFencing.Blade
             }
 
             _lastEnGardeLine = enGardeLine;
+
+            // A Drill standing the Dummy at its distance moves every zone at once: also a jump, not motion.
+            var dummyDistanceMeters = _dummy.DistanceMeters;
+            if (_lastDummyDistanceMeters.HasValue && Mathf.Abs(dummyDistanceMeters - _lastDummyDistanceMeters.Value) > JumpMeters)
+            {
+                _detector.Reset();
+            }
+
+            _lastDummyDistanceMeters = dummyDistanceMeters;
             var controllerAnchor = _mount.parent;
             var controllerInRoom = new TrackedPose(controllerAnchor.position.ToNumerics(), controllerAnchor.rotation.ToNumerics());
             var controllerInStrip = StripFrame.ToStripFrame(enGardeLine, controllerInRoom);

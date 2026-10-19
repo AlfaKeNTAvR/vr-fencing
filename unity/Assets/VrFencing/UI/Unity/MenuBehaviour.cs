@@ -69,7 +69,7 @@ namespace VrFencing.UI
         private ResultsScreen _results;
         private HistoryScreen _history;
         private RunningPanel _runningPanel;
-        private DummyCueLights _cueLights;
+        private DummyCueDisplay _cueDisplay;
 
         private MenuScreen _shownScreen = MenuScreen.Hidden;
         private bool _isDirty = true;
@@ -107,7 +107,7 @@ namespace VrFencing.UI
             _sessionRecorder.DrillRunRecorded += OnDrillRunRecorded;
             if (_dummy != null)
             {
-                _cueLights = new DummyCueLights(Runner, _dummy);
+                _cueDisplay = new DummyCueDisplay(Runner, _dummy);
             }
         }
 
@@ -129,7 +129,7 @@ namespace VrFencing.UI
                 _sessionRecorder.DrillRunRecorded -= OnDrillRunRecorded;
             }
 
-            _cueLights?.Dispose();
+            _cueDisplay?.Dispose();
         }
 
         private void Update()

@@ -67,6 +67,19 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void DrillRunnerMovesTheScenesDummy()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var runner = Object.FindFirstObjectByType<VrFencing.Drills.DrillRunnerBehaviour>();
+            var dummy = Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>();
+
+            Assert.That(runner, Is.Not.Null, "No Drill runner in the passthrough scene.");
+            Assert.That(new SerializedObject(runner).FindProperty("_dummy").objectReferenceValue, Is.SameAs(dummy),
+                "The runner stands the Dummy at each Drill's Dummy Distance.");
+        }
+
+        [Test]
         public void MenuDrivesThePracticeRunnerTheStripAndTheDummy()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);

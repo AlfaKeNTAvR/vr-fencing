@@ -41,6 +41,12 @@ namespace VrFencing.Drills
             _random = random ?? throw new ArgumentNullException(nameof(random));
         }
 
+        /// <summary>
+        /// A run started: <see cref="Drill"/> and <see cref="IsShrunk"/> are set, and the first Rep is about to be cued.
+        /// The Unity layer moves the Dummy to the Drill's Dummy Distance here, before the first cue.
+        /// </summary>
+        public event Action Started;
+
         /// <summary>Raised on every state change, including the pass through <see cref="DrillState.Judge"/>.</summary>
         public event Action<DrillState> StateChanged;
 
@@ -113,6 +119,7 @@ namespace VrFencing.Drills
             _pausedTotalSeconds = 0.0;
             IsPaused = false;
             _isPausedByFencer = false;
+            Started?.Invoke();
 
             EnterCue(atActiveSeconds: 0.0);
             if (!_isFencerOnStrip)

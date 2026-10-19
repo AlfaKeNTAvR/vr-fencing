@@ -41,6 +41,8 @@ namespace VrFencing.Dummy
         private readonly Dictionary<TargetZone, ZoneLight> _shownLights = new Dictionary<TargetZone, ZoneLight>();
         private readonly Dictionary<ArmJoint, Transform> _jointTransforms = new Dictionary<ArmJoint, Transform>();
 
+        // The serialized preset as the scene set it, kept the first time anything moves the Dummy.
+        private DummyDistance? _sceneDistancePreset;
         private float? _customDistanceMeters;
         private MaterialPropertyBlock _propertyBlock;
         private Transform _partsRoot;
@@ -73,9 +75,16 @@ namespace VrFencing.Dummy
         /// <summary>Stands the Dummy at a preset distance, scaled to its height.</summary>
         public void SetDistance(DummyDistance preset)
         {
+            _sceneDistancePreset ??= _distancePreset;
             _distancePreset = preset;
             _customDistanceMeters = null;
             PlaceOnStrip();
+        }
+
+        /// <summary>Stands the Dummy back at the scene's preset distance, e.g. when a Drill run ends.</summary>
+        public void ResetDistance()
+        {
+            SetDistance(_sceneDistancePreset ?? _distancePreset);
         }
 
         /// <summary>Stands the Dummy at an exact distance, e.g. a shortened Drill on a short Strip.</summary>

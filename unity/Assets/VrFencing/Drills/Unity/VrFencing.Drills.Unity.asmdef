@@ -4,6 +4,7 @@
     "references": [
         "VrFencing.Drills.Core",
         "VrFencing.Dummy.Core",
+        "VrFencing.Dummy.Unity",
         "VrFencing.Strip.Core",
         "VrFencing.Strip.Unity"
     ],

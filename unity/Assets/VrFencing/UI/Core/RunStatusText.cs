@@ -39,6 +39,15 @@ namespace VrFencing.UI
             return new RunStatus(title, FormatInstruction(runner, isFencerOnStrip));
         }
 
+        /// <summary>
+        /// The label above the Dummy for a Rep's cue: the Target Zone's name for a named-zone cue ("Upper arm"), empty
+        /// for a lit-zone cue, whose light on the Dummy is the cue.
+        /// </summary>
+        public static string FormatDummyLabel(RepCue cue)
+        {
+            return cue.CueType == CueType.NamedTargetZone ? TargetZoneNames.Get(cue.TargetZone) : string.Empty;
+        }
+
         private static string FormatInstruction(DrillRunner runner, bool isFencerOnStrip)
         {
             if (runner.IsPaused)

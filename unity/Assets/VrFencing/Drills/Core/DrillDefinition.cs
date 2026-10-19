@@ -41,7 +41,9 @@ namespace VrFencing.Drills
             float restSeconds,
             CueType cueType,
             SuccessRule successRule,
-            IReadOnlyList<TargetZone> targetZones)
+            IReadOnlyList<TargetZone> targetZones,
+            DummyDistance dummyDistance = DummyDistance.Lunge,
+            DummyDistance? shrunkDummyDistance = null)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -90,6 +92,12 @@ namespace VrFencing.Drills
                 throw new ArgumentException("A Drill needs at least one Target Zone to cue.", nameof(targetZones));
             }
 
+            if (shrunkDummyDistance.HasValue && !shrunkStripLengthMeters.HasValue)
+            {
+                throw new ArgumentException(
+                    "Only a Drill with a shortened variant can set the shortened variant's Dummy Distance.", nameof(shrunkDummyDistance));
+            }
+
             Id = id;
             Name = name;
             Order = order;
@@ -102,6 +110,8 @@ namespace VrFencing.Drills
             CueType = cueType;
             SuccessRule = successRule;
             TargetZones = targetZones.ToArray();
+            DummyDistance = dummyDistance;
+            ShrunkDummyDistance = shrunkDummyDistance ?? dummyDistance;
         }
 
         /// <summary>Stable key for the rep log.</summary>
@@ -139,5 +149,17 @@ namespace VrFencing.Drills
 
         /// <summary>The Target Zones a Rep may cue; each Rep picks one at random.</summary>
         public IReadOnlyList<TargetZone> TargetZones { get; }
+
+        /// <summary>Where the Dummy stands for the full Drill. The Unity layer moves the Dummy there when a run starts.</summary>
+        public DummyDistance DummyDistance { get; }
+
+        /// <summary>Where the Dummy stands for the shortened variant; the same as <see cref="DummyDistance"/> unless the variant moves it nearer.</summary>
+        public DummyDistance ShrunkDummyDistance { get; }
+
+        /// <summary>The Dummy Distance for a run of the full Drill or, with <paramref name="isShrunk"/>, its shortened variant.</summary>
+        public DummyDistance GetDummyDistance(bool isShrunk)
+        {
+            return isShrunk ? ShrunkDummyDistance : DummyDistance;
+        }
     }
 }
