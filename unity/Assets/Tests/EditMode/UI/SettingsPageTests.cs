@@ -125,6 +125,22 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TouchPressureAndBladeFlexAreChoices()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.TouchPressure), Is.EqualTo("Realistic (750 g)"));
+            var onContact = SettingsPage.Change(settings, SettingId.TouchPressure, 1);
+            Assert.That(SettingsPage.FormatValue(onContact, SettingId.TouchPressure), Is.EqualTo("On contact"));
+            Assert.That(SettingsPage.Change(onContact, SettingId.TouchPressure, 1).Blade.TouchPressure, Is.EqualTo(TouchPressure.Realistic), "Only two choices.");
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeFlex), Is.EqualTo("Normal"));
+            Assert.That(SettingsPage.Change(settings, SettingId.BladeFlex, 1).Blade.Flex, Is.EqualTo(BladeFlexSoftness.Soft));
+            Assert.That(SettingsPage.Change(settings, SettingId.BladeFlex, -1).Blade.Flex, Is.EqualTo(BladeFlexSoftness.Stiff));
+            Assert.That(SettingsPage.GetImpact(SettingId.TouchPressure), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.BladeFlex), Is.EqualTo(SettingImpact.Blade));
+        }
+
+        [Test]
         public void TheLaserTiltsDownByDefaultAndStepsByFiveDegrees()
         {
             var settings = new TrainerSettings();

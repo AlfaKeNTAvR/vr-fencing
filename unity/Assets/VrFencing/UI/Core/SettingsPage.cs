@@ -23,6 +23,8 @@ namespace VrFencing.UI
         WarningZoneMinimumLength,
         OffStripTolerance,
         TouchRule,
+        TouchPressure,
+        BladeFlex,
         BladeMount,
         BladePitch,
         BladeYaw,
@@ -113,6 +115,8 @@ namespace VrFencing.UI
                 case SettingId.WarningZoneMinimumLength: return "Warning Zone at least";
                 case SettingId.OffStripTolerance: return "Off-strip tolerance";
                 case SettingId.TouchRule: return "Touch rule";
+                case SettingId.TouchPressure: return "Touch pressure";
+                case SettingId.BladeFlex: return "Blade flex";
                 case SettingId.BladeMount: return "Blade in the hand";
                 case SettingId.BladePitch: return "Blade pitch (up +)";
                 case SettingId.BladeYaw: return "Blade yaw (right +)";
@@ -138,6 +142,10 @@ namespace VrFencing.UI
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
                     return settings.Blade.TouchRule == TouchRule.Strict ? "Strict" : "Loose";
+                case SettingId.TouchPressure:
+                    return settings.Blade.TouchPressure == TouchPressure.OnContact ? "On contact" : "Realistic (750 g)";
+                case SettingId.BladeFlex:
+                    return settings.Blade.Flex.ToString();
                 case SettingId.BladeMount:
                     return FormatMount(settings.Blade.Mount);
                 case SettingId.TouchHaptic:
@@ -168,6 +176,8 @@ namespace VrFencing.UI
                 case SettingId.OffStripTolerance:
                     return SettingImpact.Strip;
                 case SettingId.TouchRule:
+                case SettingId.TouchPressure:
+                case SettingId.BladeFlex:
                 case SettingId.BladeMount:
                 case SettingId.BladePitch:
                 case SettingId.BladeYaw:
@@ -213,6 +223,12 @@ namespace VrFencing.UI
                     break;
                 case SettingId.TouchRule:
                     changed.Blade.TouchRule = Cycle(settings.Blade.TouchRule, direction);
+                    break;
+                case SettingId.TouchPressure:
+                    changed.Blade.TouchPressure = Cycle(settings.Blade.TouchPressure, direction);
+                    break;
+                case SettingId.BladeFlex:
+                    changed.Blade.Flex = Cycle(settings.Blade.Flex, direction);
                     break;
                 case SettingId.BladeMount:
                     changed.Blade.Mount = Cycle(settings.Blade.Mount, direction);

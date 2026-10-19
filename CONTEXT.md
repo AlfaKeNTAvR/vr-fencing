@@ -11,7 +11,7 @@ The person wearing the headset and practicing.
 _Avoid_: Player, user
 
 **Touch**:
-A valid hit: the point of the blade landing on a target. In épée only the point scores, anywhere on the body.
+A valid hit: the point of the blade landing on a target with enough pressure (750 g on a real épée's point; in the app, pushed in a few millimeters or arriving fast). In épée only the point scores, anywhere on the body.
 _Avoid_: Hit, score, strike
 
 **Strip**:
@@ -41,7 +41,7 @@ One practice sitting, from app launch to close. It can hold several Drill runs; 
 _Avoid_: Workout, practice (as a noun for this)
 
 **Glance**:
-The point reaching a Target Zone without counting as a Touch: arriving sideways, with the blade not pointing in, or too slowly. Felt as a light tick, never scored.
+The point reaching a Target Zone without counting as a Touch: arriving sideways, with the blade not pointing in, too slowly, or too lightly (a brush that never presses the point in). Felt as a light tick, never scored.
 _Avoid_: Miss (a Rep with no contact), near-touch
 
 **Flat Contact**:

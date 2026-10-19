@@ -13,6 +13,32 @@ namespace VrFencing.Settings
         Strict,
     }
 
+    /// <summary>
+    /// How hard the point must press for a Touch (PER-50). A real épée scores only with at least 750 g (about 7.4 N) on
+    /// the point; the numbers that stand in for it live in the Blade Core (<c>TouchRules</c>).
+    /// </summary>
+    public enum TouchPressure
+    {
+        /// <summary>The point must be pressed in (or arrive fast enough to press it in) as with 750 g: a light brush does not score.</summary>
+        Realistic,
+
+        /// <summary>The first contact scores, as before PER-50.</summary>
+        OnContact,
+    }
+
+    /// <summary>How lively the drawn blade's flex is (PER-50): its first bending mode. Visual only.</summary>
+    public enum BladeFlexSoftness
+    {
+        /// <summary>11 Hz, well damped: a small whip that settles quickly.</summary>
+        Stiff,
+
+        /// <summary>8 Hz, lightly damped: about a real épée's first bending mode, ringing a few visible cycles.</summary>
+        Normal,
+
+        /// <summary>6 Hz, very lightly damped: livelier than a real blade.</summary>
+        Soft,
+    }
+
     /// <summary>Where the front of the guard sits along the sword-hand controller's forward axis.</summary>
     public enum BladeMount
     {
@@ -49,12 +75,17 @@ namespace VrFencing.Settings
 
     /// <summary>
     /// The Blade's Settings. Defaults from the PER-22 feel tests: Center mount, pitch +10 degrees, yaw -10 degrees,
-    /// Touch = Heavy, flat contact = Double tap, glance = Tick, loose Touch rule.
+    /// Touch = Heavy, flat contact = Double tap, glance = Tick, loose Touch rule; PER-50: realistic Touch pressure,
+    /// normal blade flex.
     /// Angles are for the right hand; the left hand mirrors the yaw.
     /// </summary>
     public sealed class BladeSettings
     {
         public TouchRule TouchRule { get; set; } = TouchRule.Loose;
+
+        public TouchPressure TouchPressure { get; set; } = TouchPressure.Realistic;
+
+        public BladeFlexSoftness Flex { get; set; } = BladeFlexSoftness.Normal;
 
         public BladeMount Mount { get; set; } = BladeMount.Center;
 

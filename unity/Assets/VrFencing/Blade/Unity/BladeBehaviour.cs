@@ -65,7 +65,8 @@ namespace VrFencing.Blade
         public void ApplySettings(TrainerSettings settings)
         {
             _settings = settings.Clone();
-            _rules = TouchRules.For(_settings.Blade.TouchRule);
+            _rules = TouchRules.For(_settings.Blade.TouchRule, _settings.Blade.TouchPressure);
+            _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
             _mountInController = BladePose.GetMountInController(_settings.Blade, _settings.Hand);
             AttachToSwordHand();
             RestartMotion();
@@ -132,10 +133,10 @@ namespace VrFencing.Blade
                 DetectContacts(now, bladeInStrip);
             }
 
-            // A pressed épée bows up from the grip: the drawn blade bows toward the mount's up.
-            var bowDirection = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), System.Numerics.Quaternion.Inverse(stripInRoom.Rotation));
+            // The grip's up (thumb side): a blade pushed straight in bulges the other way, its set (PER-50).
+            var gripUp = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), System.Numerics.Quaternion.Inverse(stripInRoom.Rotation));
             var wasDecoupled = _drawnBlade.IsDecoupled;
-            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), bowDirection, Time.deltaTime);
+            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");
@@ -216,7 +217,8 @@ namespace VrFencing.Blade
         {
             Debug.Log($"[Blade] {bladeEvent.Type} {bladeEvent.Zone} tip {bladeEvent.TipSpeedMetersPerSecond:0.00} m/s " +
                 $"approach {bladeEvent.ApproachAngleDegrees:0} deg blade {bladeEvent.BladeAxisAngleDegrees:0} deg " +
-                $"from center {bladeEvent.DistanceFromZoneCenterMeters * 100.0f:0.0} cm rule {_settings.Blade.TouchRule}");
+                $"from center {bladeEvent.DistanceFromZoneCenterMeters * 100.0f:0.0} cm rule {_settings.Blade.TouchRule} " +
+                $"pressure {_settings.Blade.TouchPressure} pressed {(bladeEvent.TimeSeconds - bladeEvent.FirstContactSeconds) * 1000.0:0} ms after contact");
 
             switch (bladeEvent.Type)
             {

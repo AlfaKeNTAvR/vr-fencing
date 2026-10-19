@@ -16,9 +16,10 @@ namespace VrFencing.UI
     /// The menus (PER-36, decided in PER-27): world-space panels in front of the Fencer, worked with a laser from the
     /// off-hand controller and its trigger. Home holds the Drill picker and the flow buttons, then Settings, Results
     /// (after each Drill) and History; during a Drill a small Running panel holds pause, cancel and flag. Placing the
-    /// Strip hides every panel, because placement uses the same trigger. A small burger button low on the off-hand
-    /// side folds the panels away (Home, Running and the rest) so they do not block the view of the Dummy, and opens
-    /// them again; the folded state is remembered between sessions (PlayerPrefs).
+    /// Strip hides every panel, because placement uses the same trigger. The left controller's Menu button (three
+    /// lines) folds the panels away (Home, Running and the rest) so they do not block the view of the Dummy, and opens
+    /// them again; it is always the left controller's, whichever the sword hand (PER-50). The folded state is
+    /// remembered between sessions (PlayerPrefs); a finished Drill opens the panels on its results without changing it.
     ///
     /// This is the scene glue: it starts, pauses and cancels Drills on the one <see cref="DrillRunnerBehaviour"/>,
     /// flags Reps and reads results through <see cref="SessionRecorderBehaviour"/>, re-places the Strip, and saves
@@ -37,8 +38,9 @@ namespace VrFencing.UI
         private const float RunningPanelSideMeters = 0.3f;
         private const float RunningPanelTurnDegrees = 35.0f;
 
-        // The burger sits on the Running panel's row, just past its off-hand edge, so it is always in the same spot.
-        private const float BurgerSideMeters = 0.62f;
+        // The left controller's Menu button. It is not on the right controller (that one is the system button) and is
+        // no Strip button (X, Y, A, B) or trigger, so it never competes with them.
+        private const OVRInput.RawButton MenuButton = OVRInput.RawButton.Start;
 
         private const string CollapsedPrefKey = "VrFencing.MenuCollapsed";
 
@@ -64,17 +66,12 @@ namespace VrFencing.UI
             new PanelFollower(MainPanelDistanceMeters, MainPanelBelowEyeMeters, sideMeters: 0.0f, MainPanelTurnDegrees);
         private readonly PanelFollower _runningFollower =
             new PanelFollower(RunningPanelDistanceMeters, RunningPanelBelowEyeMeters, RunningPanelSideMeters, RunningPanelTurnDegrees);
-        private readonly PanelFollower _burgerFollower =
-            new PanelFollower(RunningPanelDistanceMeters, RunningPanelBelowEyeMeters, BurgerSideMeters, RunningPanelTurnDegrees);
 
         private TrainerSettings _settings;
         private DrillRegistry _registry;
         private OVRCameraRig _cameraRig;
         private Transform _mainPanel;
         private Transform _runningPanelRoot;
-        private Transform _burgerRoot;
-        private BurgerButton _burger;
-        private bool _isBurgerShown;
         private OffHandPointer _pointer;
         private HomeScreen _home;
         private SettingsScreen _settingsScreen;
@@ -171,23 +168,13 @@ namespace VrFencing.UI
                 _mainFollower.Tick(_mainPanel, head, Time.deltaTime, IsOffHandLeft);
             }
 
-            var isBurgerShown = _navigator.IsBurgerShown(_strip.IsPlacing);
-            if (isBurgerShown != _isBurgerShown)
-            {
-                _isBurgerShown = isBurgerShown;
-                _burgerRoot.gameObject.SetActive(isBurgerShown);
-                _burgerFollower.Snap();
-            }
-
-            if (isBurgerShown)
-            {
-                _burger.Refresh(!_navigator.IsCollapsed);
-                _burgerFollower.Tick(_burgerRoot, head, Time.deltaTime, IsOffHandLeft);
-            }
-
-            // The pointer runs whenever the burger is out, so it can open folded panels.
             _pointer.Tick(GetOffHandController(), IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
-                isBurgerShown, _settings.LaserTiltDegrees, nowSeconds);
+                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning), _settings.LaserTiltDegrees, nowSeconds);
+
+            if (OVRInput.GetDown(MenuButton, OVRInput.Controller.Touch))
+            {
+                ToggleCollapsed();
+            }
         }
 
         private void ToggleCollapsed()
@@ -225,11 +212,6 @@ namespace VrFencing.UI
             _runningPanelRoot.SetParent(transform, false);
             _runningPanel = new RunningPanel(_runningPanelRoot, TogglePause, () => Runner.Cancel(), () => _sessionRecorder.FlagRep());
 
-            _burgerRoot = new GameObject("Menu Burger").transform;
-            _burgerRoot.SetParent(transform, false);
-            _burger = new BurgerButton(_burgerRoot, ToggleCollapsed);
-            _burgerRoot.gameObject.SetActive(false);
-
             _pointer = new OffHandPointer(transform);
             ShowScreen(MenuScreen.Hidden);
         }
@@ -246,7 +228,6 @@ namespace VrFencing.UI
             if (screen == MenuScreen.Running && _shownScreen != MenuScreen.Running)
             {
                 _runningFollower.Snap();
-                _burgerFollower.Snap();
             }
 
             _mainPanel.gameObject.SetActive(isMainShown);

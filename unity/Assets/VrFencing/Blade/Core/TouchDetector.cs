@@ -21,6 +21,11 @@ namespace VrFencing.Blade
     /// from outside every zone, judged against the zone it reaches first. Flat contact fires when the blade body
     /// (all but the last <see cref="TouchRules.TipZoneLengthMeters"/>) crosses a zone while the point is not in any zone.
     /// A zone needs the tip, or the body, to leave before it can report again.
+    ///
+    /// With a Touch pressure (<see cref="TouchRules.NeedsPressure"/>, PER-50) a point-first arrival scores only once the
+    /// point is pressed: at once if it arrives at <see cref="TouchRules.ImpactMetersPerSecond"/> or faster, else when it
+    /// has been pushed <see cref="TouchRules.PressDepthMeters"/> into the zone; the Touch's time is then, and the first
+    /// contact's time travels with it. A point that leaves before that was a light brush: a glance.
     /// </summary>
     public sealed class TouchDetector
     {
@@ -47,13 +52,21 @@ namespace VrFencing.Blade
         private readonly HashSet<TargetZone> _bodyTouchingZones = new HashSet<TargetZone>();
         private bool _wasTipInAnyZone;
 
+        // A point-first arrival waiting to be pressed, and the zone it is in.
+        private BladeEvent? _pendingTouch;
+        private Capsule _pendingZone;
+
         /// <summary>Forgets the motion history, e.g. after the blade jumped (tracking lost, mount changed, Strip moved).</summary>
         public void Reset()
         {
             _history.Clear();
             _bodyTouchingZones.Clear();
             _wasTipInAnyZone = false;
+            _pendingTouch = null;
         }
+
+        /// <summary>True while a point-first arrival waits to be pressed in before it scores.</summary>
+        public bool IsTouchPending => _pendingTouch.HasValue;
 
         /// <summary>
         /// Advances to a new blade pose. Returns the events that started since the last pose: at most one tip event
@@ -82,17 +95,31 @@ namespace VrFencing.Blade
 
             List<BladeEvent> events = null;
             BladeEvent? tipEvent = null;
-            if (!_wasTipInAnyZone)
+            if (_pendingTouch.HasValue)
             {
-                tipEvent = FindTipEntry(previous, current, zones, rules);
-                if (tipEvent.HasValue)
+                var pressed = ResolvePendingTouch(current, zones, rules);
+                if (pressed.HasValue)
                 {
-                    events = new List<BladeEvent> { tipEvent.Value };
+                    events = new List<BladeEvent> { pressed.Value };
+                }
+            }
+            else if (!_wasTipInAnyZone)
+            {
+                tipEvent = FindTipEntry(previous, current, zones, rules, out var entryZone);
+                if (tipEvent.HasValue && tipEvent.Value.Type == BladeEventType.Touch && !IsPressed(tipEvent.Value, entryZone, current, rules))
+                {
+                    // Point-first but not yet pressed: it scores once pushed in, or is a brush if it leaves first.
+                    _pendingTouch = tipEvent;
+                    _pendingZone = entryZone;
+                }
+                else if (tipEvent.HasValue)
+                {
+                    events = new List<BladeEvent> { WithTime(tipEvent.Value, tipEvent.Value.Type == BladeEventType.Touch ? current.TimeSeconds : tipEvent.Value.FirstContactSeconds) };
                 }
             }
 
             // Pushing the point on into a zone after a Touch, or the body following the point in, must not also read as flat.
-            var isTipInvolved = _wasTipInAnyZone || tipEvent.HasValue || IsTipInAnyZone(current.Blade.TipPosition, zones, rules);
+            var isTipInvolved = _wasTipInAnyZone || tipEvent.HasValue || _pendingTouch.HasValue || IsTipInAnyZone(current.Blade.TipPosition, zones, rules);
             foreach (var zone in zones)
             {
                 if (isTipInvolved || _bodyTouchingZones.Contains(zone.Zone))
@@ -102,7 +129,7 @@ namespace VrFencing.Blade
 
                 if (TryFindBodyContact(zone.Shape, previous.Blade, current.Blade, rules, out var contactPoint))
                 {
-                    (events ??= new List<BladeEvent>()).Add(ClassifyFlatContact(zone, contactPoint, previous, current));
+                    (events ??= new List<BladeEvent>()).Add(WithTime(ClassifyFlatContact(zone, contactPoint, previous, current), current.TimeSeconds));
                 }
             }
 
@@ -131,11 +158,64 @@ namespace VrFencing.Blade
                 FindStepSpeed(previous, current),
                 SegmentMath.FindAngleDegrees(motion, inwardNormal),
                 SegmentMath.FindAngleDegrees(current.Blade.Direction, inwardNormal),
-                Vector3.Distance(contactPoint, zone.Shape.Center));
+                Vector3.Distance(contactPoint, zone.Shape.Center),
+                current.TimeSeconds,
+                current.TimeSeconds);
         }
 
-        private BladeEvent? FindTipEntry(BladeSample previous, BladeSample current, IReadOnlyList<ZoneCapsule> zones, TouchRules rules)
+        /// <summary>
+        /// The waiting point-first arrival, once pressed: a Touch now. If the point left every zone first, a glance (it
+        /// was only brushed). Null while it is still in, not yet pressed.
+        /// </summary>
+        private BladeEvent? ResolvePendingTouch(BladeSample current, IReadOnlyList<ZoneCapsule> zones, TouchRules rules)
         {
+            var pending = _pendingTouch.Value;
+            if (FindPressDepth(current.Blade.TipPosition, _pendingZone, rules) >= rules.PressDepthMeters)
+            {
+                _pendingTouch = null;
+                return WithTime(pending, current.TimeSeconds);
+            }
+
+            if (!IsTipInAnyZone(current.Blade.TipPosition, zones, rules))
+            {
+                _pendingTouch = null;
+                return new BladeEvent(BladeEventType.TipGlance, pending.Zone, pending.ContactPoint, pending.TipSpeedMetersPerSecond,
+                    pending.ApproachAngleDegrees, pending.BladeAxisAngleDegrees, pending.DistanceFromZoneCenterMeters,
+                    current.TimeSeconds, pending.FirstContactSeconds);
+            }
+
+            return null;
+        }
+
+        /// <summary>Pressed enough to score: no pressure needed, arrived fast enough, or already pushed in far enough.</summary>
+        private static bool IsPressed(BladeEvent touch, Capsule zone, BladeSample current, TouchRules rules)
+        {
+            if (!rules.NeedsPressure)
+            {
+                return true;
+            }
+
+            var normalSpeed = touch.TipSpeedMetersPerSecond * (float)Math.Cos(touch.ApproachAngleDegrees * Math.PI / 180.0);
+            return normalSpeed >= rules.ImpactMetersPerSecond
+                || FindPressDepth(current.Blade.TipPosition, zone, rules) >= rules.PressDepthMeters;
+        }
+
+        /// <summary>How far the point's sphere is pushed past touching the zone's surface (negative when clear of it).</summary>
+        private static float FindPressDepth(Vector3 tip, Capsule zone, TouchRules rules)
+        {
+            return rules.TipRadiusMeters - SegmentMath.FindDistanceToCapsule(tip, zone);
+        }
+
+        private static BladeEvent WithTime(BladeEvent bladeEvent, double timeSeconds)
+        {
+            return new BladeEvent(bladeEvent.Type, bladeEvent.Zone, bladeEvent.ContactPoint, bladeEvent.TipSpeedMetersPerSecond,
+                bladeEvent.ApproachAngleDegrees, bladeEvent.BladeAxisAngleDegrees, bladeEvent.DistanceFromZoneCenterMeters,
+                timeSeconds, bladeEvent.FirstContactSeconds);
+        }
+
+        private BladeEvent? FindTipEntry(BladeSample previous, BladeSample current, IReadOnlyList<ZoneCapsule> zones, TouchRules rules, out Capsule entryZone)
+        {
+            entryZone = default;
             ZoneCapsule? firstZone = null;
             var firstFraction = float.MaxValue;
             foreach (var zone in zones)
@@ -156,6 +236,7 @@ namespace VrFencing.Blade
             var entry = new BladeSample(
                 previous.TimeSeconds + ((current.TimeSeconds - previous.TimeSeconds) * firstFraction),
                 BladeSegment.Lerp(previous.Blade, current.Blade, firstFraction));
+            entryZone = firstZone.Value.Shape;
             return ClassifyTipEntry(firstZone.Value, entry, previous, current, rules);
         }
 
@@ -182,7 +263,9 @@ namespace VrFencing.Blade
                 approachVelocity.Length(),
                 approachAngle,
                 bladeAxisAngle,
-                Vector3.Distance(contactPoint, zone.Shape.Center));
+                Vector3.Distance(contactPoint, zone.Shape.Center),
+                entry.TimeSeconds,
+                entry.TimeSeconds);
         }
 
         /// <summary>

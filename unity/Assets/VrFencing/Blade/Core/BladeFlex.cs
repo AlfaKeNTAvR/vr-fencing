@@ -1,42 +1,56 @@
 using System;
 using System.Numerics;
+using VrFencing.Settings;
 
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// Visual-only blade flex (Nikita's call, PER-22): the drawn point lags behind the straight blade like a springy
-    /// blade's tip, bending a few centimeters on fast moves and springing back, including after the point slides off a
-    /// body (<see cref="BladeContactBend"/>). Touch detection always uses the straight blade; this only moves what is drawn.
+    /// Visual-only blade flex (PER-22, livelier in PER-50): the drawn point whips like a real épée's on circles, beats
+    /// and sudden stops, bending a few centimeters and ringing out. Touch detection always uses the straight blade; this
+    /// only moves what is drawn.
     ///
     /// The bend is the drawn point's offset from the straight point, kept perpendicular to the blade and at most
-    /// <see cref="MaxBendMeters"/> (the 4.5-7 cm tip bend scale from the rules research). It follows a damped spring
-    /// driven by the straight point's motion. Positions are in any one frame (the Strip frame in the app), time in seconds.
+    /// <see cref="MaxBendMeters"/> (the 4.5-7 cm tip bend scale from the rules research). It is the blade's first bending
+    /// mode: a lightly damped spring driven by the point's acceleration (inertia), so the tip lags and overshoots on a
+    /// change of direction, traces a larger circle than the hand on a circular parry, and rings a few cycles after a
+    /// stop. A real épée's first bending mode is around 8 Hz (a cantilever clamped at the guard with the FIE
+    /// flexibility of 4.5-7 cm under 200 g, tapering to the point); the <see cref="BladeFlexSoftness"/> Setting picks
+    /// 8 Hz (Normal), 11 Hz (Stiff) or 6 Hz (Soft, livelier than a real blade). Positions are in any one frame (the
+    /// Strip frame in the app), time in seconds.
     ///
-    /// A held blade must look still (PER-48): tracking jitters the point by up to about 7 mm, and a lightly damped spring
-    /// fed raw frame-to-frame acceleration shook visibly. So the point's motion is smoothed first, speeds below
-    /// <see cref="DeadbandMetersPerSecond"/> are ignored, and the spring is well damped: only real fast moves bend it.
+    /// A held blade must look still (PER-48): tracking jitters the point by up to about 7 mm. So the point's motion is
+    /// smoothed first, accelerations below <see cref="AccelerationDeadband"/> are ignored, and the drive is gated by how
+    /// fast the point has moved lately (<see cref="GateStartMetersPerSecond"/> to <see cref="GateFullMetersPerSecond"/>):
+    /// jitter, tremor and slow aiming carry no momentum, while a fast move keeps driving through its stop.
     /// </summary>
     public sealed class BladeFlex
     {
         /// <summary>The upper end of the 4.5-7 cm tip bend scale.</summary>
         public const float MaxBendMeters = 0.07f;
 
-        /// <summary>Point speeds up to this are hand jitter or slow aiming, not a move that bends the blade.</summary>
-        public const float DeadbandMetersPerSecond = 0.35f;
+        /// <summary>Point accelerations up to this (m/s^2, after smoothing) are tracking jitter, not a move.</summary>
+        public const float AccelerationDeadband = 4.0f;
 
-        // A 7 Hz spring, well damped: a sharp stop overshoots once, a little, and settles in about a fifth of a second.
-        private const float NaturalFrequencyHertz = 7.0f;
-        private const float DampingRatio = 0.6f;
+        /// <summary>A point that has moved no faster than this lately (m/s) drives no flex: a still hand or slow aiming.</summary>
+        public const float GateStartMetersPerSecond = 0.2f;
 
-        // Let go of a held bend (the point slid off or came out of a body, the drawn blade caught up with the hand), a
-        // real épée rings: a few quick decaying cycles. So the spring rings lightly damped until it is nearly still,
-        // then is well damped again (motion alone never rings it, so a held blade stays calm).
-        private const float RingingDampingRatio = 0.12f;
+        /// <summary>From this recent point speed (m/s) on, the flex is driven in full.</summary>
+        public const float GateFullMetersPerSecond = 0.45f;
+
+        // How much of the point's acceleration drives the first bending mode: its participation factor for a cantilever
+        // shaken at the base, about 1.6 to 1.9 depending on the mass along it (the épée is heavier at the guard).
+        private const float DriveGain = 1.8f;
+
+        // The recent top speed fades with this time constant, so the drive keeps going through a sudden stop.
+        private const float RecentSpeedSeconds = 0.15f;
+
+        // The point's position and velocity are each low-passed with this time constant before differentiating:
+        // frame-to-frame tracking noise differentiated twice is far larger than any real acceleration.
+        private const float SmoothingSeconds = 0.02f;
+
+        // A let-go bend (the point slid off or came out of a body, the drawn blade caught up with the hand) counts as
+        // ringing until it is this small.
         private const float RingingEndsMeters = 0.002f;
-
-        // The point's position is low-passed with this time constant before its speed is taken: frame-to-frame
-        // tracking noise differentiated twice is far larger than any real acceleration.
-        private const float SmoothingSeconds = 0.03f;
 
         // Integrate in short steps so the spring stays stable even on a long frame.
         private const float MaxSubstepSeconds = 0.004f;
@@ -45,14 +59,46 @@ namespace VrFencing.Blade
         private Vector3 _bend;
         private Vector3 _bendVelocity;
         private Vector3? _smoothedTip;
-        private Vector3? _previousDrivingVelocity;
+        private Vector3? _smoothedVelocity;
+        private float _recentSpeed;
         private bool _isRinging;
+        private float _naturalFrequencyHertz;
+        private float _dampingRatio;
+
+        public BladeFlex()
+        {
+            SetSoftness(BladeFlexSoftness.Normal);
+        }
 
         /// <summary>The drawn point minus the straight point.</summary>
         public Vector3 Bend => _bend;
 
-        /// <summary>True while a let-go bend rings out (lightly damped), after <see cref="SpringBackFrom"/>.</summary>
+        /// <summary>True while a let-go bend rings out, after <see cref="SpringBackFrom"/>.</summary>
         public bool IsRinging => _isRinging;
+
+        /// <summary>The first bending mode's frequency for the chosen softness, Hz.</summary>
+        public float NaturalFrequencyHertz => _naturalFrequencyHertz;
+
+        /// <summary>Picks the blade's stiffness: its first bending mode's frequency and damping.</summary>
+        public void SetSoftness(BladeFlexSoftness softness)
+        {
+            switch (softness)
+            {
+                case BladeFlexSoftness.Stiff:
+                    _naturalFrequencyHertz = 11.0f;
+                    _dampingRatio = 0.2f;
+                    break;
+                case BladeFlexSoftness.Soft:
+                    _naturalFrequencyHertz = 6.0f;
+                    _dampingRatio = 0.07f;
+                    break;
+                default:
+                    // About four visible cycles before a ring dies away.
+                    _naturalFrequencyHertz = 8.0f;
+                    _dampingRatio = 0.1f;
+                    break;
+            }
+        }
 
         /// <summary>Straightens the blade at once, e.g. after the blade jumped.</summary>
         public void Reset()
@@ -60,7 +106,8 @@ namespace VrFencing.Blade
             _bend = Vector3.Zero;
             _bendVelocity = Vector3.Zero;
             _smoothedTip = null;
-            _previousDrivingVelocity = null;
+            _smoothedVelocity = null;
+            _recentSpeed = 0.0f;
             _isRinging = false;
         }
 
@@ -89,14 +136,13 @@ namespace VrFencing.Blade
             }
 
             var frameSeconds = Math.Min(deltaSeconds, MaxFrameSeconds);
-            var tipAcceleration = FindDrivingAcceleration(straightBlade.TipPosition, frameSeconds);
-            var angularFrequency = 2.0f * (float)Math.PI * NaturalFrequencyHertz;
-            var dampingRatio = _isRinging ? RingingDampingRatio : DampingRatio;
+            var tipAcceleration = FindDrivingAcceleration(straightBlade.TipPosition, frameSeconds) * DriveGain;
+            var angularFrequency = 2.0f * (float)Math.PI * _naturalFrequencyHertz;
             var substeps = (int)Math.Ceiling(frameSeconds / MaxSubstepSeconds);
             var substepSeconds = frameSeconds / substeps;
             for (var step = 0; step < substeps; step++)
             {
-                var springAcceleration = (-angularFrequency * angularFrequency * _bend) - (2.0f * dampingRatio * angularFrequency * _bendVelocity);
+                var springAcceleration = (-angularFrequency * angularFrequency * _bend) - (2.0f * _dampingRatio * angularFrequency * _bendVelocity);
                 _bendVelocity += (springAcceleration - tipAcceleration) * substepSeconds;
                 _bend += _bendVelocity * substepSeconds;
             }
@@ -108,7 +154,10 @@ namespace VrFencing.Blade
             }
         }
 
-        /// <summary>The smoothed, deadbanded acceleration of the point; zero until there are two frames of motion.</summary>
+        /// <summary>
+        /// The smoothed point's acceleration with the deadband taken off, scaled by the recent-speed gate; zero until
+        /// there are three frames of motion.
+        /// </summary>
         private Vector3 FindDrivingAcceleration(Vector3 tip, float frameSeconds)
         {
             if (!_smoothedTip.HasValue)
@@ -117,13 +166,32 @@ namespace VrFencing.Blade
                 return Vector3.Zero;
             }
 
-            var previousSmoothedTip = _smoothedTip.Value;
-            var smoothedTip = Vector3.Lerp(previousSmoothedTip, tip, frameSeconds / (SmoothingSeconds + frameSeconds));
+            var blend = frameSeconds / (SmoothingSeconds + frameSeconds);
+            var previousTip = _smoothedTip.Value;
+            var smoothedTip = Vector3.Lerp(previousTip, tip, blend);
             _smoothedTip = smoothedTip;
-            var drivingVelocity = ApplyDeadband((smoothedTip - previousSmoothedTip) / frameSeconds);
-            var previousDrivingVelocity = _previousDrivingVelocity;
-            _previousDrivingVelocity = drivingVelocity;
-            return previousDrivingVelocity.HasValue ? (drivingVelocity - previousDrivingVelocity.Value) / frameSeconds : Vector3.Zero;
+            var velocity = (smoothedTip - previousTip) / frameSeconds;
+            if (!_smoothedVelocity.HasValue)
+            {
+                _smoothedVelocity = velocity;
+                return Vector3.Zero;
+            }
+
+            var previousVelocity = _smoothedVelocity.Value;
+            var smoothedVelocity = Vector3.Lerp(previousVelocity, velocity, blend);
+            _smoothedVelocity = smoothedVelocity;
+
+            _recentSpeed = Math.Max(smoothedVelocity.Length(), _recentSpeed * (float)Math.Exp(-frameSeconds / RecentSpeedSeconds));
+            var gate = Math.Max(0.0f, Math.Min(1.0f, (_recentSpeed - GateStartMetersPerSecond) / (GateFullMetersPerSecond - GateStartMetersPerSecond)));
+            var acceleration = (smoothedVelocity - previousVelocity) / frameSeconds;
+            var magnitude = acceleration.Length();
+            if (magnitude <= AccelerationDeadband || gate <= 0.0f)
+            {
+                return Vector3.Zero;
+            }
+
+            // Take the deadband off the size, keeping the direction: no jump at its edge.
+            return acceleration * ((magnitude - AccelerationDeadband) / magnitude * gate);
         }
 
         /// <summary>
@@ -136,13 +204,6 @@ namespace VrFencing.Blade
             var clamped = Math.Max(0.0f, Math.Min(1.0f, fraction));
             var shape = clamped * clamped * (3.0f - clamped) * 0.5f;
             return Vector3.Lerp(straightBlade.GuardPosition, straightBlade.TipPosition, clamped) + (_bend * shape);
-        }
-
-        /// <summary>Takes <see cref="DeadbandMetersPerSecond"/> off the speed, keeping the direction: slow motion drives nothing, and there is no jump at the edge.</summary>
-        private static Vector3 ApplyDeadband(Vector3 velocity)
-        {
-            var speed = velocity.Length();
-            return speed <= DeadbandMetersPerSecond ? Vector3.Zero : velocity * ((speed - DeadbandMetersPerSecond) / speed);
         }
 
         private void KeepPerpendicularAndLimited(Vector3 bladeDirection)

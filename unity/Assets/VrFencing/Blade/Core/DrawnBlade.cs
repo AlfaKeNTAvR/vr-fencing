@@ -80,9 +80,9 @@ namespace VrFencing.Blade
 
         /// <summary>Moves to the blade's new straight pose.</summary>
         /// <param name="bodies">Every obstacle the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
-        /// <param name="bowDirection">Which way the blade bows when first pushed straight in (the grip's up).</param>
+        /// <param name="gripUp">The grip's up (the thumb's side); the blade's set bulges a straight push the other way.</param>
         /// <returns>Why a pinned point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection, float deltaSeconds)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, float deltaSeconds)
         {
             if (bodies == null)
             {
@@ -92,7 +92,7 @@ namespace VrFencing.Blade
             var wasPinned = _contact.IsPinned;
             var bowBefore = _contact.BowMeters;
             var bowDirectionBefore = _contact.BowDirection;
-            var release = _contact.Step(straightBlade, bodies, bowDirection, _hasSamples ? _samples : null);
+            var release = _contact.Step(straightBlade, bodies, gripUp, _hasSamples ? _samples : null);
             if (_contact.IsPinned)
             {
                 // The pin holds the point; restart the flex so it does not carry stale motion into the release.
