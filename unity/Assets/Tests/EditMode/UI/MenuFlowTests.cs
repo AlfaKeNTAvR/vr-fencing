@@ -100,6 +100,35 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheBurgerFoldsThePanelsAwayAndKeepsThePage()
+        {
+            var navigator = new MenuNavigator();
+            navigator.Open(MenuScreen.Settings);
+
+            navigator.ToggleCollapsed();
+
+            Assert.That(navigator.IsCollapsed, Is.True);
+            Assert.That(navigator.GetShownPanel(isPlacingStrip: false, isDrillRunning: false), Is.EqualTo(MenuScreen.Hidden));
+            Assert.That(navigator.GetShownPanel(isPlacingStrip: false, isDrillRunning: true), Is.EqualTo(MenuScreen.Hidden), "The Running panel folds away too.");
+            Assert.That(navigator.IsBurgerShown(isPlacingStrip: false), Is.True, "The burger stays to open them again.");
+
+            navigator.ToggleCollapsed();
+
+            Assert.That(navigator.GetShownPanel(false, false), Is.EqualTo(MenuScreen.Settings));
+            Assert.That(navigator.GetShownPanel(false, true), Is.EqualTo(MenuScreen.Running));
+        }
+
+        [Test]
+        public void PlacingTheStripHidesTheBurgerToo()
+        {
+            var navigator = new MenuNavigator();
+            navigator.SetCollapsed(true);
+
+            Assert.That(navigator.IsBurgerShown(isPlacingStrip: true), Is.False);
+            Assert.That(navigator.GetShownPanel(isPlacingStrip: true, isDrillRunning: false), Is.EqualTo(MenuScreen.Hidden));
+        }
+
+        [Test]
         public void RunningPanelIsEmptyWhenNoDrillRuns()
         {
             var status = RunStatusText.Format(new DrillRunner(new FakeClock(), new Random(1)), true);

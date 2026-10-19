@@ -151,6 +151,8 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
 | Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
 
+A small burger button (three bars) sits low on the off-hand side, just past the Running panel's spot, whenever the Strip is not being placed: point and pull the trigger to fold every panel away (Home, Settings, Results, History and the Running panel, which otherwise sits in view during a Drill) and again to open them. The laser keeps working on it while the panels are folded; the button is lit while they are open. The folded state is remembered between sessions (Unity PlayerPrefs, key `VrFencing.MenuCollapsed`).
+
 Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list a test Drill after the real ones, "Test: needs a full piste", always greyed out, to see a greyed-out row.
 
 ## The Drills on the headset
