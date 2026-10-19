@@ -22,6 +22,15 @@ namespace VrFencing.UI
         WarningZoneLengthOnPiste,
         WarningZoneMinimumLength,
         OffStripTolerance,
+        TouchRule,
+        BladeMount,
+        BladePitch,
+        BladeYaw,
+        TouchHaptic,
+        FlatHaptic,
+        GlanceHaptic,
+        HapticFloor,
+        HapticFullStrengthSpeed,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -38,6 +47,9 @@ namespace VrFencing.UI
 
         /// <summary>Rebuild the Drill list: Rep count, rest, windows and Strip fit.</summary>
         Drills = 4,
+
+        /// <summary>Hand the Blade its new Touch rule, mount, haptics or sword hand.</summary>
+        Blade = 8,
     }
 
     /// <summary>
@@ -68,6 +80,15 @@ namespace VrFencing.UI
                 settings => settings.WarningZone.LengthOnPisteMeters, (settings, value) => settings.WarningZone.LengthOnPisteMeters = value),
             [SettingId.WarningZoneMinimumLength] = new NumberSetting(0.2f, 1.5f, 0.1f, "0.0", "m",
                 settings => settings.WarningZone.MinimumLengthMeters, (settings, value) => settings.WarningZone.MinimumLengthMeters = value),
+            [SettingId.BladePitch] = new NumberSetting(-45.0f, 45.0f, 5.0f, "+0;-0;0", "deg",
+                settings => settings.Blade.PitchDegrees, (settings, value) => settings.Blade.PitchDegrees = value),
+            [SettingId.BladeYaw] = new NumberSetting(-45.0f, 45.0f, 5.0f, "+0;-0;0", "deg",
+                settings => settings.Blade.YawDegrees, (settings, value) => settings.Blade.YawDegrees = value),
+            [SettingId.HapticFloor] = new NumberSetting(0.0f, 1.0f, 0.1f, "0%", string.Empty,
+                settings => settings.Blade.HapticFloor, (settings, value) => settings.Blade.HapticFloor = value),
+            [SettingId.HapticFullStrengthSpeed] = new NumberSetting(0.5f, 6.0f, 0.5f, "0.0", "m/s",
+                settings => settings.Blade.HapticFullStrengthSpeedMetersPerSecond,
+                (settings, value) => settings.Blade.HapticFullStrengthSpeedMetersPerSecond = value),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -88,6 +109,15 @@ namespace VrFencing.UI
                 case SettingId.WarningZoneLengthOnPiste: return "Warning Zone on a full piste";
                 case SettingId.WarningZoneMinimumLength: return "Warning Zone at least";
                 case SettingId.OffStripTolerance: return "Off-strip tolerance";
+                case SettingId.TouchRule: return "Touch rule";
+                case SettingId.BladeMount: return "Blade in the hand";
+                case SettingId.BladePitch: return "Blade pitch (up +)";
+                case SettingId.BladeYaw: return "Blade yaw (right +)";
+                case SettingId.TouchHaptic: return "Haptic: Touch";
+                case SettingId.FlatHaptic: return "Haptic: flat contact";
+                case SettingId.GlanceHaptic: return "Haptic: glance";
+                case SettingId.HapticFloor: return "Haptic strength when slow";
+                case SettingId.HapticFullStrengthSpeed: return "Full haptic strength at";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -102,6 +132,16 @@ namespace VrFencing.UI
                     return settings.ShrinkDrillsToFit ? "On" : "Off";
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
+                case SettingId.TouchRule:
+                    return settings.Blade.TouchRule == TouchRule.Strict ? "Strict" : "Loose";
+                case SettingId.BladeMount:
+                    return FormatMount(settings.Blade.Mount);
+                case SettingId.TouchHaptic:
+                    return FormatHaptic(settings.Blade.TouchHaptic);
+                case SettingId.FlatHaptic:
+                    return FormatHaptic(settings.Blade.FlatHaptic);
+                case SettingId.GlanceHaptic:
+                    return FormatHaptic(settings.Blade.GlanceHaptic);
                 default:
                     var number = Numbers[id];
                     return FormatNumber(number.Get(settings), number.Format, number.Unit);
@@ -113,6 +153,8 @@ namespace VrFencing.UI
             switch (id)
             {
                 case SettingId.Hand:
+                    // The blade also moves to the other controller and mirrors its yaw.
+                    return SettingImpact.Dummy | SettingImpact.Strip | SettingImpact.Drills | SettingImpact.Blade;
                 case SettingId.FencerHeight:
                     // Height also sets the Strip's stance allowance behind the En Garde Line.
                     return SettingImpact.Dummy | SettingImpact.Strip | SettingImpact.Drills;
@@ -121,6 +163,16 @@ namespace VrFencing.UI
                     return SettingImpact.Strip | SettingImpact.Drills;
                 case SettingId.OffStripTolerance:
                     return SettingImpact.Strip;
+                case SettingId.TouchRule:
+                case SettingId.BladeMount:
+                case SettingId.BladePitch:
+                case SettingId.BladeYaw:
+                case SettingId.TouchHaptic:
+                case SettingId.FlatHaptic:
+                case SettingId.GlanceHaptic:
+                case SettingId.HapticFloor:
+                case SettingId.HapticFullStrengthSpeed:
+                    return SettingImpact.Blade;
                 default:
                     return SettingImpact.Drills;
             }
@@ -152,12 +204,53 @@ namespace VrFencing.UI
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);
                     break;
+                case SettingId.TouchRule:
+                    changed.Blade.TouchRule = Cycle(settings.Blade.TouchRule, direction);
+                    break;
+                case SettingId.BladeMount:
+                    changed.Blade.Mount = Cycle(settings.Blade.Mount, direction);
+                    break;
+                case SettingId.TouchHaptic:
+                    changed.Blade.TouchHaptic = Cycle(settings.Blade.TouchHaptic, direction);
+                    break;
+                case SettingId.FlatHaptic:
+                    changed.Blade.FlatHaptic = Cycle(settings.Blade.FlatHaptic, direction);
+                    break;
+                case SettingId.GlanceHaptic:
+                    changed.Blade.GlanceHaptic = Cycle(settings.Blade.GlanceHaptic, direction);
+                    break;
                 default:
                     Numbers[id].Step(changed, Math.Sign(direction));
                     break;
             }
 
             return changed;
+        }
+
+        /// <summary>The next (or, stepping down, previous) value of a choice, wrapping around at both ends.</summary>
+        private static T Cycle<T>(T current, int direction)
+            where T : struct, Enum
+        {
+            var values = (T[])Enum.GetValues(typeof(T));
+            var index = Array.IndexOf(values, current);
+            var next = (index + Math.Sign(direction) + values.Length) % values.Length;
+            return values[next];
+        }
+
+        private static string FormatMount(BladeMount mount)
+        {
+            switch (mount)
+            {
+                case BladeMount.Center: return "Center";
+                case BladeMount.Pistol: return "Pistol +5 cm";
+                case BladeMount.FrenchPosted: return "French +12 cm";
+                default: throw new ArgumentOutOfRangeException(nameof(mount), mount, "Not a blade mount.");
+            }
+        }
+
+        private static string FormatHaptic(HapticPattern pattern)
+        {
+            return pattern == HapticPattern.DoubleTap ? "Double tap" : pattern.ToString();
         }
 
         /// <summary>The tolerance steps (0, 0.2, 0.4 m) wrap around in both directions, like the off-hand button.</summary>

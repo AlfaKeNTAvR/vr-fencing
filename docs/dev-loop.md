@@ -101,6 +101,29 @@ On launch the app looks for a Strip saved in this room (a Meta spatial anchor at
 
 The Strip extends behind the En Garde Line by the en garde stance (0.30 of the Fencer's height) plus the rear Warning Zone, so about 1 m of free floor is needed behind the first point. Saved Strips are listed in `strip-anchors.json` next to the settings file (`/sdcard/Android/data/com.alfakentavr.vrfencing/files/`), newest first, at most 10 rooms; each launch tries all of them and uses the newest anchor the headset finds in the room. Anchor save and restore steps are logged with a `[Strip]` tag (`adb logcat -s Unity`). Anchors need the anchor support and `USE_ANCHOR_API` permission the project already enables (`Assets/Oculus/OculusProjectConfig.asset`, `Assets/Plugins/Android/AndroidManifest.xml`).
 
+## The Blade on the headset
+
+The épée sits on the sword-hand controller (right by default; the Sword hand Setting moves it and mirrors its yaw): a 90 cm blade, a 13.5 cm bell guard, a grip and pommel behind it, and a red point. It uses no buttons. Detection and drawing live in the Blade module (`Assets/VrFencing/Blade/`); the scene's `Blade` object (`BladeBehaviour`) is made by `PassthroughSceneBuilder`.
+
+Every frame the straight blade (guard front to point) is moved into the Strip frame and swept against the Dummy's Target Zone capsules, so a 15 m/s point cannot pass through a zone between frames. When the point enters a zone from outside every zone it is judged once:
+
+| Event | When | Goes to | Feedback |
+|---|---|---|---|
+| Touch | Moving into the surface at least the minimum speed, approach and blade both within the rule's angles | Drill runner as point-first | Haptic (default Heavy), the zone flashes white, the point flashes green, the drawn blade bows about 5 cm |
+| Glance | The point reached the zone but failed the Touch test | Not reported (only the point scores) | Light haptic tick, the point flashes blue |
+| Flat contact | The blade body (all but the last 3 cm) crosses a zone while the point is in none | Drill runner as flat | Haptic (default Double tap), at most once per 0.15 s |
+
+The approach is the point's motion over the last 40 ms before it entered (stretched back up to 100 ms until the point has moved 15 mm), and the blade direction is averaged over the same 40 ms. A single 72 Hz frame was too short: at 2 m/s it is only 28 mm, so one noisy frame made fast point-first thrusts read as sideways (PER-22).
+
+| Touch rule | Min speed into the surface | Approach within | Blade within | Point radius, blade radius, point length |
+|---|---|---|---|---|
+| Loose (default) | 0.02 m/s | 70 degrees | 75 degrees | 4 mm, 6 mm, 3 cm |
+| Strict | 0.05 m/s | 40 degrees | 45 degrees | same |
+
+Haptics play on the sword hand through the Meta Haptics SDK (OVRInput vibration does nothing under OpenXR). Strength rises with tip speed from the "Haptic strength when slow" floor (default 40%) to full at "Full haptic strength at" (default 2.0 m/s), on top of each event's pattern (Off, Tick, Crisp, Heavy, Double tap). The blade drawn bends up to 7 cm on fast moves and springs back; detection always uses the straight blade.
+
+Every event prints a `[Blade]` line to `adb logcat -s Unity`: event, zone, tip speed, approach and blade angles, distance from the zone center, and the rule.
+
 ## The menus on the headset
 
 World-space panels float about 1.1 m in front of the Fencer, a little below eye level; they follow the head's position and turn with it once the Fencer looks more than 40 degrees away. A laser from the off-hand controller points, its trigger presses (hold it on a settings step button to repeat). Everything mirrors with the sword hand setting. Placing the Strip hides the panels, since placement uses the same trigger.
@@ -113,7 +136,7 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
 | Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
 
-Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills ("Test: Rep timing", which times out every Rep until the Blade exists, and "Test: needs a full piste", always greyed out) so the flow can be tried before Drills 1 to 6 land.
+Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills ("Test: Rep timing", whose Reps succeed on a Touch on the lit body or hand, and "Test: needs a full piste", always greyed out) so the flow can be tried before Drills 1 to 6 land.
 
 All world-space text is TextMeshPro (SDF shader, drawn in both eyes under single-pass instanced stereo). Its essentials live in `Assets/TextMesh Pro/`; `VrFencing.EditorTools.TextMeshProSetup.ImportEssentialsIfMissing` re-imports them in batchmode (run without `-quit`, it exits itself). To check the panels' layout without the headset, `VrFencing.EditorTools.MenuSnapshots.RenderAll` (menu "VR Fencing > Render menu snapshots", batchmode without `-nographics`) renders every screen with sample data to `Builds/menu-snapshots/`.
 

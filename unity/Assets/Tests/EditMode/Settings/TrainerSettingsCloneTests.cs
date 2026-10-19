@@ -24,6 +24,15 @@ namespace VrFencing.Tests.Settings
             settings.WarningZone.LengthOnPisteMeters = 1.5f;
             settings.WarningZone.MinimumLengthMeters = 0.6f;
             settings.WarningZone.OffStripToleranceMeters = 0.2f;
+            settings.Blade.TouchRule = TouchRule.Strict;
+            settings.Blade.Mount = BladeMount.FrenchPosted;
+            settings.Blade.PitchDegrees = 5.0f;
+            settings.Blade.YawDegrees = 15.0f;
+            settings.Blade.TouchHaptic = HapticPattern.Crisp;
+            settings.Blade.FlatHaptic = HapticPattern.Off;
+            settings.Blade.GlanceHaptic = HapticPattern.Heavy;
+            settings.Blade.HapticFloor = 0.2f;
+            settings.Blade.HapticFullStrengthSpeedMetersPerSecond = 3.5f;
 
             Assert.That(SettingsLeaves.Read(settings.Clone()), Is.EqualTo(SettingsLeaves.Read(settings)));
         }
@@ -36,9 +45,11 @@ namespace VrFencing.Tests.Settings
 
             clone.TimeWindows.ReactionSeconds = 3.0f;
             clone.WarningZone.OffStripToleranceMeters = 0.4f;
+            clone.Blade.PitchDegrees = 30.0f;
 
             Assert.That(settings.TimeWindows.ReactionSeconds, Is.EqualTo(new TrainerSettings().TimeWindows.ReactionSeconds));
             Assert.That(settings.WarningZone.OffStripToleranceMeters, Is.EqualTo(0.0f));
+            Assert.That(settings.Blade.PitchDegrees, Is.EqualTo(10.0f));
         }
     }
 }

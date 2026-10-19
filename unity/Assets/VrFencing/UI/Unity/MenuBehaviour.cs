@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using VrFencing.Blade;
 using VrFencing.Drills;
 using VrFencing.Dummy;
 using VrFencing.Session;
@@ -19,7 +20,7 @@ namespace VrFencing.UI
     ///
     /// This is the scene glue: it starts, pauses and cancels Drills on the one <see cref="DrillRunnerBehaviour"/>,
     /// flags Reps and reads results through <see cref="SessionRecorderBehaviour"/>, re-places the Strip, and saves
-    /// Settings and hands them to the Strip and the Dummy. What the screens say is decided in the UI Core.
+    /// Settings and hands them to the Strip, the Dummy and the Blade. What the screens say is decided in the UI Core.
     /// </summary>
     public sealed class MenuBehaviour : MonoBehaviour
     {
@@ -47,6 +48,9 @@ namespace VrFencing.UI
 
         [SerializeField]
         private DummyBehaviour _dummy;
+
+        [SerializeField]
+        private BladeBehaviour _blade;
 
         private readonly MenuNavigator _navigator = new MenuNavigator();
         private readonly PanelFollower _mainFollower =
@@ -344,6 +348,11 @@ namespace VrFencing.UI
             if ((impact & SettingImpact.Strip) != 0)
             {
                 _strip.ApplySettings(changed);
+            }
+
+            if ((impact & SettingImpact.Blade) != 0 && _blade != null)
+            {
+                _blade.ApplySettings(changed);
             }
 
             _isDirty = true;

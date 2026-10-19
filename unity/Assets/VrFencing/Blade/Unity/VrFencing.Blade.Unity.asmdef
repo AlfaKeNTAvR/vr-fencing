@@ -2,7 +2,17 @@
     "name": "VrFencing.Blade.Unity",
     "rootNamespace": "VrFencing.Blade",
     "references": [
-        "VrFencing.Blade.Core"
+        "VrFencing.Blade.Core",
+        "VrFencing.Drills.Core",
+        "VrFencing.Drills.Unity",
+        "VrFencing.Dummy.Core",
+        "VrFencing.Dummy.Unity",
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity",
+        "VrFencing.Strip.Core",
+        "VrFencing.Strip.Unity",
+        "Oculus.VR",
+        "Oculus.Haptics"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

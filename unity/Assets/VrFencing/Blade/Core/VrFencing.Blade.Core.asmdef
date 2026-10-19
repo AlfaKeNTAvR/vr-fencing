@@ -1,7 +1,10 @@
 {
     "name": "VrFencing.Blade.Core",
     "rootNamespace": "VrFencing.Blade",
-    "references": [],
+    "references": [
+        "VrFencing.Settings.Core",
+        "VrFencing.Dummy.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

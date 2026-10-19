@@ -1,11 +1,13 @@
 // Builds the passthrough scene: Meta camera rig with passthrough as the
 // background, the Strip, the Dummy standing on it under the En Garde Line, and the
-// Practice object (Drill runner, session recorder, arm tracking), and the Menu (panels and off-hand pointer).
+// Practice object (Drill runner, session recorder, arm tracking), the Blade on the sword hand, and the Menu
+// (panels and off-hand pointer).
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using VrFencing.Blade;
 using VrFencing.Drills;
 using VrFencing.Dummy;
 using VrFencing.Session;
@@ -27,6 +29,7 @@ namespace VrFencing.EditorTools
         private const string DummyName = "Dummy";
         private const string PracticeName = "Practice";
         private const string MenuName = "Menu";
+        private const string BladeName = "Blade";
 
         // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset along the Strip.
         private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
@@ -54,7 +57,8 @@ namespace VrFencing.EditorTools
             var dummy = PlaceDummyOnStrip(scene, enGardeLine);
             var strip = enGardeLine.GetComponentInParent<StripBehaviour>();
             var practice = FindOrCreatePractice(scene, strip);
-            FindOrCreateMenu(scene, practice, strip, dummy);
+            var blade = FindOrCreateBlade(scene, practice, strip, dummy);
+            FindOrCreateMenu(scene, practice, strip, dummy, blade);
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -210,10 +214,30 @@ namespace VrFencing.EditorTools
         }
 
         /// <summary>
-        /// The Menu builds its panels and the off-hand pointer at runtime. It drives the Practice object's Drill runner
-        /// and session recorder, re-places the Strip, and hands changed Settings to the Strip and the Dummy.
+        /// The Blade puts the épée on the sword-hand controller at runtime, tests it against the Dummy's Target Zones in
+        /// the Strip frame, and reports Touches and flat contacts to the Practice object's Drill runner.
         /// </summary>
-        private static void FindOrCreateMenu(Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy)
+        private static BladeBehaviour FindOrCreateBlade(Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy)
+        {
+            var bladeObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == BladeName);
+            if (bladeObject == null)
+            {
+                bladeObject = new GameObject(BladeName);
+                SceneManager.MoveGameObjectToScene(bladeObject, scene);
+            }
+
+            var blade = GetOrAddComponent<BladeBehaviour>(bladeObject);
+            SetReference(blade, "_drillRunner", practice.GetComponent<DrillRunnerBehaviour>());
+            SetReference(blade, "_dummy", dummy);
+            SetReference(blade, "_strip", strip);
+            return blade;
+        }
+
+        /// <summary>
+        /// The Menu builds its panels and the off-hand pointer at runtime. It drives the Practice object's Drill runner
+        /// and session recorder, re-places the Strip, and hands changed Settings to the Strip, the Dummy and the Blade.
+        /// </summary>
+        private static void FindOrCreateMenu(Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy, BladeBehaviour blade)
         {
             var menuObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == MenuName);
             if (menuObject == null)
@@ -227,6 +251,7 @@ namespace VrFencing.EditorTools
             SetReference(menu, "_sessionRecorder", practice.GetComponent<SessionRecorderBehaviour>());
             SetReference(menu, "_strip", strip);
             SetReference(menu, "_dummy", dummy);
+            SetReference(menu, "_blade", blade);
         }
 
         private static T GetOrAddComponent<T>(GameObject target) where T : Component
