@@ -3,7 +3,8 @@
     "rootNamespace": "VrFencing.Tests",
     "references": [
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEditor.TestRunner",
+        "Oculus.VR"
     ],
     "includePlatforms": [
         "Editor"
