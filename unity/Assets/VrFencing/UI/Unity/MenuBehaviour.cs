@@ -214,8 +214,8 @@ namespace VrFencing.UI
             UiSurface.Create(_mainPanel, "Background", MainPanelSize);
             _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Settings), () => OpenPage(MenuScreen.History),
                 ReplaceStrip, CycleTolerance);
-            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, () => OpenPage(MenuScreen.Grip), () => OpenPage(MenuScreen.Home));
-            _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenPage(MenuScreen.Settings));
+            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings);
+            _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenSettingsGroup(SettingGroup.Blade));
             _calibrationTarget = new CalibrationTargetView(transform);
             _results = new ResultsScreen(_mainPanel, RunAgain, () => OpenPage(MenuScreen.History), () => OpenPage(MenuScreen.Home));
             _history = new HistoryScreen(_mainPanel, () => OpenPage(MenuScreen.Home));
@@ -261,7 +261,7 @@ namespace VrFencing.UI
                     _home.Refresh(BuildPickerEntries(), FormatStrip(), _strip.OffStripToleranceMeters, _homeMessage);
                     break;
                 case MenuScreen.Settings:
-                    _settingsScreen.Refresh(_settings, _settingsMessage);
+                    _settingsScreen.Refresh(_settings, _navigator.SettingsGroup, _settingsMessage);
                     break;
                 case MenuScreen.Results:
                     RefreshResults();
@@ -318,6 +318,24 @@ namespace VrFencing.UI
         private void OpenPage(MenuScreen page)
         {
             _navigator.Open(page);
+            ClearMessages();
+        }
+
+        /// <summary>Shows one settings group's Settings (PER-70); also where the grip page's Back returns to.</summary>
+        private void OpenSettingsGroup(SettingGroup group)
+        {
+            _navigator.OpenSettingsGroup(group);
+            ClearMessages();
+        }
+
+        private void GoBackFromSettings()
+        {
+            _navigator.GoBackFromSettings();
+            ClearMessages();
+        }
+
+        private void ClearMessages()
+        {
             _homeMessage = string.Empty;
             _settingsMessage = string.Empty;
             _gripMessage = string.Empty;

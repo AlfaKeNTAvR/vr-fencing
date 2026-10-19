@@ -42,8 +42,7 @@ namespace VrFencing.EditorTools
             var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { });
             home.Refresh(DrillPicker.BuildEntries(drills, 3.4f, settings.ShrinkDrillsToFit), "Strip: 3.4 m", 0.2f, "Drill cancelled before any Rep was judged");
 
-            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, () => { }, () => { });
-            settingsScreen.Refresh(settings, string.Empty);
+            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, _ => { }, () => { }, () => { });
 
             var gripSettings = settings.Clone();
             gripSettings.Blade.Mount = BladeMount.French;
@@ -71,6 +70,20 @@ namespace VrFencing.EditorTools
                 foreach (var other in screens)
                 {
                     other.SetVisible(other.Name == screen.Name);
+                }
+
+                if (screen.Name == "settings")
+                {
+                    // The group list, then every group's page (PER-70).
+                    settingsScreen.Refresh(settings, null, string.Empty);
+                    Render(camera, "settings");
+                    foreach (var group in SettingGroups.All)
+                    {
+                        settingsScreen.Refresh(settings, group, string.Empty);
+                        Render(camera, "settings-" + SettingGroups.GetLabel(group).ToLowerInvariant());
+                    }
+
+                    continue;
                 }
 
                 Render(camera, screen.Name);

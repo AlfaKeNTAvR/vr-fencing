@@ -24,6 +24,8 @@ namespace VrFencing.UI
     /// The left controller's Menu button folds the panels away (<see cref="IsCollapsed"/>) so they do not block the view
     /// of the Dummy, and opens them again (PER-50). A finished Drill with results opens them, so the results are seen;
     /// the Menu button folds them again.
+    ///
+    /// Settings opens on the list of groups (PER-70); picking one shows its Settings, and Back returns to the list.
     /// </summary>
     public sealed class MenuNavigator
     {
@@ -32,6 +34,9 @@ namespace VrFencing.UI
 
         /// <summary>The panels are folded away by the Menu button; the chosen page is kept for when they open.</summary>
         public bool IsCollapsed { get; private set; }
+
+        /// <summary>The settings group on view, or null while Settings shows the list of groups (PER-70).</summary>
+        public SettingGroup? SettingsGroup { get; private set; }
 
         /// <summary>
         /// The thrust calibration runs (PER-52): the panels and the laser are put away so the targets are in clear view, and
@@ -61,7 +66,10 @@ namespace VrFencing.UI
             IsCollapsed = isCollapsed;
         }
 
-        /// <summary>Opens a page. Running and Hidden follow the Drill and the Strip, so they cannot be opened.</summary>
+        /// <summary>
+        /// Opens a page. Running and Hidden follow the Drill and the Strip, so they cannot be opened. Settings opens on
+        /// the list of groups.
+        /// </summary>
         public void Open(MenuScreen page)
         {
             if (page == MenuScreen.Running || page == MenuScreen.Hidden)
@@ -70,6 +78,31 @@ namespace VrFencing.UI
             }
 
             Page = page;
+            if (page == MenuScreen.Settings)
+            {
+                SettingsGroup = null;
+            }
+        }
+
+        /// <summary>Opens Settings on one group's Settings.</summary>
+        public void OpenSettingsGroup(SettingGroup group)
+        {
+            Page = MenuScreen.Settings;
+            SettingsGroup = group;
+        }
+
+        /// <summary>Back on the settings screen: from a group to the list of groups, from the list to Home.</summary>
+        public void GoBackFromSettings()
+        {
+            if (SettingsGroup.HasValue)
+            {
+                Page = MenuScreen.Settings;
+                SettingsGroup = null;
+            }
+            else
+            {
+                Open(MenuScreen.Home);
+            }
         }
 
         /// <param name="hasResults">The run judged at least one Rep, so it was saved and has results to show.</param>

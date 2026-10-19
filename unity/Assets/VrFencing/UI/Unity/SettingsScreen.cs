@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using VrFencing.Settings;
@@ -6,99 +7,110 @@ using VrFencing.Settings;
 namespace VrFencing.UI
 {
     /// <summary>
-    /// The settings screen: every Setting (<see cref="SettingsPage.All"/>) with a step down and up, over several pages.
-    /// Holding the trigger on a step button repeats it. Changes are saved at once by the caller.
+    /// The settings screen (PER-70): it opens on the list of groups (<see cref="SettingGroups"/>); picking one shows that
+    /// group's Settings, each with a step down and up, and Back returns to the list. The Blade group also opens the grip
+    /// page. Holding the trigger on a step button repeats it. Changes are saved at once by the caller.
     /// </summary>
     internal sealed class SettingsScreen
     {
-        private const int RowsPerPage = 7;
+        private const int RowCount = SettingGroups.MaxSettingsPerGroup;
         private const float FirstRowY = 0.165f;
         private const float RowStep = 0.055f;
 
+        // The group list: two columns of three large buttons.
+        private const int GroupColumns = 2;
+        private const float GroupColumnX = 0.18f;
+        private const float FirstGroupRowY = 0.11f;
+        private const float GroupRowStep = 0.13f;
+        private static readonly Vector2 GroupButtonSize = new Vector2(0.34f, 0.105f);
+
         private readonly GameObject _root;
-        private readonly Row[] _rows = new Row[RowsPerPage];
+        private readonly Row[] _rows = new Row[RowCount];
+        private readonly UiButton[] _groupButtons;
+        private readonly TextMeshPro _titleText;
         private readonly TextMeshPro _messageText;
-        private readonly TextMeshPro _pageText;
-        private readonly UiButton _previousPage;
-        private readonly UiButton _nextPage;
+        private readonly UiButton _gripButton;
         private readonly Action<SettingId, int> _changeSetting;
 
         private TrainerSettings _settings = new TrainerSettings();
-        private int _pageIndex;
+        private SettingGroup? _group;
 
+        /// <param name="openGroup">Shows one group's Settings.</param>
         /// <param name="openGrip">Opens the grip page: the angles compared and the thrust calibration (PER-52).</param>
-        public SettingsScreen(Transform panel, Action<SettingId, int> changeSetting, Action openGrip, Action back)
+        /// <param name="back">From a group back to the list of groups, from the list back to Home.</param>
+        public SettingsScreen(
+            Transform panel, Action<SettingId, int> changeSetting, Action<SettingGroup> openGroup, Action openGrip, Action back)
         {
             _changeSetting = changeSetting;
             _root = new GameObject("Settings");
             _root.transform.SetParent(panel, false);
             var root = _root.transform;
 
-            UiKit.CreateText(root, "Title", new Vector2(-0.15f, 0.235f), new Vector2(0.42f, 0.06f), 1, UiKit.TitleFontSize,
-                TextAlignmentOptions.MidlineLeft, UiKit.TextColor).text = "Settings";
+            _titleText = UiKit.CreateText(root, "Title", new Vector2(-0.15f, 0.235f), new Vector2(0.42f, 0.06f), 1, UiKit.TitleFontSize,
+                TextAlignmentOptions.MidlineLeft, UiKit.TextColor);
             _messageText = UiKit.CreateText(root, "Message", new Vector2(0.2f, 0.235f), new Vector2(0.32f, 0.06f), 1, UiKit.TinyFontSize,
                 TextAlignmentOptions.MidlineRight, UiKit.NoteTextColor);
 
-            for (var row = 0; row < RowsPerPage; row++)
+            for (var row = 0; row < RowCount; row++)
             {
                 _rows[row] = new Row(root, row, FirstRowY - (row * RowStep), this);
             }
 
-            _previousPage = UiButton.Create(root, "Previous Page", new Vector2(-0.31f, -0.25f), new Vector2(0.08f, 0.05f), UiKit.SmallFontSize,
-                () => ChangePage(-1));
-            _previousPage.SetLabel("<");
-            _pageText = UiKit.CreateText(root, "Page", new Vector2(-0.2f, -0.25f), new Vector2(0.12f, 0.05f), 1, UiKit.SmallFontSize,
-                TextAlignmentOptions.Center, UiKit.DimTextColor);
-            _nextPage = UiButton.Create(root, "Next Page", new Vector2(-0.09f, -0.25f), new Vector2(0.08f, 0.05f), UiKit.SmallFontSize,
-                () => ChangePage(1));
-            _nextPage.SetLabel(">");
-            var gripButton = UiButton.Create(root, "Grip Angles", new Vector2(0.075f, -0.25f), new Vector2(0.19f, 0.055f), UiKit.SmallFontSize, openGrip);
-            gripButton.SetLabel("Calibrate grip");
+            _groupButtons = new UiButton[SettingGroups.All.Count];
+            for (var index = 0; index < _groupButtons.Length; index++)
+            {
+                var group = SettingGroups.All[index];
+                var x = index % GroupColumns == 0 ? -GroupColumnX : GroupColumnX;
+                var y = FirstGroupRowY - ((index / GroupColumns) * GroupRowStep);
+                _groupButtons[index] = UiButton.Create(root, $"Group {SettingGroups.GetLabel(group)}", new Vector2(x, y), GroupButtonSize,
+                    UiKit.BodyFontSize, () => openGroup(group));
+                _groupButtons[index].SetLabel(SettingGroups.GetLabel(group));
+            }
+
+            _gripButton = UiButton.Create(root, "Grip Angles", new Vector2(0.075f, -0.25f), new Vector2(0.19f, 0.055f), UiKit.SmallFontSize, openGrip);
+            _gripButton.SetLabel("Calibrate grip");
             var backButton = UiButton.Create(root, "Back", new Vector2(0.27f, -0.25f), new Vector2(0.18f, 0.055f), UiKit.BodyFontSize, back);
             backButton.SetLabel("Back");
         }
-
-        private static int ItemCount => SettingsPage.All.Count;
 
         public void SetVisible(bool isVisible)
         {
             _root.SetActive(isVisible);
         }
 
-        public void Refresh(TrainerSettings settings, string message)
+        /// <param name="group">The group to show, or null for the list of groups.</param>
+        public void Refresh(TrainerSettings settings, SettingGroup? group, string message)
         {
             _settings = settings;
+            _group = group;
             UiKit.SetText(_messageText, message);
             Redraw();
         }
 
         private void Redraw()
         {
-            var page = PageWindow.For(ItemCount, RowsPerPage, _pageIndex);
-            _pageIndex = page.PageIndex;
-            for (var row = 0; row < RowsPerPage; row++)
+            var isGroupList = !_group.HasValue;
+            UiKit.SetText(_titleText, isGroupList ? "Settings" : $"Settings: {SettingGroups.GetLabel(_group.Value)}");
+            foreach (var button in _groupButtons)
             {
-                var item = page.FirstItem + row;
-                if (row >= page.ItemCount)
+                button.SetVisible(isGroupList);
+            }
+
+            IReadOnlyList<SettingId> ids = isGroupList ? Array.Empty<SettingId>() : SettingGroups.GetSettings(_group.Value);
+            for (var row = 0; row < RowCount; row++)
+            {
+                if (row < ids.Count)
                 {
-                    _rows[row].ShowNothing();
+                    var id = ids[row];
+                    _rows[row].ShowSetting(id, SettingsPage.GetLabel(id), SettingsPage.FormatValue(_settings, id));
                 }
                 else
                 {
-                    var id = SettingsPage.All[item];
-                    _rows[row].ShowSetting(id, SettingsPage.GetLabel(id), SettingsPage.FormatValue(_settings, id));
+                    _rows[row].ShowNothing();
                 }
             }
 
-            _previousPage.SetInteractable(page.HasPrevious);
-            _nextPage.SetInteractable(page.HasNext);
-            UiKit.SetText(_pageText, $"{page.PageIndex + 1} / {page.PageCount}");
-        }
-
-        private void ChangePage(int step)
-        {
-            _pageIndex += step;
-            Redraw();
+            _gripButton.SetVisible(!isGroupList && SettingGroups.HasGripCalibration(_group.Value));
         }
 
         /// <summary>One line: the Setting's name, a step down, its value, a step up.</summary>
