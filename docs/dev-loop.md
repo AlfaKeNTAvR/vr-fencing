@@ -20,7 +20,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 | Newtonsoft Json `com.unity.nuget.newtonsoft-json` | 3.2.2 | Unity registry (JSON for the Core assemblies; already a dependency of MR Utility Kit and MCP for Unity, now pinned directly) |
 | MCP for Unity `com.coplaydev.unity-mcp` | 10.3.0 | git tag `v10.3.0` of `CoplayDev/unity-mcp` |
 
-- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene. Meta's camera rig with passthrough as the background, and a 10 cm reference cube 1 m in front at 1.2 m height, so a screenshot shows virtual content over the real room. The Dummy stands at lunge distance from the scene origin, which stands in for the En Garde Line until the Strip exists; it reads the Fencer's height and hand from the settings file at start.
+- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
 - Android package id: `com.alfakentavr.vrfencing`.
 
@@ -75,6 +75,18 @@ The name is not `reps.jsonl` on purpose: an older throwaway prototype writes tha
 ```
 
 `metavr files pull` works too, with the same device paths.
+
+## The Strip on the headset
+
+On launch the app looks for a Strip saved in this room (a Meta spatial anchor at its En Garde Line) and asks to place one if none is found. The off-hand controller (left for a right-handed Fencer, right for a left-handed one) drives it:
+
+| Button | Does |
+|---|---|
+| Trigger | Placement: first press at the En Garde Line (over the front foot, standing en garde), second at the far end |
+| Y (left) / B (right) | Re-place the Strip; press again to cancel and keep the old one |
+| X (left) / A (right) | Cycle the off-strip tolerance 0 / 0.2 / 0.4 m, shown in front of you and saved to Settings |
+
+The Strip extends behind the En Garde Line by the en garde stance (0.30 of the Fencer's height) plus the rear Warning Zone, so about 1 m of free floor is needed behind the first point. Saved Strips are listed in `strip-anchors.json` next to the settings file (`/sdcard/Android/data/com.alfakentavr.vrfencing/files/`), newest first, at most 10 rooms; each launch tries all of them and uses the newest anchor the headset finds in the room. Anchor save and restore steps are logged with a `[Strip]` tag (`adb logcat -s Unity`). Anchors need the anchor support and `USE_ANCHOR_API` permission the project already enables (`Assets/Oculus/OculusProjectConfig.asset`, `Assets/Plugins/Android/AndroidManifest.xml`).
 
 ## The MCP servers (`.mcp.json`)
 
