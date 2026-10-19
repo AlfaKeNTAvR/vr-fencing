@@ -136,7 +136,19 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
 | Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
 
-Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills ("Test: Rep timing", whose Reps succeed on a Touch on the lit body or hand, and "Test: needs a full piste", always greyed out) so the flow can be tried before Drills 1 to 6 land.
+Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills after the real ones ("Test: Rep timing", whose Reps succeed on a Touch on the lit body or hand, and "Test: needs a full piste", always greyed out, to see a greyed-out row).
+
+## The Drills on the headset
+
+The Drills are data in `DrillCatalog.CreateDefault` (`Assets/VrFencing/Drills/Core/DrillRegistry.cs`); the runner and the menus need nothing per Drill. When a run starts, the Practice object's `DrillRunnerBehaviour` stands the Dummy at the Drill's Dummy Distance (scaled to the Fencer's height) and logs `[Drills] <name> started: Dummy at <preset> distance, <m> m.`; when the run ends or is cancelled the Dummy goes back to lunge distance. A named-zone cue shows the zone's name above the Dummy's head (and on the Running panel); a lit-zone cue lights the zone. Every Rep cues one of all seven Target Zones at random, and succeeds on a point-first Touch on that zone within the window; another zone, a flat contact or the window running out fails it. The window opens with the cue, so the logged reaction time runs from the cue (name shown or zone lit) to the Touch.
+
+| Drill (picker order) | Dummy Distance | Cue | Window | Strip needed (end to end, run-back included) |
+|---|---|---|---|---|
+| 1. Point control | Extension | Named zone | 3.0 s | 1.0 m (every Strip) |
+| 2. Lunge to target | Lunge | Named zone | 3.0 s | 2.5 m, no shortened variant |
+| 3. Reaction: lit target | Lunge | Lit zone, dark when the window ends | Reaction window Setting (1.5 s) | 2.5 m; with "shrink drills to fit", 1.0 m at extension distance (Reps tagged shrunk) |
+
+Reps per Drill and the rest between Reps are the Settings (10 and 2 s by default); in Drill 2 the rest is the time to recover.
 
 All world-space text is TextMeshPro (SDF shader, drawn in both eyes under single-pass instanced stereo). Its essentials live in `Assets/TextMesh Pro/`; `VrFencing.EditorTools.TextMeshProSetup.ImportEssentialsIfMissing` re-imports them in batchmode (run without `-quit`, it exits itself). To check the panels' layout without the headset, `VrFencing.EditorTools.MenuSnapshots.RenderAll` (menu "VR Fencing > Render menu snapshots", batchmode without `-nographics`) renders every screen with sample data to `Builds/menu-snapshots/`.
 
