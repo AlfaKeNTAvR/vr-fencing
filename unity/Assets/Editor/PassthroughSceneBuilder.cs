@@ -1,6 +1,6 @@
 // Builds the minimal passthrough scene: Meta camera rig with passthrough as the
 // background, plus one small reference cube so a headset screenshot shows that
-// virtual content is composited over the real room.
+// virtual content is composited over the real room, and the Dummy.
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -17,6 +17,11 @@ namespace VrFencing.EditorTools
         private const float ReferenceCubeEdgeMeters = 0.1f;
         private static readonly Vector3 ReferenceCubePositionMeters = new(0f, 1.2f, 1.0f);
 
+        private const string DummyName = "Dummy";
+
+        // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset.
+        private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
+
         /// <summary>Creates the scene if missing, otherwise opens it; then makes sure every required object is set up.</summary>
         public static void CreateOrUpdateScene(string scenePath)
         {
@@ -29,6 +34,7 @@ namespace VrFencing.EditorTools
             EnablePassthrough(cameraRig);
             MakeCameraBackgroundTransparent(cameraRig);
             FindOrCreateReferenceCube(scene);
+            FindOrCreateDummy(scene);
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -102,6 +108,24 @@ namespace VrFencing.EditorTools
             cube.transform.position = ReferenceCubePositionMeters;
             cube.transform.localScale = Vector3.one * ReferenceCubeEdgeMeters;
             SceneManager.MoveGameObjectToScene(cube, scene);
+        }
+
+        /// <summary>
+        /// The Dummy stands at the scene origin's lunge distance until the Strip exists to parent it to the
+        /// En Garde Line; it builds its silhouette from the settings when the app starts.
+        /// </summary>
+        private static void FindOrCreateDummy(Scene scene)
+        {
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root.GetComponent<VrFencing.Dummy.DummyBehaviour>() != null)
+                    return;
+            }
+
+            var dummy = new GameObject(DummyName);
+            dummy.transform.SetPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
+            dummy.AddComponent<VrFencing.Dummy.DummyBehaviour>();
+            SceneManager.MoveGameObjectToScene(dummy, scene);
         }
 
         private static void EnsureSceneFolder(string scenePath)

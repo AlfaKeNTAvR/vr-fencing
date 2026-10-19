@@ -1,7 +1,9 @@
 {
     "name": "VrFencing.Dummy.Core",
     "rootNamespace": "VrFencing.Dummy",
-    "references": [],
+    "references": [
+        "VrFencing.Settings.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
