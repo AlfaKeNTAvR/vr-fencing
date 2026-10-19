@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "UnityMCP": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    },
+    "metavr": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "metavr@1.8.1", "mcp", "server"]
+    }
+  }
+}
