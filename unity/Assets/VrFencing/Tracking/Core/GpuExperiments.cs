@@ -26,11 +26,13 @@ namespace VrFencing.Tracking
     /// <item><c>recreateUrpPipelineOnResume</c>: 5 s after a resume, switch to a copy of the active URP asset. Unity
     /// then disposes the old URP pipeline with all its camera targets and render graph textures and builds a new
     /// one, which is the only public way to release URP's camera targets.</item>
-    /// <item><c>destroyStaleXrTexturesOnResume</c>: 5 s after a resume, if the resume created new "XR Texture" render
-    /// textures, destroy the ones that existed before the pause. A workaround reported on Unity Discussions for this
-    /// exact growth; unsafe if the XR provider still uses the old ones (a crash or black view then).</item>
+    /// <item><c>destroyStaleXrTexturesOnResume</c>: the PER-93 workaround. After a resume, as soon as the resume's new
+    /// set of "XR Texture" render textures exists and has rendered a few frames, destroy the ones that existed before
+    /// the pause (<see cref="StaleXrTextureCleanup"/>; watched for up to 20 s, not on the 5 s timer). Unsafe if the XR
+    /// provider still uses the old ones (a crash or black view then). Its value when the file does not set it is
+    /// <see cref="StaleXrTextureCleanup.IsOnByDefault"/>; <c>false</c> in the file always turns it off.</item>
     /// </list>
-    /// The resume steps run after the "after-resume" snapshot, and an "after-cleanup" snapshot follows them, so one
+    /// The 5 s resume steps run after the "after-resume" snapshot, and an "after-cleanup" snapshot follows them, so one
     /// wake shows the state before and after the experiment. Restarting the XR display or loader is deliberately not a
     /// toggle: OVRPlugin shares the OpenXR session with Unity's loader, and tearing it down by hand around the Android
     /// pause is not supported by either SDK.
@@ -53,8 +55,15 @@ namespace VrFencing.Tracking
             DestroyStaleXrTexturesOnResume = destroyStaleXrTexturesOnResume;
         }
 
-        /// <summary>Every toggle off: today's behavior, used when there is no experiments file.</summary>
+        /// <summary>Every toggle off.</summary>
         public static GpuExperiments None { get; } = new GpuExperiments(false, null, false, false, false);
+
+        /// <summary>
+        /// The toggles when there is no experiments file: all off except the stale XR texture cleanup, which follows
+        /// <see cref="StaleXrTextureCleanup.IsOnByDefault"/>.
+        /// </summary>
+        public static GpuExperiments Default { get; } =
+            new GpuExperiments(false, null, false, false, StaleXrTextureCleanup.IsOnByDefault);
 
         public bool PassthroughOffAcrossPause { get; }
 
@@ -67,9 +76,11 @@ namespace VrFencing.Tracking
 
         public bool DestroyStaleXrTexturesOnResume { get; }
 
-        /// <summary>True when any step is to run 5 s after a resume.</summary>
-        public bool HasResumeSteps =>
-            UnloadUnusedAssetsOnResume || RecreateUrpPipelineOnResume || DestroyStaleXrTexturesOnResume;
+        /// <summary>
+        /// True when any step is to run 5 s after a resume. The stale XR texture cleanup is not one: it watches from
+        /// the resume on (<see cref="StaleXrTextureCleanup"/>).
+        /// </summary>
+        public bool HasResumeSteps => UnloadUnusedAssetsOnResume || RecreateUrpPipelineOnResume;
 
         /// <summary>
         /// The URP MSAA value from the file as a sample count: 1, 2, 4 or 8 is used as is; 0 means keep the asset's

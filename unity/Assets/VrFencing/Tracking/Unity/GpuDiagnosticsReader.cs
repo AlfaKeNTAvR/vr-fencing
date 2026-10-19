@@ -20,6 +20,25 @@ namespace VrFencing.Tracking
         /// <summary>Every live RenderTexture object, the XR eye textures included.</summary>
         public static RenderTexture[] FindRenderTextures() => Resources.FindObjectsOfTypeAll<RenderTexture>();
 
+        /// <summary>The live "XR Texture" render textures, which wrap the XR eye buffers.</summary>
+        public static List<RenderTexture> FindXrTextures(IEnumerable<RenderTexture> renderTextures) =>
+            renderTextures.Where(texture => texture != null && RenderTextureMemory.IsXrTexture(texture.name)).ToList();
+
+        /// <summary>
+        /// One render texture for a log line: name, instance ID, size with slices, MSAA and estimated memory, for
+        /// example "XR Texture [12] id -4242 1680x1760x2 msaa 4 203.0 MB".
+        /// </summary>
+        public static string Describe(RenderTexture texture)
+        {
+            var megabytes = ToEntry(texture).EstimatedBytes / (1024.0 * 1024.0);
+            return $"{texture.name} id {texture.GetInstanceID()} {texture.width}x{texture.height}x{texture.volumeDepth}"
+                + $" msaa {texture.antiAliasing} {megabytes:0.0} MB";
+        }
+
+        /// <summary>The count and estimated memory of the given render textures.</summary>
+        public static RenderTextureTotals Sum(IEnumerable<RenderTexture> renderTextures) =>
+            RenderTextureMemory.Sum(renderTextures.Where(texture => texture != null).Select(ToEntry));
+
         /// <summary>Takes a snapshot from the given render textures (from <see cref="FindRenderTextures"/>).</summary>
         public static GpuMemorySnapshot Read(IReadOnlyList<RenderTexture> renderTextures, out IReadOnlyList<RenderTextureEntry> entries)
         {
@@ -42,32 +61,29 @@ namespace VrFencing.Tracking
         }
 
         /// <summary>
-        /// Reads <see cref="GpuExperiments.FileName"/> from <paramref name="directory"/>; <see cref="GpuExperiments.None"/>
-        /// when it does not exist. A file that cannot be read is logged as an error and also gives None, so a typo never
-        /// stops the app; misspelled keys are ignored, which the startup log line of the active toggles makes visible.
+        /// Reads <see cref="GpuExperiments.FileName"/> from <paramref name="directory"/>; <see cref="GpuExperiments.Default"/>
+        /// when it does not exist. A file that cannot be read is logged as an error and also gives the defaults, so a
+        /// typo never stops the app; misspelled keys are ignored, which the startup log line of the active toggles makes
+        /// visible. A key the file leaves out keeps its default (<see cref="GpuExperimentsFile"/>).
         /// </summary>
         public static GpuExperiments LoadExperiments(string directory)
         {
             var path = Path.Combine(directory, GpuExperiments.FileName);
             if (!File.Exists(path))
             {
-                return GpuExperiments.None;
+                return GpuExperiments.Default;
             }
 
-            GpuExperimentsFile file;
+            var file = new GpuExperimentsFile();
             try
             {
-                file = JsonUtility.FromJson<GpuExperimentsFile>(File.ReadAllText(path));
+                // Overwrite, not FromJson: only the keys in the file replace the field defaults.
+                JsonUtility.FromJsonOverwrite(File.ReadAllText(path), file);
             }
             catch (Exception error) when (error is ArgumentException || error is IOException)
             {
                 Debug.LogError($"[Life] gpu experiments file '{path}' is not valid, ignoring it: {error.Message}");
-                return GpuExperiments.None;
-            }
-
-            if (file == null)
-            {
-                return GpuExperiments.None;
+                return GpuExperiments.Default;
             }
 
             var urpMsaa = GpuExperiments.ParseUrpMsaa(file.urpMsaa, out var isMsaaValid);
@@ -105,7 +121,10 @@ namespace VrFencing.Tracking
             return new RenderTextureEntry(texture.name, estimatedBytes, Profiler.GetRuntimeMemorySizeLong(texture));
         }
 
-        /// <summary>The JSON shape of the experiments file for <c>JsonUtility</c>; see <see cref="GpuExperiments"/>.</summary>
+        /// <summary>
+        /// The JSON shape of the experiments file for <c>JsonUtility</c>; see <see cref="GpuExperiments"/>. The field
+        /// values are the defaults for keys the file leaves out.
+        /// </summary>
         [Serializable]
         public sealed class GpuExperimentsFile
         {
@@ -113,7 +132,7 @@ namespace VrFencing.Tracking
             public int urpMsaa;
             public bool unloadUnusedAssetsOnResume;
             public bool recreateUrpPipelineOnResume;
-            public bool destroyStaleXrTexturesOnResume;
+            public bool destroyStaleXrTexturesOnResume = StaleXrTextureCleanup.IsOnByDefault;
         }
     }
 }
