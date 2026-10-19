@@ -1,0 +1,16 @@
+{
+    "name": "VrFencing.Session.Unity",
+    "rootNamespace": "VrFencing.Session",
+    "references": [
+        "VrFencing.Session.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

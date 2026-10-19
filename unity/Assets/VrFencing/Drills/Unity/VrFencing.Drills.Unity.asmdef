@@ -1,0 +1,16 @@
+{
+    "name": "VrFencing.Drills.Unity",
+    "rootNamespace": "VrFencing.Drills",
+    "references": [
+        "VrFencing.Drills.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

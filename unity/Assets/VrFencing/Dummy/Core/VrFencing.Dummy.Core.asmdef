@@ -1,0 +1,14 @@
+{
+    "name": "VrFencing.Dummy.Core",
+    "rootNamespace": "VrFencing.Dummy",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

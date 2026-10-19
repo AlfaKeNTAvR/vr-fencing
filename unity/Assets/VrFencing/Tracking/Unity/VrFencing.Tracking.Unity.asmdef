@@ -1,0 +1,16 @@
+{
+    "name": "VrFencing.Tracking.Unity",
+    "rootNamespace": "VrFencing.Tracking",
+    "references": [
+        "VrFencing.Tracking.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
