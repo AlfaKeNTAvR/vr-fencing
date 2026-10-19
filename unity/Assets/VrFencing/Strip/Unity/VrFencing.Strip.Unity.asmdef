@@ -6,7 +6,8 @@
         "VrFencing.Settings.Core",
         "VrFencing.Settings.Unity",
         "Oculus.VR",
-        "Oculus.Haptics"
+        "Oculus.Haptics",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

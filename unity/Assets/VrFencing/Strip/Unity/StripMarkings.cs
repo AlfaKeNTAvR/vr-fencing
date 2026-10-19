@@ -7,26 +7,33 @@ namespace VrFencing.Strip
     /// Draws the Strip's piste-like floor markings from a Core <see cref="StripGeometry"/>, under a parent transform
     /// that is the Strip frame (the En Garde Line): side and end lines, the center line, the En Garde Line, and a
     /// translucent Warning Zone at each end that glows while the Fencer is in it. Lines are thin flat boxes just above
-    /// the floor. All dimensions come from the Core; this only builds and colors renderers.
+    /// the floor, solid (opaque material) and lying fully above the Warning Zones, so the pulsing zones never show
+    /// through or fight with them. All dimensions come from the Core; this only builds and colors renderers.
     /// </summary>
     internal sealed class StripMarkings
     {
+        /// <summary>Translucent material of the Warning Zones.</summary>
         public const string MaterialResourcePath = "VrFencingStrip";
+
+        /// <summary>Opaque material of the lines.</summary>
+        public const string LineMaterialResourcePath = "VrFencingStripLine";
 
         /// <summary>Piste lines are 5 cm wide.</summary>
         private const float LineWidthMeters = 0.05f;
 
+        // Lifted off the floor so tracking jitter does not sink the markings into it. The zones fill 1-3 mm above the
+        // floor and the lines 4-8 mm, so a line is always on top of a zone. The En Garde Line sits 1 mm higher still,
+        // where it crosses the side lines.
+        private const float ZoneThicknessMeters = 0.002f;
+        private const float ZoneHeightMeters = 0.002f;
         private const float LineThicknessMeters = 0.004f;
-
-        // Lifted off the floor so tracking jitter does not sink the markings into it.
         private const float LineHeightMeters = 0.006f;
-        private const float ZoneHeightMeters = 0.003f;
+        private const float EnGardeLineRaiseMeters = 0.001f;
 
         private const float GlowPulsesPerSecond = 2.0f;
 
-        private static readonly Color BoundaryColor = new Color(1.0f, 1.0f, 1.0f, 0.7f);
-        private static readonly Color CenterLineColor = new Color(1.0f, 1.0f, 1.0f, 0.45f);
-        private static readonly Color EnGardeLineColor = new Color(0.35f, 1.0f, 0.55f, 0.85f);
+        private static readonly Color LineColor = Color.white;
+        private static readonly Color EnGardeLineColor = new Color(0.35f, 1.0f, 0.55f, 1.0f);
         private static readonly Color ZoneColor = new Color(1.0f, 0.45f, 0.1f, 0.18f);
         private static readonly Color ZoneGlowDimColor = new Color(1.0f, 0.5f, 0.1f, 0.45f);
         private static readonly Color ZoneGlowBrightColor = new Color(1.0f, 0.6f, 0.15f, 0.75f);
@@ -35,6 +42,7 @@ namespace VrFencing.Strip
 
         private readonly Transform _root;
         private readonly Material _material;
+        private readonly Material _lineMaterial;
         private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
         private readonly Dictionary<StripEnd, Renderer> _zoneRenderers = new Dictionary<StripEnd, Renderer>();
         private readonly Dictionary<string, Renderer> _slabs = new Dictionary<string, Renderer>();
@@ -49,16 +57,18 @@ namespace VrFencing.Strip
 
             // The default primitive material is not URP: it renders magenta on the Quest. Never fall back to it.
             _material = Resources.Load<Material>(MaterialResourcePath);
-            if (_material == null)
+            _lineMaterial = Resources.Load<Material>(LineMaterialResourcePath);
+            if (_material == null || _lineMaterial == null)
             {
-                Debug.LogError($"[Strip] Material 'Resources/{MaterialResourcePath}' is missing; the Strip markings are not drawn.");
+                Debug.LogError(
+                    $"[Strip] Material 'Resources/{MaterialResourcePath}' or 'Resources/{LineMaterialResourcePath}' is missing; the Strip markings are not drawn.");
             }
         }
 
         /// <summary>Lays every marking out for <paramref name="geometry"/>. Cheap enough to call every frame for the placement preview.</summary>
         public void Build(StripGeometry geometry)
         {
-            if (_material == null)
+            if (_material == null || _lineMaterial == null)
             {
                 return;
             }
@@ -70,17 +80,17 @@ namespace VrFencing.Strip
             {
                 var (startZ, endZ) = geometry.GetWarningZoneRange(end);
                 _zoneRenderers[end] = LayOutSlab($"Warning Zone {end}", new Vector3(0.0f, ZoneHeightMeters, (startZ + endZ) * 0.5f),
-                    new Vector3(StripGeometry.WidthMeters, LineThicknessMeters, endZ - startZ), ZoneColor);
+                    new Vector3(StripGeometry.WidthMeters, ZoneThicknessMeters, endZ - startZ), ZoneColor, _material);
             }
 
             LayOutSlab("Side Line Left", new Vector3(-halfWidth, LineHeightMeters, geometry.CenterLineZ),
-                new Vector3(LineWidthMeters, LineThicknessMeters, length), BoundaryColor);
+                new Vector3(LineWidthMeters, LineThicknessMeters, length), LineColor, _lineMaterial);
             LayOutSlab("Side Line Right", new Vector3(halfWidth, LineHeightMeters, geometry.CenterLineZ),
-                new Vector3(LineWidthMeters, LineThicknessMeters, length), BoundaryColor);
-            LayOutCrossLine("Rear End Line", geometry.RearEndZ, BoundaryColor);
-            LayOutCrossLine("Far End Line", geometry.FarEndZ, BoundaryColor);
-            LayOutCrossLine("Center Line", geometry.CenterLineZ, CenterLineColor);
-            LayOutCrossLine("En Garde Line", 0.0f, EnGardeLineColor);
+                new Vector3(LineWidthMeters, LineThicknessMeters, length), LineColor, _lineMaterial);
+            LayOutCrossLine("Rear End Line", geometry.RearEndZ, LineHeightMeters, LineColor);
+            LayOutCrossLine("Far End Line", geometry.FarEndZ, LineHeightMeters, LineColor);
+            LayOutCrossLine("Center Line", geometry.CenterLineZ, LineHeightMeters, LineColor);
+            LayOutCrossLine("En Garde Line", 0.0f, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
 
             _glowingZone = null;
         }
@@ -106,14 +116,14 @@ namespace VrFencing.Strip
             }
         }
 
-        private void LayOutCrossLine(string lineName, float z, Color color)
+        private void LayOutCrossLine(string lineName, float z, float height, Color color)
         {
-            LayOutSlab(lineName, new Vector3(0.0f, LineHeightMeters, z),
-                new Vector3(StripGeometry.WidthMeters + LineWidthMeters, LineThicknessMeters, LineWidthMeters), color);
+            LayOutSlab(lineName, new Vector3(0.0f, height, z),
+                new Vector3(StripGeometry.WidthMeters + LineWidthMeters, LineThicknessMeters, LineWidthMeters), color, _lineMaterial);
         }
 
         /// <summary>Places the slab named <paramref name="slabName"/>, creating it the first time.</summary>
-        private Renderer LayOutSlab(string slabName, Vector3 center, Vector3 size, Color color)
+        private Renderer LayOutSlab(string slabName, Vector3 center, Vector3 size, Color color, Material material)
         {
             if (!_slabs.TryGetValue(slabName, out var slabRenderer))
             {
@@ -123,7 +133,7 @@ namespace VrFencing.Strip
                 slab.transform.SetParent(_root, false);
 
                 slabRenderer = slab.GetComponent<MeshRenderer>();
-                slabRenderer.sharedMaterial = _material;
+                slabRenderer.sharedMaterial = material;
                 slabRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 slabRenderer.receiveShadows = false;
                 _slabs[slabName] = slabRenderer;
