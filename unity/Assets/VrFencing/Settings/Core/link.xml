@@ -1,0 +1,4 @@
+<!-- Settings are read and written by Newtonsoft.Json through reflection; keep IL2CPP code stripping from removing their properties. -->
+<linker>
+    <assembly fullname="VrFencing.Settings.Core" preserve="all"/>
+</linker>
