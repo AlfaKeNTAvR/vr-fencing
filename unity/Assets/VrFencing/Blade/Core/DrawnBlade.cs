@@ -13,6 +13,8 @@ namespace VrFencing.Blade
     /// <item>the point pins on the near-side surface it meets and the blade bends in one smooth curve as the hand pushes
     /// on (<see cref="BladeContactBend"/>);</item>
     /// <item>otherwise it flexes on fast moves (<see cref="BladeFlex"/>);</item>
+    /// <item>its side pressed on a round body bends round it, the hilt still in the hand (<see cref="BladeSideContact"/>,
+    /// PER-69), and lets go springing back when the hand takes it off or it slides off the body's end;</item>
     /// <item>a shape that would pass into or through a body (the flat swept into the Dummy's arm) is not taken: the drawn
     /// blade stops at the closest allowed pose on the way back to where it was drawn, or holds there, and lags the hand
     /// (<see cref="IsDecoupled"/>) until the hand's own pose is reachable again: back, or around;</item>
@@ -33,11 +35,13 @@ namespace VrFencing.Blade
 
         private readonly BladeFlex _flex = new BladeFlex();
         private readonly BladeContactBend _contact = new BladeContactBend();
+        private readonly BladeSideContact _side = new BladeSideContact();
         private readonly Vector3[] _samples = new Vector3[SampleCount + 1];
         private readonly Vector3[] _candidate = new Vector3[SampleCount + 1];
         private readonly DrawnShape.PoseTest _tryFreeShape;
         private bool _hasSamples;
         private bool _isFreeOffHand;
+        private bool _isCandidateOnSide;
         private BladeSegment _drawnPose = new BladeSegment(Vector3.Zero, Vector3.UnitZ * BladePose.BladeLengthMeters);
         private IReadOnlyList<BladeObstacle> _bodies;
         private BladeDroop _droop;
@@ -52,6 +56,15 @@ namespace VrFencing.Blade
 
         /// <summary>The pin against a body and the bend.</summary>
         public BladeContactBend Contact => _contact;
+
+        /// <summary>The blade's side pressed on a body, while <see cref="IsOnSide"/>.</summary>
+        public BladeSideContact Side => _side;
+
+        /// <summary>
+        /// True while the drawn blade is bent round a body its side presses (<see cref="BladeSideContact"/>, PER-69): the
+        /// hilt follows the hand, the blade lies against the body. Not a Touch.
+        /// </summary>
+        public bool IsOnSide { get; private set; }
 
         /// <summary>Where the drawn guard is: the hand's guard, unless <see cref="IsDecoupled"/>.</summary>
         public Vector3 GuardPosition => _samples[0];
@@ -76,8 +89,10 @@ namespace VrFencing.Blade
         {
             _flex.Reset();
             _contact.Reset();
+            _side.Reset();
             _hasSamples = false;
             _isFreeOffHand = false;
+            IsOnSide = false;
         }
 
         /// <summary>The drawn centerline point <paramref name="index"/>, 0 at the guard to <see cref="SampleCount"/> at the point.</summary>
@@ -124,6 +139,7 @@ namespace VrFencing.Blade
                 _drawnPose = new BladeSegment(_contact.GuardPosition, _contact.GuardPosition + (_contact.GuardDirection * BladePose.BladeLengthMeters));
                 _hasSamples = true;
                 _isFreeOffHand = false;
+                IsOnSide = false;
                 return release;
             }
 
@@ -169,9 +185,11 @@ namespace VrFencing.Blade
             _bodies = null;
             if (reached.HasValue)
             {
-                if (_isFreeOffHand && reached.Value == 0.0f)
+                var isLettingGoOfSide = IsOnSide && !_isCandidateOnSide;
+                if ((_isFreeOffHand || isLettingGoOfSide) && reached.Value == 0.0f && !_isCandidateOnSide)
                 {
-                    // Caught up with the hand: the blade springs from where it was drawn instead of jumping, if that is clear.
+                    // Caught up with the hand, or the side let go of the body: the blade springs from where it was drawn
+                    // instead of jumping, if that is clear.
                     _flex.SpringBackFrom(straightBlade, _samples[SampleCount] - straightBlade.TipPosition);
                     FillFlexed(straightBlade, _candidate);
                     if (!DrawnShape.IsClear(_candidate, _samples, bodies, BladeRadiusMeters, 1, sweepsTip: true))
@@ -183,15 +201,55 @@ namespace VrFencing.Blade
 
                 Array.Copy(_candidate, _samples, _samples.Length);
                 _drawnPose = reached.Value > 0.0f ? DrawnShape.Interpolate(straightBlade, _drawnPose, reached.Value) : straightBlade;
+                IsOnSide = _isCandidateOnSide;
             }
 
             _isFreeOffHand = DrawnShape.IsOffHand(_drawnPose.GuardPosition, _drawnPose.Direction, straightBlade);
         }
 
+        /// <summary>
+        /// The free blade in <paramref name="pose"/>: flexed if that is clear of every body; else bent round the body its
+        /// side presses (<see cref="BladeSideContact"/>) if that is clear. Both must get there without crossing a body.
+        /// </summary>
         private bool TryFreeShape(BladeSegment pose)
         {
             FillFlexed(pose, _candidate);
-            return DrawnShape.IsClear(_candidate, _samples, _bodies, BladeRadiusMeters, 1, sweepsTip: true);
+            _isCandidateOnSide = false;
+            if (DrawnShape.IsClear(_candidate, _samples, _bodies, BladeRadiusMeters, 1, sweepsTip: true))
+            {
+                return true;
+            }
+
+            if (IsSlidingOffEnd(_candidate))
+            {
+                return true;
+            }
+
+            _isCandidateOnSide = _side.TryShape(pose, _bodies, _samples, _flex.Bend, _droop, _candidate);
+            return _isCandidateOnSide && DrawnShape.IsClear(_candidate, _samples, _bodies, BladeRadiusMeters, 1, sweepsTip: true);
+        }
+
+        /// <summary>
+        /// The side was pressed near the point and the hand went on past the body's end: the point went round the end,
+        /// not through the body, so the blade may spring to the flexed <paramref name="handShape"/> though the straight
+        /// path there crosses the body, if that shape is clear and the point's own path enters nothing.
+        /// </summary>
+        private bool IsSlidingOffEnd(Vector3[] handShape)
+        {
+            if (!IsOnSide || _side.ContactMeters < BladePose.BladeLengthMeters - BladeSideContact.SlideOffMeters)
+            {
+                return false;
+            }
+
+            foreach (var body in _bodies)
+            {
+                if (body.TryFindEntry(_samples[SampleCount], handShape[SampleCount], BladeRadiusMeters * 0.5f, out _))
+                {
+                    return false;
+                }
+            }
+
+            return DrawnShape.IsClear(handShape, null, _bodies, BladeRadiusMeters, 1, sweepsTip: true);
         }
 
         private void FillFlexed(BladeSegment pose, Vector3[] samples)

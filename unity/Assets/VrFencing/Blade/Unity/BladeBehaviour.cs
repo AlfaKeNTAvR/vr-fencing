@@ -142,10 +142,18 @@ namespace VrFencing.Blade
             }
 
             var wasDecoupled = _drawnBlade.IsDecoupled;
+            var wasOnSide = _drawnBlade.IsOnSide;
             var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime, droop);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");
+            }
+
+            if (_drawnBlade.IsOnSide != wasOnSide)
+            {
+                Debug.Log(_drawnBlade.IsOnSide
+                    ? $"[Blade] Side pressed on the body {_drawnBlade.Side.ContactMeters * 100.0f:0} cm from the guard: the drawn blade bends round it"
+                    : "[Blade] Side let go of the body: the drawn blade springs back");
             }
 
             if (_drawnBlade.IsDecoupled != wasDecoupled)
