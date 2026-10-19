@@ -13,6 +13,7 @@
 //   Mount, pitch and yaw persist in persistentDataPath/blade-tuning.json.
 //   Left trigger      re-place the Targets in front of where the Fencer stands now
 //   Right A / B       preview the Touch / flat haptic pattern
+//   Right stick click toggle haptic backend (Unity XR impulse / Meta Haptics SDK)
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -61,6 +62,12 @@ namespace VrFencing.Prototypes.BladeFeel
         private float _statsMaxFrameSeconds;
         private float _statsMaxTipSpeed;
         private int _statsFrames;
+        private readonly List<float> _statsFrameSeconds = new();
+
+        private const float JitterWindowSeconds = 1f;
+        // Below this mean tip speed over the jitter window the hand counts as held still.
+        private const float StillTipSpeedMetersPerSecond = 0.05f;
+        private readonly Queue<JitterSample> _jitterSamples = new();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void SpawnIntoScene()
@@ -76,7 +83,7 @@ namespace VrFencing.Prototypes.BladeFeel
             _litMaterial = LoadLitMaterial();
             _tuning = BladeTuningStore.Load();
             _tuning.mountIndex = Mathf.Clamp(_tuning.mountIndex, 0, BladeFeelPresets.BladeMounts.Length - 1);
-            _haptics = new ControllerHapticPlayer(OVRInput.Controller.RTouch);
+            _haptics = new ControllerHapticPlayer();
             _repLog = new RepLog("reps.jsonl");
             _repLog.Write("time", System.DateTime.UtcNow.ToString("o"), "event", "session_start",
                 "display_hz", OVRPlugin.systemDisplayFrequency);
@@ -84,12 +91,21 @@ namespace VrFencing.Prototypes.BladeFeel
             BuildHud(_cameraRig.leftControllerAnchor);
             ApplyBladeMount();
             _isPlacementPending = true; // Placed on the first frame with a tracked head.
+            // One Touch pulse shortly after launch: the log shows whether the haptics call works
+            // without anyone pressing a button, and the Fencer feels whether it arrives.
+            Invoke(nameof(PlayStartupHapticCheck), 2f);
             _statsWindowStart = Time.unscaledTime;
+        }
+
+        private void PlayStartupHapticCheck()
+        {
+            Debug.Log($"{LogTag} startup haptic check on {_haptics.Backend}");
+            _haptics.Play(CurrentHaptics().Touch, Time.unscaledTime);
         }
 
         private void OnDestroy()
         {
-            _haptics?.Stop();
+            _haptics?.Dispose();
             _repLog?.Dispose();
         }
 
@@ -179,6 +195,12 @@ namespace VrFencing.Prototypes.BladeFeel
                 _haptics.Play(CurrentHaptics().Touch, Time.unscaledTime);
             if (OVRInput.GetDown(OVRInput.Button.Two, Right))
                 _haptics.Play(CurrentHaptics().Flat, Time.unscaledTime);
+            if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstick, Right))
+            {
+                _haptics.ToggleBackend();
+                _haptics.Play(CurrentHaptics().Touch, Time.unscaledTime);
+                LogSetting("haptic_backend");
+            }
         }
 
         private void NudgeAngle(ref float angleDegrees, float deltaDegrees, string changed)
@@ -251,7 +273,7 @@ namespace VrFencing.Prototypes.BladeFeel
                 "blade_mount", CurrentMount().Name,
                 "guard_forward_m", CurrentMount().GuardForwardMeters,
                 "blade_pitch_deg", _tuning.pitchDegrees, "blade_yaw_deg", _tuning.yawDegrees,
-                "haptic_preset", CurrentHaptics().Name,
+                "haptic_preset", CurrentHaptics().Name, "haptic_backend", _haptics.Backend.ToString(),
                 "touch_rule", _isStrict ? "strict" : "loose");
         }
 
@@ -267,7 +289,8 @@ namespace VrFencing.Prototypes.BladeFeel
             Debug.Log($"{LogTag} setting {changed}: {DescribeSettings().Replace("\n", " | ")}");
             _repLog.Write("time", System.DateTime.UtcNow.ToString("o"), "event", "setting", "changed", changed,
                 "blade_mount", CurrentMount().Name, "blade_pitch_deg", _tuning.pitchDegrees, "blade_yaw_deg", _tuning.yawDegrees,
-                "haptic_preset", CurrentHaptics().Name, "touch_rule", _isStrict ? "strict" : "loose");
+                "haptic_preset", CurrentHaptics().Name, "haptic_backend", _haptics.Backend.ToString(),
+                "touch_rule", _isStrict ? "strict" : "loose");
         }
 
         // ---- Targets ----
@@ -381,7 +404,7 @@ namespace VrFencing.Prototypes.BladeFeel
             var rules = CurrentRules();
             return $"Blade: {CurrentMount().Name}\n" +
                    $"Pitch {_tuning.pitchDegrees:+0;-0;0}° (up +)  Yaw {_tuning.yawDegrees:+0;-0;0}° (right +)\n" +
-                   $"Haptics: {CurrentHaptics().Name}\n" +
+                   $"Haptics: {CurrentHaptics().Name} via {_haptics.Backend}\n" +
                    $"Rule: {(_isStrict ? "STRICT" : "LOOSE")} (motion <={rules.MaxApproachAngleDegrees:0}°, " +
                    $"blade <={rules.MaxBladeAxisAngleDegrees:0}°)";
         }
@@ -399,19 +422,101 @@ namespace VrFencing.Prototypes.BladeFeel
         private void UpdateStats(float now, float tipSpeed)
         {
             _statsFrames++;
+            _statsFrameSeconds.Add(Time.unscaledDeltaTime);
             _statsMaxFrameSeconds = Mathf.Max(_statsMaxFrameSeconds, Time.unscaledDeltaTime);
             _statsMaxTipSpeed = Mathf.Max(_statsMaxTipSpeed, tipSpeed);
+            RecordJitterSample(now);
             var elapsed = now - _statsWindowStart;
             if (elapsed < StatsWindowSeconds)
                 return;
 
+            _statsFrameSeconds.Sort();
+            var p95FrameSeconds = _statsFrameSeconds[Mathf.Min(_statsFrameSeconds.Count - 1,
+                Mathf.FloorToInt(0.95f * _statsFrameSeconds.Count))];
             Debug.Log($"{LogTag} stats window={elapsed:0.0}s frames={_statsFrames} fps={_statsFrames / elapsed:0.0} " +
-                      $"max_frame_ms={_statsMaxFrameSeconds * 1000f:0.0} max_tip_speed_mps={_statsMaxTipSpeed:0.00} " +
-                      $"display_hz={OVRPlugin.systemDisplayFrequency:0} head_tracked={IsHeadTracked()} targets_placed={_detector != null}");
+                      $"p95_frame_ms={p95FrameSeconds * 1000f:0.0} max_frame_ms={_statsMaxFrameSeconds * 1000f:0.0} " +
+                      $"max_tip_speed_mps={_statsMaxTipSpeed:0.00} display_hz={OVRPlugin.systemDisplayFrequency:0} " +
+                      $"head_tracked={IsHeadTracked()} targets_placed={_detector != null}");
+            LogJitter();
             _statsWindowStart = now;
             _statsFrames = 0;
+            _statsFrameSeconds.Clear();
             _statsMaxFrameSeconds = 0f;
             _statsMaxTipSpeed = 0f;
+        }
+
+        // ---- Jitter: how much the blade moves over the last second while the hand is roughly still ----
+
+        private readonly struct JitterSample
+        {
+            public readonly float Time;
+            public readonly Vector3 TipPosition;
+            public readonly Vector3 ControllerPosition;
+            public readonly float AngularSpeedDegreesPerSecond;
+
+            public JitterSample(float time, Vector3 tipPosition, Vector3 controllerPosition, float angularSpeed)
+            {
+                Time = time;
+                TipPosition = tipPosition;
+                ControllerPosition = controllerPosition;
+                AngularSpeedDegreesPerSecond = angularSpeed;
+            }
+        }
+
+        private void RecordJitterSample(float now)
+        {
+            var angularVelocity = OVRInput.GetLocalControllerAngularVelocity(OVRInput.Controller.RTouch);
+            _jitterSamples.Enqueue(new JitterSample(now, _tipMarker.position, _cameraRig.rightControllerAnchor.position,
+                angularVelocity.magnitude * Mathf.Rad2Deg));
+            while (_jitterSamples.Count > 0 && now - _jitterSamples.Peek().Time > JitterWindowSeconds)
+                _jitterSamples.Dequeue();
+        }
+
+        /// <summary>
+        /// Std dev (RMS distance from the mean) of tip and controller position over the last
+        /// second, mean angular speed, and mean tip speed. "still" = mean tip speed below
+        /// <see cref="StillTipSpeedMetersPerSecond"/>, so the std devs are mostly tracking noise.
+        /// Tip noise much larger than controller noise means the noise is rotational (lever arm).
+        /// </summary>
+        private void LogJitter()
+        {
+            if (_jitterSamples.Count < 2)
+                return;
+
+            var tipMean = Vector3.zero;
+            var controllerMean = Vector3.zero;
+            var angularSpeedSum = 0f;
+            foreach (var sample in _jitterSamples)
+            {
+                tipMean += sample.TipPosition;
+                controllerMean += sample.ControllerPosition;
+                angularSpeedSum += sample.AngularSpeedDegreesPerSecond;
+            }
+
+            tipMean /= _jitterSamples.Count;
+            controllerMean /= _jitterSamples.Count;
+
+            var tipVariance = 0f;
+            var controllerVariance = 0f;
+            var tipPathMeters = 0f;
+            JitterSample? previous = null;
+            foreach (var sample in _jitterSamples)
+            {
+                tipVariance += (sample.TipPosition - tipMean).sqrMagnitude;
+                controllerVariance += (sample.ControllerPosition - controllerMean).sqrMagnitude;
+                if (previous.HasValue)
+                    tipPathMeters += Vector3.Distance(previous.Value.TipPosition, sample.TipPosition);
+                previous = sample;
+            }
+
+            var spanSeconds = Mathf.Max(_jitterSamples.Count > 1 ? previous.Value.Time - _jitterSamples.Peek().Time : 0f, 1e-3f);
+            var meanTipSpeed = tipPathMeters / spanSeconds;
+            Debug.Log($"{LogTag} jitter window=1s samples={_jitterSamples.Count} " +
+                      $"still={meanTipSpeed < StillTipSpeedMetersPerSecond} mean_tip_speed_mps={meanTipSpeed:0.000} " +
+                      $"tip_std_mm={Mathf.Sqrt(tipVariance / _jitterSamples.Count) * 1000f:0.0} " +
+                      $"controller_std_mm={Mathf.Sqrt(controllerVariance / _jitterSamples.Count) * 1000f:0.0} " +
+                      $"mean_angular_speed_dps={angularSpeedSum / _jitterSamples.Count:0.0} " +
+                      $"display_hz={OVRPlugin.systemDisplayFrequency:0}");
         }
 
         private Transform CreatePrimitive(PrimitiveType type, string objectName, Transform parent, Color color)

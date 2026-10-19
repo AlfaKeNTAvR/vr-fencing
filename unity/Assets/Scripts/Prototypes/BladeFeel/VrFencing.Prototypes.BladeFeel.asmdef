@@ -4,7 +4,8 @@
     "references": [
         "VrFencing.Blade",
         "Oculus.VR",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Oculus.Haptics"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
