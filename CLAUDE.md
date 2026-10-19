@@ -1,5 +1,9 @@
 # VR Fencing Trainer
 
+## Dev loop
+
+Unity project in `unity/`. Build, test and install with the batchmode scripts in `scripts/` (they need the Editor closed); MCP servers in `.mcp.json`. See `docs/dev-loop.md`.
+
 ## Agent skills
 
 ### Issue tracker
