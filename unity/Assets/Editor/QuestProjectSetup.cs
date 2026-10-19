@@ -178,6 +178,9 @@ namespace VrFencing.EditorTools
             var projectConfig = OVRProjectConfig.CachedProjectConfig;
             projectConfig.targetDeviceTypes = new() { OVRProjectConfig.DeviceType.Quest3, OVRProjectConfig.DeviceType.Quest3S };
             projectConfig.insightPassthroughSupport = OVRProjectConfig.FeatureSupport.Required;
+            // IOBT arm logging (Tracking module): adds the BODY_TRACKING permission and the optional
+            // body_tracking feature to the manifest. Supported, not Required: the app runs without it.
+            projectConfig.bodyTrackingSupport = OVRProjectConfig.FeatureSupport.Supported;
             // Adds the com.oculus.experimental.enabled manifest feature that Meta XR Operator
             // needs on Horizon OS v205+. Turn this off before any store submission.
             projectConfig.experimentalFeaturesEnabled = true;

@@ -1,12 +1,16 @@
 // Builds the passthrough scene: Meta camera rig with passthrough as the
-// background, the Strip, and the Dummy standing on it under the En Garde Line.
+// background, the Strip, the Dummy standing on it under the En Garde Line, and the
+// Practice object (Drill runner, session recorder, arm tracking).
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Session;
 using VrFencing.Strip;
+using VrFencing.Tracking;
 
 namespace VrFencing.EditorTools
 {
@@ -20,6 +24,7 @@ namespace VrFencing.EditorTools
         private const string StripName = "Strip";
         private const string EnGardeLineName = "En Garde Line";
         private const string DummyName = "Dummy";
+        private const string PracticeName = "Practice";
 
         // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset along the Strip.
         private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
@@ -45,6 +50,7 @@ namespace VrFencing.EditorTools
             RemoveObsoleteReferenceCube(scene);
             var enGardeLine = FindOrCreateStrip(scene);
             PlaceDummyOnStrip(scene, enGardeLine);
+            FindOrCreatePractice(scene, enGardeLine.GetComponentInParent<StripBehaviour>());
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -91,6 +97,12 @@ namespace VrFencing.EditorTools
 
             if (cameraRig.GetComponent<OVRPassthroughLayer>() == null)
                 cameraRig.AddComponent<OVRPassthroughLayer>();
+
+            // Arm tracking (IOBT) needs the body tracking permission; OVRManager asks for it at launch.
+            // The field is internal to the Meta SDK, so it is set through its serialized name.
+            var serializedManager = new SerializedObject(manager);
+            serializedManager.FindProperty("requestBodyTrackingPermissionOnStartup").boolValue = true;
+            serializedManager.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void MakeCameraBackgroundTransparent(GameObject cameraRig)
@@ -165,6 +177,43 @@ namespace VrFencing.EditorTools
 
             dummy.transform.SetParent(enGardeLine, false);
             dummy.transform.SetLocalPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
+        }
+
+        /// <summary>
+        /// The Practice object hosts the Drill runner, the session recorder that writes the rep log, and the arm
+        /// tracking that adds the IOBT arm pose to each logged Rep. Nothing starts a Drill until the UI does.
+        /// </summary>
+        private static void FindOrCreatePractice(Scene scene, StripBehaviour strip)
+        {
+            var practice = scene.GetRootGameObjects().FirstOrDefault(root => root.name == PracticeName);
+            if (practice == null)
+            {
+                practice = new GameObject(PracticeName);
+                SceneManager.MoveGameObjectToScene(practice, scene);
+            }
+
+            var drillRunner = GetOrAddComponent<DrillRunnerBehaviour>(practice);
+            var sessionRecorder = GetOrAddComponent<SessionRecorderBehaviour>(practice);
+            var armTracking = GetOrAddComponent<ArmTrackingBehaviour>(practice);
+
+            SetReference(drillRunner, "_strip", strip);
+            SetReference(sessionRecorder, "_drillRunner", drillRunner);
+            SetReference(armTracking, "_sessionRecorder", sessionRecorder);
+            SetReference(armTracking, "_drillRunner", drillRunner);
+            SetReference(armTracking, "_strip", strip);
+        }
+
+        private static T GetOrAddComponent<T>(GameObject target) where T : Component
+        {
+            var component = target.GetComponent<T>();
+            return component != null ? component : target.AddComponent<T>();
+        }
+
+        private static void SetReference(Component owner, string fieldName, Object value)
+        {
+            var serialized = new SerializedObject(owner);
+            serialized.FindProperty(fieldName).objectReferenceValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void EnsureSceneFolder(string scenePath)
