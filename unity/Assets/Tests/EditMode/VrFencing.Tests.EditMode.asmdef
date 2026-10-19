@@ -4,7 +4,15 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "Oculus.VR"
+        "Oculus.VR",
+        "VrFencing.Strip.Core",
+        "VrFencing.Blade.Core",
+        "VrFencing.Dummy.Core",
+        "VrFencing.Drills.Core",
+        "VrFencing.Session.Core",
+        "VrFencing.UI.Core",
+        "VrFencing.Tracking.Core",
+        "VrFencing.Settings.Core"
     ],
     "includePlatforms": [
         "Editor"
