@@ -6,13 +6,15 @@ namespace VrFencing.UI
 {
     /// <summary>
     /// A panel button the off-hand pointer can press: a quad with a label, and optionally a note on its right
-    /// (the Drill picker's "Needs a 6.0 m Strip"). Greyed out when not interactable, highlighted when hovered or selected.
+    /// (the Drill picker's "Needs a 6.0 m Strip") and a detail line under them (its task line). Greyed out when not
+    /// interactable, highlighted when hovered or selected.
     /// </summary>
     internal sealed class UiButton : MonoBehaviour
     {
         private Renderer _background;
         private TextMeshPro _label;
         private TextMeshPro _note;
+        private TextMeshPro _detail;
         private Action _onClick;
         private bool _isHovered;
         private bool _isSelected;
@@ -25,8 +27,12 @@ namespace VrFencing.UI
         public string Label => _label.text;
 
         /// <param name="hasNote">Splits the button into a left-aligned label and a right-aligned note.</param>
+        /// <param name="hasDetail">
+        /// Puts the label (and note) in the top half and a smaller detail line across the bottom half (the Drill
+        /// picker's task line, PER-92).
+        /// </param>
         public static UiButton Create(
-            Transform parent, string name, Vector2 center, Vector2 size, float fontSize, Action onClick, bool hasNote = false)
+            Transform parent, string name, Vector2 center, Vector2 size, float fontSize, Action onClick, bool hasNote = false, bool hasDetail = false)
         {
             var buttonObject = new GameObject(name);
             buttonObject.transform.SetParent(parent, false);
@@ -42,21 +48,38 @@ namespace VrFencing.UI
             button._background = UiKit.CreateQuad(buttonObject.transform, "Background", Vector2.zero, size, 1, UiKit.ButtonColor);
 
             var padding = 0.015f;
+
+            // With a detail line, the label's line takes the top half and the detail the bottom half.
+            var lineHeight = hasDetail ? size.y * 0.5f : size.y;
+            var lineCenterY = hasDetail ? size.y * 0.22f : 0.0f;
             if (hasNote)
             {
                 var labelWidth = size.x * 0.55f;
                 var noteWidth = size.x - labelWidth - (3.0f * padding);
                 button._label = UiKit.CreateText(buttonObject.transform, "Label",
-                    new Vector2((-size.x * 0.5f) + padding + (labelWidth * 0.5f), 0.0f), new Vector2(labelWidth, size.y), 2,
+                    new Vector2((-size.x * 0.5f) + padding + (labelWidth * 0.5f), lineCenterY), new Vector2(labelWidth, lineHeight), 2,
                     fontSize, TextAlignmentOptions.MidlineLeft, UiKit.TextColor);
                 button._note = UiKit.CreateText(buttonObject.transform, "Note",
-                    new Vector2((size.x * 0.5f) - padding - (noteWidth * 0.5f), 0.0f), new Vector2(noteWidth, size.y), 2,
+                    new Vector2((size.x * 0.5f) - padding - (noteWidth * 0.5f), lineCenterY), new Vector2(noteWidth, lineHeight), 2,
                     fontSize * 0.8f, TextAlignmentOptions.MidlineRight, UiKit.NoteTextColor);
             }
             else
             {
-                button._label = UiKit.CreateText(buttonObject.transform, "Label", Vector2.zero, new Vector2(size.x - (2.0f * padding), size.y), 2,
-                    fontSize, TextAlignmentOptions.Center, UiKit.TextColor);
+                button._label = UiKit.CreateText(buttonObject.transform, "Label", new Vector2(0.0f, lineCenterY),
+                    new Vector2(size.x - (2.0f * padding), lineHeight), 2, fontSize, TextAlignmentOptions.Center, UiKit.TextColor);
+            }
+
+            if (hasDetail)
+            {
+                button._detail = UiKit.CreateText(buttonObject.transform, "Detail", new Vector2(0.0f, -size.y * 0.24f),
+                    new Vector2(size.x - (2.0f * padding), size.y * 0.45f), 2, UiKit.TinyFontSize, TextAlignmentOptions.MidlineLeft,
+                    UiKit.DimTextColor);
+                button._detail.textWrappingMode = TextWrappingModes.NoWrap;
+
+                // A line a little too long shrinks to fit rather than losing its end.
+                button._detail.enableAutoSizing = true;
+                button._detail.fontSizeMin = UiKit.TinyFontSize * 0.75f;
+                button._detail.fontSizeMax = UiKit.TinyFontSize;
             }
 
             // One line per button: a long name ends in an ellipsis instead of spilling out of the button.
@@ -79,6 +102,15 @@ namespace VrFencing.UI
             if (_note != null)
             {
                 UiKit.SetText(_note, note);
+            }
+        }
+
+        /// <summary>Sets the detail line; does nothing on a button made without one.</summary>
+        public void SetDetail(string detail)
+        {
+            if (_detail != null)
+            {
+                UiKit.SetText(_detail, detail);
             }
         }
 

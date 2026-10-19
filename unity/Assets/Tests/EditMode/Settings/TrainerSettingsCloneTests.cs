@@ -16,6 +16,7 @@ namespace VrFencing.Tests.Settings
                 RepsPerDrill = 12,
                 RestBetweenRepsSeconds = 3.0f,
                 ShrinkDrillsToFit = true,
+                LightNamedZones = false,
             };
             settings.TimeWindows.ReactionSeconds = 1.1f;
             settings.TimeWindows.CompoundSecondTouchSeconds = 1.2f;
@@ -33,6 +34,7 @@ namespace VrFencing.Tests.Settings
             settings.Blade.SavedAngles.French.PitchDegrees = 3.0f;
             settings.Blade.SavedAngles.FrenchPosted.PitchDegrees = 5.0f;
             settings.Blade.SavedAngles.FrenchPosted.YawDegrees = 15.0f;
+            settings.Blade.SavedAngles.Pistol.ReachMeters = 1.6f;
             settings.Blade.SetSagittaMeters = 0.004f;
             settings.Blade.TouchHaptic = HapticPattern.Crisp;
             settings.Blade.FlatHaptic = HapticPattern.Off;

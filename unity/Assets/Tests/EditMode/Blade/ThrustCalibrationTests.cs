@@ -142,6 +142,57 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void TheFitMeasuresTheReachFromTheShoulderToTheRealPoint([Values(BladeMount.Center, BladeMount.FrenchPosted)] BladeMount mount)
+        {
+            // PER-92: the reach sets the Dummy's Extension distance. The point is computed from the controller, so it holds
+            // with the blade hidden too.
+            var blade = new BladeSettings { Mount = mount };
+            var trueAngles = new GripAngles(-8.0f, -3.0f);
+            var shoulder = new Vector3(0.18f, 1.4f, 0.0f);
+            var captures = new List<ThrustCapture>();
+            var expectedSum = 0.0f;
+            foreach (var (pitchRadians, yawRadians) in new[] { (0.1f, 0.0f), (-0.15f, 0.25f), (0.05f, -0.25f) })
+            {
+                var rotation = Quaternion.CreateFromYawPitchRoll(yawRadians, pitchRadians, 0.0f);
+                var controller = new TrackedPose(shoulder + Vector3.Transform(new Vector3(0.0f, 0.0f, 0.62f), rotation), rotation);
+                var target = FindRealPointLineTarget(controller, mount, trueAngles, Hand.Right, blade);
+                captures.Add(new ThrustCapture(controller, target, shoulder));
+                expectedSum += Vector3.Distance(FindRealPoint(controller, mount, trueAngles, Hand.Right, blade), shoulder);
+            }
+
+            var fit = ThrustCalibration.Fit(captures, blade, Hand.Right);
+
+            Assert.That(fit.ReachMeters, Is.Not.Null);
+            Assert.That(fit.ReachMeters.Value, Is.EqualTo(expectedSum / captures.Count).Within(0.005f));
+            Assert.That(fit.ReachMeters.Value, Is.InRange(1.4f, 1.8f), "Arm 0.62 m plus a 90 cm blade, about.");
+        }
+
+        [Test]
+        public void ThrustsWithoutAShoulderMeasureNoReach()
+        {
+            var controller = new TrackedPose(new Vector3(0.0f, 1.3f, 0.0f), Quaternion.Identity);
+
+            var fit = ThrustCalibration.Fit(new[] { new ThrustCapture(controller, new Vector3(0.0f, 1.3f, 2.0f)) }, new BladeSettings(), Hand.Right);
+
+            Assert.That(fit.ReachMeters, Is.Null);
+        }
+
+        [Test]
+        public void HeldThrustsCarryTheShoulderForTheReach()
+        {
+            var calibration = new ThrustCalibration(Head, Hand.Right);
+            var controller = AimedController(calibration, 0);
+            for (var time = 0.0; time < 1.2 && calibration.Captures.Count == 0; time += FrameSeconds)
+            {
+                calibration.Step(time, Head, controller);
+            }
+
+            Assert.That(calibration.Captures[0].Shoulder, Is.Not.Null);
+            Assert.That(
+                Vector3.Distance(calibration.Captures[0].Shoulder.Value, ThrustCalibration.EstimateShoulder(Head, Hand.Right)), Is.LessThan(1e-5f));
+        }
+
+        [Test]
         public void TheFitNeedsAtLeastOneThrust()
         {
             Assert.Throws<ArgumentException>(() => ThrustCalibration.Fit(Array.Empty<ThrustCapture>(), new BladeSettings(), Hand.Right));
@@ -155,6 +206,15 @@ namespace VrFencing.Tests.Blade
             var gripUp = Vector3.Transform(Vector3.UnitY, controller.Rotation * mountPose.Rotation);
             var chord = BladeDroop.Create(forte.Direction, gripUp, -Vector3.UnitY, blade).GetChord(forte);
             return chord.GuardPosition + (chord.Direction * 1.5f);
+        }
+
+        /// <summary>The real (drooped) point, room frame, for a mount at <paramref name="angles"/>.</summary>
+        private static Vector3 FindRealPoint(TrackedPose controller, BladeMount mount, GripAngles angles, Hand hand, BladeSettings blade)
+        {
+            var mountPose = BladePose.GetMountInController(mount, angles, hand);
+            var forte = BladePose.GetBlade(controller, mountPose);
+            var gripUp = Vector3.Transform(Vector3.UnitY, controller.Rotation * mountPose.Rotation);
+            return BladeDroop.Create(forte.Direction, gripUp, -Vector3.UnitY, blade).GetChord(forte).TipPosition;
         }
 
         /// <summary>The controller held on the shoulder's line to the target, 0.6 m out: a straight arm at it.</summary>

@@ -29,6 +29,35 @@ namespace VrFencing.Tests.Settings
         }
 
         [Test]
+        public void AFileFromBeforeTheReachAndTheLightLoadsWithTheirDefaults()
+        {
+            // PER-92: an older settings.json has no LightNamedZones and no ReachMeters.
+            File.WriteAllText(_settingsPath,
+                "{ \"FencerHeightMeters\": 1.8, \"Blade\": { \"Mount\": \"French\", \"SavedAngles\": { \"French\": { \"PitchDegrees\": -9.0 } } } }");
+
+            var loaded = SettingsStorage.Load(_settingsPath);
+
+            Assert.That(loaded.FencerHeightMeters, Is.EqualTo(1.8f));
+            Assert.That(loaded.LightNamedZones, Is.True);
+            Assert.That(loaded.Blade.SavedAngles.French.PitchDegrees, Is.EqualTo(-9.0f));
+            Assert.That(loaded.Blade.GetMeasuredReachMeters(), Is.Null, "No reach: the Dummy's distance comes from height.");
+        }
+
+        [Test]
+        public void TheMeasuredReachAndTheLightSaveAndLoad()
+        {
+            var saved = new TrainerSettings { LightNamedZones = false };
+            saved.Blade.SavedAngles.Pistol.ReachMeters = 1.57f;
+
+            SettingsStorage.Save(saved, _settingsPath);
+            var loaded = SettingsStorage.Load(_settingsPath);
+
+            Assert.That(loaded.LightNamedZones, Is.False);
+            Assert.That(loaded.Blade.SavedAngles.Pistol.ReachMeters, Is.EqualTo(1.57f));
+            Assert.That(loaded.Blade.SavedAngles.Center.ReachMeters, Is.Null);
+        }
+
+        [Test]
         public void DefaultsUseRightHandAndAverageFencerHeight()
         {
             var settings = new TrainerSettings();

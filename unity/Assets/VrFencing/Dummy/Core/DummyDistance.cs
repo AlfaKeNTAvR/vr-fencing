@@ -19,7 +19,9 @@ namespace VrFencing.Dummy
     /// (the Dummy is the Fencer's height), so the presets grow with height; the blade does not.
     ///
     /// Extension: the Fencer's point, with the arm straight from the en garde shoulder and the blade along it,
-    /// reaches <see cref="TouchDepthMeters"/> into the front of the Dummy's body Target Zone.
+    /// reaches <see cref="TouchDepthMeters"/> into the front of the Dummy's body Target Zone. The arm and blade's reach
+    /// is the Fencer's own once Calibrate grip has measured it (PER-92), else estimated from height
+    /// (<see cref="GetHeightBasedReachMeters"/>).
     /// Lunge: extension plus one lunge. Step-lunge: lunge plus one advance.
     /// Every other Target Zone is nearer than the body, so it is reachable at each preset too.
     /// </summary>
@@ -47,13 +49,29 @@ namespace VrFencing.Dummy
         /// </summary>
         public const float TouchDepthMeters = 0.05f;
 
+        /// <summary>
+        /// A measured reach (shoulder to point) outside this range is taken for a bad measurement, and the height-based
+        /// reach is used instead. The height-based reach runs from about 1.36 m (1.20 m tall) to 1.75 m (2.20 m).
+        /// </summary>
+        public const float MinimumMeasuredReachMeters = 1.0f;
+
+        /// <inheritdoc cref="MinimumMeasuredReachMeters"/>
+        public const float MaximumMeasuredReachMeters = 2.4f;
+
         /// <summary>Front foot to front foot, in meters, for a Fencer (and Dummy) of <paramref name="heightMeters"/>.</summary>
+        /// <param name="measuredReachMeters">
+        /// The Fencer's measured reach, shoulder to point with the arm straight (Calibrate grip), or null when not
+        /// measured yet. A reach that fails <see cref="IsPlausibleReach"/> is ignored, so the height-based one is used.
+        /// </param>
         /// <exception cref="ArgumentOutOfRangeException">The height is not a positive number, or the preset is unknown.</exception>
-        public static float GetDistanceMeters(DummyDistance preset, float heightMeters)
+        public static float GetDistanceMeters(DummyDistance preset, float heightMeters, float? measuredReachMeters = null)
         {
             DummyLayout.RequirePositiveHeight(heightMeters);
 
-            var extension = GetExtensionDistanceMeters(heightMeters);
+            var reach = measuredReachMeters.HasValue && IsPlausibleReach(measuredReachMeters.Value)
+                ? measuredReachMeters.Value
+                : GetHeightBasedReachMeters(heightMeters);
+            var extension = GetExtensionDistanceMeters(heightMeters, reach);
             var lunge = extension + (LungeLengthPerHeight * heightMeters);
             switch (preset)
             {
@@ -68,10 +86,27 @@ namespace VrFencing.Dummy
             }
         }
 
-        private static float GetExtensionDistanceMeters(float heightMeters)
+        /// <summary>
+        /// The reach estimated from height, used until the Fencer's own is measured: the straight arm from the shoulder
+        /// to the grip (standard segment fractions of height) plus a full-length blade.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">The height is not a positive number.</exception>
+        public static float GetHeightBasedReachMeters(float heightMeters)
         {
-            // Point ahead of the Fencer's front foot: shoulder offset, straight arm to the grip, then the blade.
-            var pointReach = ((EnGardePose.SwordShoulder.Z + EnGardePose.ShoulderToGrip) * heightMeters) + BladeLengthMeters;
+            DummyLayout.RequirePositiveHeight(heightMeters);
+            return (EnGardePose.ShoulderToGrip * heightMeters) + BladeLengthMeters;
+        }
+
+        /// <summary>True for a measured reach that a real adult Fencer with an épée can have.</summary>
+        public static bool IsPlausibleReach(float reachMeters)
+        {
+            return reachMeters >= MinimumMeasuredReachMeters && reachMeters <= MaximumMeasuredReachMeters;
+        }
+
+        private static float GetExtensionDistanceMeters(float heightMeters, float reachMeters)
+        {
+            // Point ahead of the Fencer's front foot: the en garde shoulder's offset, then the reach from the shoulder.
+            var pointReach = (EnGardePose.SwordShoulder.Z * heightMeters) + reachMeters;
 
             // The front of the Dummy's body is behind its front foot, so it is that much farther from the Fencer.
             var bodyBehindFrontFoot = -EnGardePose.BodyFrontAlongForward * heightMeters;

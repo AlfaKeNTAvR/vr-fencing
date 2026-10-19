@@ -7,13 +7,17 @@ using VrFencing.Drills;
 namespace VrFencing.UI
 {
     /// <summary>
-    /// The home screen: the Drill picker (easy to hard, greyed out with the required Strip length when a Drill does
-    /// not fit) and the flow buttons: start the selected Drill, settings, history, re-place the Strip, and the
+    /// The home screen: the Drill picker (easy to hard, each Drill's task line under its name, greyed out with the
+    /// required Strip length when a Drill does not fit) and the flow buttons: start the selected Drill, settings, history, re-place the Strip, and the
     /// off-strip tolerance (the same as the off-hand lower face button).
     /// </summary>
     internal sealed class HomeScreen
     {
-        private const int RowsPerPage = 5;
+        // Each row has two lines: the Drill's name (and note), then its task line (PER-92). Four fit above the page buttons.
+        private const int RowsPerPage = 4;
+        private const float RowHeightMeters = 0.08f;
+        private const float RowStepMeters = 0.09f;
+        private const float FirstRowCenterY = 0.155f;
 
         private readonly GameObject _root;
         private readonly TextMeshPro _stripText;
@@ -49,8 +53,8 @@ namespace VrFencing.UI
             for (var row = 0; row < RowsPerPage; row++)
             {
                 var rowIndex = row;
-                _rows[row] = UiButton.Create(root, $"Drill Row {row}", new Vector2(-0.13f, 0.16f - (row * 0.07f)), new Vector2(0.46f, 0.06f),
-                    UiKit.SmallFontSize, () => SelectRow(rowIndex), hasNote: true);
+                _rows[row] = UiButton.Create(root, $"Drill Row {row}", new Vector2(-0.13f, FirstRowCenterY - (row * RowStepMeters)),
+                    new Vector2(0.46f, RowHeightMeters), UiKit.SmallFontSize, () => SelectRow(rowIndex), hasNote: true, hasDetail: true);
             }
 
             _emptyText = UiKit.CreateText(root, "No Drills", new Vector2(-0.13f, 0.02f), new Vector2(0.44f, 0.2f), 1, UiKit.BodyFontSize,
@@ -119,6 +123,7 @@ namespace VrFencing.UI
                 var entry = entries[page.FirstItem + row];
                 _rows[row].SetLabel(entry.Drill.Name);
                 _rows[row].SetNote(entry.Note);
+                _rows[row].SetDetail(entry.Drill.TaskLine);
                 _rows[row].SetInteractable(entry.IsAvailable);
                 _rows[row].SetSelected(entry.Drill.Id == SelectedDrillId);
             }

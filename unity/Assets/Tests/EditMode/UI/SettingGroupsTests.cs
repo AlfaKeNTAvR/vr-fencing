@@ -54,11 +54,13 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.Drills), Is.EqualTo(new[]
             {
                 SettingId.RepsPerDrill, SettingId.RestBetweenReps, SettingId.ReactionWindow, SettingId.CompoundSecondTouchWindow,
-                SettingId.DistanceChoiceWindow, SettingId.FootworkCallWindow, SettingId.ShrinkDrillsToFit,
+                SettingId.DistanceChoiceWindow, SettingId.FootworkCallWindow, SettingId.LightNamedZones,
             }));
+
+            // PER-92: "Shrink Drills to fit" moved to Strip to make room for "Light named zones".
             Assert.That(SettingGroups.GetSettings(SettingGroup.Strip), Is.EqualTo(new[]
             {
-                SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance,
+                SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Touch), Is.EqualTo(new[] { SettingId.TouchRule, SettingId.TouchPressure }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]

@@ -26,6 +26,10 @@ namespace VrFencing.UI
     /// after a restart and moves along with a re-placed Strip. The pin button beside the bar toggles pinned and
     /// following; folding and opening the panels keeps the pin.
     ///
+    /// Start first shows the Drill's task line above the Dummy and on the Running panel for a few seconds
+    /// (<see cref="DrillIntro"/>, PER-92), then starts the run on the runner, so the Fencer knows what to do before the
+    /// first cue. Cancel in that time cancels the start.
+    ///
     /// This is the scene glue: it starts, pauses and cancels Drills on the one <see cref="DrillRunnerBehaviour"/>,
     /// flags Reps and reads results through <see cref="SessionRecorderBehaviour"/>, re-places the Strip, and saves
     /// Settings and hands them to the Strip, the Dummy and the Blade. What the screens say is decided in the UI Core.
@@ -93,6 +97,7 @@ namespace VrFencing.UI
         private ThrustCalibration _calibration;
         private int _calibrationStartFrame;
         private string _gripMessage = string.Empty;
+        private DrillIntro _intro;
 
         private MenuScreen _shownScreen = MenuScreen.Hidden;
         private bool _isDirty = true;
@@ -102,6 +107,9 @@ namespace VrFencing.UI
         private string _lastDrillName = string.Empty;
 
         private DrillRunner Runner => _drillRunner.Runner;
+
+        // A Drill is on: its intro shows the task line, or the runner runs it.
+        private bool IsDrillOn => Runner.IsRunning || _intro != null;
 
         private bool IsOffHandLeft => _settings.Hand == Hand.Right;
 
@@ -160,7 +168,13 @@ namespace VrFencing.UI
         private void Update()
         {
             var head = _cameraRig != null ? _cameraRig.centerEyeAnchor : null;
-            var screen = _navigator.GetShownPanel(_strip.IsPlacing, Runner.IsRunning, _strip.IsAskingForNewStrip);
+            var nowSeconds = Time.timeAsDouble;
+            if (_intro != null)
+            {
+                TickIntro(nowSeconds);
+            }
+
+            var screen = _navigator.GetShownPanel(_strip.IsPlacing, IsDrillOn, _strip.IsAskingForNewStrip);
             if (screen != _shownScreen)
             {
                 ShowScreen(screen);
@@ -172,7 +186,6 @@ namespace VrFencing.UI
                 RefreshPage(screen);
             }
 
-            var nowSeconds = Time.timeAsDouble;
             if (_calibration != null)
             {
                 TickCalibration(head, nowSeconds);
@@ -181,7 +194,8 @@ namespace VrFencing.UI
             var pinnedPose = GetPinnedPose();
             if (screen == MenuScreen.Running)
             {
-                _runningPanel.Refresh(RunStatusText.Format(Runner, _strip.IsFencerOnStrip), Runner.IsPausedByFencer, nowSeconds);
+                var status = _intro != null ? _intro.Status : RunStatusText.Format(Runner, _strip.IsFencerOnStrip);
+                _runningPanel.Refresh(status, Runner.IsPausedByFencer, nowSeconds);
                 PlacePanel(_runningPanelRoot, _runningGrabBar, _runningFollower, pinnedPose, head);
             }
             else if (screen != MenuScreen.Hidden)
@@ -190,7 +204,7 @@ namespace VrFencing.UI
             }
 
             _pointer.Tick(GetOffHandController(), head, IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
-                _navigator.IsPointerShown(_strip.IsPlacing, Runner.IsRunning, _strip.IsAskingForNewStrip), _settings.LaserTiltDegrees, nowSeconds, Time.deltaTime);
+                _navigator.IsPointerShown(_strip.IsPlacing, IsDrillOn, _strip.IsAskingForNewStrip), _settings.LaserTiltDegrees, nowSeconds, Time.deltaTime);
 
             if (OVRInput.GetDown(MenuButton, OVRInput.Controller.Touch))
             {
@@ -314,7 +328,7 @@ namespace VrFencing.UI
 
             _runningPanelRoot = new GameObject("Running Panel").transform;
             _runningPanelRoot.SetParent(transform, false);
-            _runningPanel = new RunningPanel(_runningPanelRoot, TogglePause, () => Runner.Cancel(), () => _sessionRecorder.FlagRep());
+            _runningPanel = new RunningPanel(_runningPanelRoot, TogglePause, CancelDrill, () => _sessionRecorder.FlagRep());
 
             _mainGrabBar = PanelGrabBar.Create(_mainPanel, MainPanelSize, PinPanels, TogglePinned);
             _runningGrabBar = PanelGrabBar.Create(_runningPanelRoot, RunningPanel.Size, PinPanels, TogglePinned);
@@ -445,7 +459,7 @@ namespace VrFencing.UI
         /// <summary>Starts the thrust calibration for the chosen grip (PER-52): the panels go away and the first target shows.</summary>
         private void StartCalibration()
         {
-            if (_cameraRig == null || Runner.IsRunning || _strip.IsPlacing)
+            if (_cameraRig == null || IsDrillOn || _strip.IsPlacing)
             {
                 return;
             }
@@ -462,7 +476,7 @@ namespace VrFencing.UI
         {
             var offHandTrigger = IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger;
             var isCancelled = Time.frameCount > _calibrationStartFrame && OVRInput.GetDown(offHandTrigger, OVRInput.Controller.Touch);
-            if (head == null || isCancelled || Runner.IsRunning || _strip.IsPlacing)
+            if (head == null || isCancelled || IsDrillOn || _strip.IsPlacing)
             {
                 EndCalibration("Calibration cancelled; nothing changed");
                 return;
@@ -497,8 +511,14 @@ namespace VrFencing.UI
             var computed = GripGeometry.GetComputedAngles(_settings.Blade.Mount);
             Debug.Log($"[Blade] Grip calibration for {_settings.Blade.Mount}: pitch {fit.Angles.PitchDegrees:0.0} yaw {fit.Angles.YawDegrees:0.0} deg, " +
                 $"spread {fit.SpreadDegrees:0.0} deg (computed pitch {computed.PitchDegrees:0} yaw {computed.YawDegrees:0}).");
-            ApplyChangedSettings(SettingsPage.SaveGripAngles(_settings, fit.Angles), SettingImpact.Blade);
-            EndCalibration(GripText.FormatResult(fit.Angles, fit.SpreadDegrees));
+            // The reach sets the Dummy's distance (PER-92). An implausible one is not saved, so the last one (or height) stays.
+            var isReachSaved = fit.ReachMeters.HasValue && DistancePresets.IsPlausibleReach(fit.ReachMeters.Value);
+            Debug.Log(fit.ReachMeters.HasValue
+                ? $"[Blade] Measured reach {fit.ReachMeters.Value:0.000} m{(isReachSaved ? string.Empty : ": implausible, not saved")}."
+                : "[Blade] No reach measured.");
+            var changed = SettingsPage.SaveGripAngles(_settings, fit.Angles, fit.ReachMeters);
+            ApplyChangedSettings(changed, SettingImpact.Blade | SettingImpact.Dummy);
+            EndCalibration(GripText.FormatResult(fit.Angles, fit.SpreadDegrees, isReachSaved ? changed.Blade.GetMeasuredReachMeters() : null));
         }
 
         private void EndCalibration(string message)
@@ -516,25 +536,98 @@ namespace VrFencing.UI
             _gripMessage = $"{SettingsPage.FormatMount(_settings.Blade.Mount)} is back on its computed angles";
         }
 
+        /// <summary>
+        /// Start: stands the Dummy where the Drill needs it and shows the task line (<see cref="DrillIntro"/>); the run
+        /// starts on the runner when the intro is over (<see cref="TickIntro"/>).
+        /// </summary>
         private void StartDrill(string drillId)
         {
             var drill = BuildDrills().FirstOrDefault(candidate => candidate.Id == drillId);
-            if (drill == null || !_strip.IsPlaced || Runner.IsRunning)
+            if (drill == null || !_strip.IsPlaced || IsDrillOn)
             {
                 return;
             }
 
-            var availability = Runner.Start(drill, _strip.Geometry.LengthMeters, _settings.ShrinkDrillsToFit);
-            if (!availability.IsAvailable)
+            var availability = DrillAvailability.Check(drill, _strip.Geometry.LengthMeters, _settings.ShrinkDrillsToFit);
+            if (!ShowAvailability(drill, availability))
             {
-                _homeMessage = $"{drill.Name} needs a {availability.RequiredStripLengthMeters:0.0} m Strip";
-                _isDirty = true;
+                return;
+            }
+
+            _intro = new DrillIntro(drill, Time.timeAsDouble);
+            if (_dummy != null)
+            {
+                _dummy.SetDistance(drill.GetDummyDistance(availability.IsShrunk));
+            }
+
+            _cueDisplay?.ShowTaskLine(drill.TaskLine);
+            _isDirty = true;
+            Debug.Log($"[UI] Drill '{drill.Id}' task line up: \"{drill.TaskLine}\".");
+        }
+
+        /// <summary>Starts the run once the intro is over; drops the intro if the Strip went away meanwhile.</summary>
+        private void TickIntro(double nowSeconds)
+        {
+            if (_strip.IsPlacing || !_strip.IsPlaced)
+            {
+                CancelIntro();
+                return;
+            }
+
+            if (!_intro.IsOver(nowSeconds))
+            {
+                return;
+            }
+
+            var drill = _intro.Drill;
+            _intro = null;
+            _cueDisplay?.ShowTaskLine(string.Empty);
+            var availability = Runner.Start(drill, _strip.Geometry.LengthMeters, _settings.ShrinkDrillsToFit);
+            if (!ShowAvailability(drill, availability))
+            {
+                if (_dummy != null)
+                {
+                    _dummy.ResetDistance();
+                }
+
                 return;
             }
 
             _lastDrillName = drill.Name;
-            _homeMessage = string.Empty;
             Debug.Log($"[UI] Started Drill '{drill.Id}'{(availability.IsShrunk ? " (shortened)" : string.Empty)}.");
+        }
+
+        /// <summary>Says on Home why a Drill cannot start; returns whether it can.</summary>
+        private bool ShowAvailability(DrillDefinition drill, DrillAvailability availability)
+        {
+            _homeMessage = availability.IsAvailable ? string.Empty : $"{drill.Name} needs a {availability.RequiredStripLengthMeters:0.0} m Strip";
+            _isDirty = true;
+            return availability.IsAvailable;
+        }
+
+        /// <summary>The Running panel's Cancel: drops a start still showing its task line, or cancels the run.</summary>
+        private void CancelDrill()
+        {
+            if (_intro != null)
+            {
+                CancelIntro();
+                return;
+            }
+
+            Runner.Cancel();
+        }
+
+        private void CancelIntro()
+        {
+            Debug.Log($"[UI] Start of Drill '{_intro.Drill.Id}' cancelled before the first Rep.");
+            _intro = null;
+            _cueDisplay?.ShowTaskLine(string.Empty);
+            if (_dummy != null)
+            {
+                _dummy.ResetDistance();
+            }
+
+            _isDirty = true;
         }
 
         private void RunAgain()
@@ -547,6 +640,12 @@ namespace VrFencing.UI
 
         private void TogglePause()
         {
+            // Nothing runs yet while the task line shows; the first Rep starts once it is over.
+            if (_intro != null)
+            {
+                return;
+            }
+
             if (Runner.IsPausedByFencer)
             {
                 Runner.ResumeByFencer();
@@ -590,7 +689,7 @@ namespace VrFencing.UI
 
             if ((impact & SettingImpact.Dummy) != 0 && _dummy != null)
             {
-                _dummy.Configure(changed.FencerHeightMeters, changed.Hand);
+                _dummy.Configure(changed.FencerHeightMeters, changed.Hand, changed.Blade.GetMeasuredReachMeters());
             }
 
             if ((impact & SettingImpact.Strip) != 0)

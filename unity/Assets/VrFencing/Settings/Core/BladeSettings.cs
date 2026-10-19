@@ -123,6 +123,12 @@ namespace VrFencing.Settings
         /// <summary>Tip speed at contact that gives full haptic strength.</summary>
         public float HapticFullStrengthSpeedMetersPerSecond { get; set; } = 2.0f;
 
+        /// <summary>The reach Calibrate grip measured with the chosen grip, or null when it has not been measured yet.</summary>
+        public float? GetMeasuredReachMeters()
+        {
+            return SavedAngles.For(Mount).ReachMeters;
+        }
+
         /// <summary>A deep copy.</summary>
         public BladeSettings Clone()
         {
@@ -143,7 +149,10 @@ namespace VrFencing.Settings
         }
     }
 
-    /// <summary>One grip's saved pitch and yaw (right hand, degrees). An angle left null uses the grip's computed one.</summary>
+    /// <summary>
+    /// One grip's saved calibration: pitch and yaw (right hand, degrees), and the reach Calibrate grip measured with it.
+    /// An angle left null uses the grip's computed one; a reach left null uses the one estimated from height.
+    /// </summary>
     public sealed class GripAngleOverride
     {
         /// <summary>Tips the blade up (positive) or down from the controller's forward axis.</summary>
@@ -152,9 +161,16 @@ namespace VrFencing.Settings
         /// <summary>Turns the blade right (positive) or left, for a right-handed Fencer.</summary>
         public float? YawDegrees { get; set; }
 
+        /// <summary>
+        /// The Fencer's reach with this grip (PER-92): from the shoulder to the point with the arm straight, measured on
+        /// the thrust targets of Calibrate grip. It sets the Dummy's Extension distance. Null until measured (and in
+        /// settings files from before PER-92), which keeps the height-based distance. Not on the settings screen.
+        /// </summary>
+        public float? ReachMeters { get; set; }
+
         public GripAngleOverride Clone()
         {
-            return new GripAngleOverride { PitchDegrees = PitchDegrees, YawDegrees = YawDegrees };
+            return new GripAngleOverride { PitchDegrees = PitchDegrees, YawDegrees = YawDegrees, ReachMeters = ReachMeters };
         }
     }
 

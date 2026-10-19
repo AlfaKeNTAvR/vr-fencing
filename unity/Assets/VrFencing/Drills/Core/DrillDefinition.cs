@@ -87,7 +87,9 @@ namespace VrFencing.Drills
             IReadOnlyList<DummyDistance> repDummyDistances = null,
             IReadOnlyList<ZonePair> zonePairs = null,
             float secondTouchWindowSeconds = 0.0f,
-            IReadOnlyList<FootworkAction> footworkCalls = null)
+            IReadOnlyList<FootworkAction> footworkCalls = null,
+            string taskLine = null,
+            bool lightsNamedZone = false)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -165,6 +167,11 @@ namespace VrFencing.Drills
                 throw new ArgumentException("Footwork calls are judged by the footwork-call rule.", nameof(successRule));
             }
 
+            if (lightsNamedZone && cueType != CueType.NamedTargetZone)
+            {
+                throw new ArgumentException("Only a Drill that names its Target Zone can also light it.", nameof(lightsNamedZone));
+            }
+
             if (shrunkDummyDistance.HasValue && !shrunkStripLengthMeters.HasValue)
             {
                 throw new ArgumentException(
@@ -196,7 +203,24 @@ namespace VrFencing.Drills
             ZonePairs = zonePairs?.ToArray() ?? Array.Empty<ZonePair>();
             SecondTouchWindowSeconds = secondTouchWindowSeconds;
             FootworkCalls = footworkCalls?.ToArray() ?? Array.Empty<FootworkAction>();
+            TaskLine = taskLine ?? string.Empty;
+            LightsNamedZone = lightsNamedZone;
         }
+
+        /// <summary>
+        /// One line saying what the Fencer does (PER-92), e.g. "Extend and Touch the named zone. Arm only, no step.". The
+        /// picker shows it under the Drill's name, and it stands above the Dummy for a few seconds before the first Rep.
+        /// </summary>
+        public string TaskLine { get; }
+
+        /// <summary>A named-zone Drill also lights the named zone (PER-92, the "Light named zones" Setting).</summary>
+        public bool LightsNamedZone { get; }
+
+        /// <summary>
+        /// Each Rep lights its cued Target Zone on the Dummy: a lit-zone Drill, or a named-zone Drill that also lights it.
+        /// A footwork call cues no zone, so nothing lights.
+        /// </summary>
+        public bool LightsCuedZone => CueType == CueType.LitTargetZone || LightsNamedZone;
 
         /// <summary>Stable key for the rep log.</summary>
         public string Id { get; }

@@ -44,7 +44,9 @@ namespace VrFencing.Tests.UI
                 }
             }
 
-            Assert.That(covered, Is.EquivalentTo(before.Keys), "A Setting is missing from the settings screen, or shown twice.");
+            // The reach is measured by Calibrate grip (PER-92), not stepped on the settings screen.
+            var onScreen = before.Keys.Where(path => !path.EndsWith(".ReachMeters")).ToArray();
+            Assert.That(covered, Is.EquivalentTo(onScreen), "A Setting is missing from the settings screen, or shown twice.");
         }
 
         [Test]
@@ -109,7 +111,7 @@ namespace VrFencing.Tests.UI
                 var settings = new TrainerSettings();
                 for (var i = 0; i < 200; i++)
                 {
-                    foreach (var id in SettingsPage.All.Where(id => id != SettingId.Hand && id != SettingId.ShrinkDrillsToFit))
+                    foreach (var id in SettingsPage.All.Where(id => id != SettingId.Hand && id != SettingId.ShrinkDrillsToFit && id != SettingId.LightNamedZones))
                     {
                         settings = SettingsPage.Change(settings, id, direction);
                     }
@@ -210,7 +212,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingsPage.GetImpact(SettingId.TouchHaptic), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.GetImpact(SettingId.BladeYaw), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.GetImpact(SettingId.BladeSet), Is.EqualTo(SettingImpact.Blade));
-            Assert.That(SettingsPage.GetImpact(SettingId.BladeMount), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.BladeMount), Is.EqualTo(SettingImpact.Blade | SettingImpact.Dummy), "Each grip has its own reach.");
             Assert.That(SettingsPage.GetImpact(SettingId.Hand) & SettingImpact.Blade, Is.EqualTo(SettingImpact.Blade));
         }
 
@@ -249,6 +251,53 @@ namespace VrFencing.Tests.UI
             Assert.That(up, Is.EqualTo(new[] { 0.2f, 0.4f, 0.0f }));
             Assert.That(down, Is.EqualTo(new[] { 0.4f, 0.2f, 0.0f }));
             Assert.That(OffStripToleranceSteps.StepsMeters, Is.EquivalentTo(new[] { 0.0f, 0.2f, 0.4f }));
+        }
+
+        [Test]
+        public void LightNamedZonesIsAnOnByDefaultToggleThatRebuildsTheDrills()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.LightNamedZones), Is.EqualTo("On"));
+            Assert.That(SettingsPage.Change(settings, SettingId.LightNamedZones, 1).LightNamedZones, Is.False);
+            Assert.That(SettingsPage.Change(settings, SettingId.LightNamedZones, -1).LightNamedZones, Is.False);
+            Assert.That(SettingsPage.GetImpact(SettingId.LightNamedZones), Is.EqualTo(SettingImpact.Drills));
+            Assert.That(SettingGroups.GetGroup(SettingId.LightNamedZones), Is.EqualTo(SettingGroup.Drills));
+        }
+
+        [Test]
+        public void TheCalibrationSavesAPlausibleReachOnTheChosenGripOnly()
+        {
+            var settings = new TrainerSettings();
+            settings.Blade.Mount = BladeMount.French;
+
+            var saved = SettingsPage.SaveGripAngles(settings, new GripAngles(-10.0f, -3.0f), 1.6234f);
+
+            Assert.That(saved.Blade.SavedAngles.French.ReachMeters, Is.EqualTo(1.623f).Within(1e-6f));
+            Assert.That(saved.Blade.GetMeasuredReachMeters(), Is.EqualTo(1.623f).Within(1e-6f));
+            Assert.That(saved.Blade.SavedAngles.Center.ReachMeters, Is.Null);
+            Assert.That(settings.Blade.SavedAngles.French.ReachMeters, Is.Null, "The settings in use are untouched.");
+        }
+
+        [Test]
+        public void AMissingOrImplausibleReachKeepsTheOneSavedBefore()
+        {
+            var settings = SettingsPage.SaveGripAngles(new TrainerSettings(), new GripAngles(-10.0f, -3.0f), 1.55f);
+
+            Assert.That(SettingsPage.SaveGripAngles(settings, new GripAngles(-9.0f, -3.0f), 0.4f).Blade.GetMeasuredReachMeters(), Is.EqualTo(1.55f));
+            Assert.That(SettingsPage.SaveGripAngles(settings, new GripAngles(-9.0f, -3.0f)).Blade.GetMeasuredReachMeters(), Is.EqualTo(1.55f));
+            Assert.That(SettingsPage.SaveGripAngles(new TrainerSettings(), new GripAngles(-9.0f, -3.0f), 3.5f).Blade.GetMeasuredReachMeters(), Is.Null);
+        }
+
+        [Test]
+        public void ResettingTheGripAnglesKeepsTheMeasuredReach()
+        {
+            var settings = SettingsPage.SaveGripAngles(new TrainerSettings(), new GripAngles(-10.0f, -3.0f), 1.55f);
+
+            var reset = SettingsPage.ResetGripAngles(settings);
+
+            Assert.That(reset.Blade.SavedAngles.Center.PitchDegrees, Is.Null);
+            Assert.That(reset.Blade.GetMeasuredReachMeters(), Is.EqualTo(1.55f));
         }
 
         [Test]

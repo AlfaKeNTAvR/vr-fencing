@@ -13,8 +13,9 @@ namespace VrFencing.Dummy
     /// centerline, +z along the Strip toward the opponent). The Dummy puts itself <see cref="DistanceMeters"/> along
     /// +z, facing back toward the Fencer. With no parent, the scene origin stands in for the En Garde Line.
     ///
-    /// Height and hand come from <see cref="Configure"/>; if nobody calls it before Start, they are read from the
-    /// settings file.
+    /// Height, hand and the Fencer's measured reach come from <see cref="Configure"/>; if nobody calls it before Start,
+    /// they are read from the settings file. The reach (from Calibrate grip, PER-92) sets the distance presets; without
+    /// one they come from height.
     ///
     /// The sword arm is a hierarchy of joint transforms (Shoulder, Elbow, Wrist) carrying the arm Target Zones, so
     /// <see cref="SetArmPose"/> moves the zones by turning the joints, without rebuilding. A blade for a later armed
@@ -54,6 +55,7 @@ namespace VrFencing.Dummy
         // The serialized preset as the scene set it, kept the first time anything moves the Dummy.
         private DummyDistance? _sceneDistancePreset;
         private float? _customDistanceMeters;
+        private float? _measuredReachMeters;
         private MaterialPropertyBlock _propertyBlock;
         private Transform _partsRoot;
         private DummyBodyRig _bodyRig;
@@ -63,11 +65,16 @@ namespace VrFencing.Dummy
 
         /// <summary>Front foot to front foot along the Strip.</summary>
         public float DistanceMeters =>
-            _customDistanceMeters ?? DistancePresets.GetDistanceMeters(_distancePreset, Layout?.HeightMeters ?? new TrainerSettings().FencerHeightMeters);
+            _customDistanceMeters
+            ?? DistancePresets.GetDistanceMeters(_distancePreset, Layout?.HeightMeters ?? new TrainerSettings().FencerHeightMeters, _measuredReachMeters);
 
-        /// <summary>Rebuilds the Dummy for a Fencer's height (the Dummy is as tall) and sword hand.</summary>
-        public void Configure(float fencerHeightMeters, Hand hand)
+        /// <summary>
+        /// Rebuilds the Dummy for a Fencer's height (the Dummy is as tall) and sword hand, and stands it at its preset
+        /// distance for the Fencer's measured reach (null: estimated from height).
+        /// </summary>
+        public void Configure(float fencerHeightMeters, Hand hand, float? measuredReachMeters = null)
         {
+            _measuredReachMeters = measuredReachMeters;
             try
             {
                 Layout = DummyLayout.Create(fencerHeightMeters, hand);
@@ -170,7 +177,7 @@ namespace VrFencing.Dummy
             if (Layout == null)
             {
                 var settings = SettingsFile.Load();
-                Configure(settings.FencerHeightMeters, settings.Hand);
+                Configure(settings.FencerHeightMeters, settings.Hand, settings.Blade.GetMeasuredReachMeters());
             }
         }
 

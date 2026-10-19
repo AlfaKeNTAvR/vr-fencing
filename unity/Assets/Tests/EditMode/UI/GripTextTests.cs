@@ -19,12 +19,15 @@ namespace VrFencing.Tests.UI
                 "Yours: none yet (the computed angles are in use)",
                 "Feel test (old default): pitch +10, yaw -10",
                 "In use: pitch -13, yaw -4",
+                "Reach: not measured yet (the Dummy's distance uses your height)",
             }));
 
             settings.SavedAngles.French.PitchDegrees = -9.0f;
+            settings.SavedAngles.French.ReachMeters = 1.623f;
             var lines = GripText.FormatComparison(settings);
             Assert.That(lines[2], Is.EqualTo("Yours: pitch -9, yaw computed"));
             Assert.That(lines[4], Is.EqualTo("In use: pitch -9, yaw -4"));
+            Assert.That(lines[5], Is.EqualTo("Reach: 1.62 m (sets the Dummy's distance)"));
         }
 
         [Test]
@@ -39,6 +42,9 @@ namespace VrFencing.Tests.UI
         {
             Assert.That(GripText.FormatResult(new GripAngles(-11.0f, -2.0f), 3.0f), Is.EqualTo("Saved pitch -11, yaw -2 (thrusts agree within 3 deg)"));
             Assert.That(GripText.FormatResult(new GripAngles(-11.0f, -2.0f), 12.0f), Does.EndWith("disagree by 12 deg: try again"));
+            Assert.That(
+                GripText.FormatResult(new GripAngles(-11.0f, -2.0f), 3.0f, 1.58f),
+                Is.EqualTo("Saved pitch -11, yaw -2, reach 1.58 m (thrusts agree within 3 deg)"));
         }
 
         [Test]
