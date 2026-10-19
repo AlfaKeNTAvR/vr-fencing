@@ -692,6 +692,11 @@ namespace VrFencing.UI
                 _dummy.Configure(changed.FencerHeightMeters, changed.Hand, changed.Blade.GetMeasuredReachMeters());
             }
 
+            if ((impact & SettingImpact.DummyLook) != 0 && _dummy != null)
+            {
+                _dummy.SetLook(changed.DummyLook);
+            }
+
             if ((impact & SettingImpact.Strip) != 0)
             {
                 _strip.ApplySettings(changed);

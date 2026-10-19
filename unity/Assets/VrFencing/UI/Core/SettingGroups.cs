@@ -40,7 +40,13 @@ namespace VrFencing.UI
             {
                 SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
             },
-            [SettingGroup.Touch] = new[] { SettingId.TouchRule, SettingId.TouchPressure },
+
+            // The Dummy's look (PER-102) is here: Touch is the group about the Target Zones, and it has room for all four.
+            [SettingGroup.Touch] = new[]
+            {
+                SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
+                SettingId.BodyOpacity,
+            },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]
             {

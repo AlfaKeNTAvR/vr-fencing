@@ -45,6 +45,9 @@ namespace VrFencing.Settings
         /// </summary>
         public float LaserTiltDegrees { get; set; } = 15.0f;
 
+        /// <summary>How the Dummy's body and Target Zones are drawn (PER-102). Never changes how Touches are judged.</summary>
+        public DummyLookSettings DummyLook { get; set; } = new DummyLookSettings();
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -71,6 +74,7 @@ namespace VrFencing.Settings
                 },
                 Blade = Blade.Clone(),
                 LaserTiltDegrees = LaserTiltDegrees,
+                DummyLook = DummyLook.Clone(),
             };
         }
     }
@@ -102,5 +106,39 @@ namespace VrFencing.Settings
 
         /// <summary>How far the Fencer's head may pass a Strip end or side before the Drill pauses.</summary>
         public float OffStripToleranceMeters { get; set; } = 0.0f;
+    }
+
+    /// <summary>
+    /// How the Dummy is drawn (PER-102, Nikita's feel test): the Target Zone capsules thinner than the ones Touches are
+    /// judged on, so they no longer cover the body, and the body more solid than before. Visual only: the Core
+    /// <c>TargetZone</c> capsules keep their size, so Touch judging is the same at any value here.
+    /// </summary>
+    public sealed class DummyLookSettings
+    {
+        /// <summary>
+        /// Draw the Target Zones while they are dim. Off hides dim zones only: a zone a Drill lights or a Touch flashes
+        /// is always drawn, so cues and hits still show.
+        /// </summary>
+        public bool ShowTargetZones { get; set; } = true;
+
+        /// <summary>Opacity of a dim Target Zone, 0 (invisible) to 1 (solid). Lit and flashing zones keep their own, brighter look.</summary>
+        public float ZoneOpacity { get; set; } = 0.3f;
+
+        /// <summary>Opacity of the Dummy's body, 0 (invisible) to 1 (solid). Was 0.15 before PER-102.</summary>
+        public float BodyOpacity { get; set; } = 0.6f;
+
+        /// <summary>Drawn Target Zone radius as a fraction of the radius Touches are judged on.</summary>
+        public float ZoneThicknessFraction { get; set; } = 0.6f;
+
+        public DummyLookSettings Clone()
+        {
+            return new DummyLookSettings
+            {
+                ShowTargetZones = ShowTargetZones,
+                ZoneOpacity = ZoneOpacity,
+                BodyOpacity = BodyOpacity,
+                ZoneThicknessFraction = ZoneThicknessFraction,
+            };
+        }
     }
 }
