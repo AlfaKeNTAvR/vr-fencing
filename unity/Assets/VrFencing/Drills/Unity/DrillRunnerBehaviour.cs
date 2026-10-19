@@ -1,4 +1,5 @@
 using UnityEngine;
+using VrFencing.Strip;
 
 namespace VrFencing.Drills
 {
@@ -15,11 +16,34 @@ namespace VrFencing.Drills
             public double NowSeconds => Time.timeAsDouble;
         }
 
+        [SerializeField]
+        [Tooltip("The Strip whose off-strip signal pauses the run. Found in the scene if empty.")]
+        private StripBehaviour _strip;
+
         public DrillRunner Runner { get; private set; }
 
         private void Awake()
         {
             Runner = new DrillRunner(new UnityTimeClock(), new System.Random());
+            if (_strip == null)
+            {
+                _strip = FindFirstObjectByType<StripBehaviour>();
+            }
+        }
+
+        private void OnEnable()
+        {
+            if (_strip == null)
+            {
+                return;
+            }
+
+            _strip.LeftStrip += Runner.ReportLeftStrip;
+            _strip.BackOnStrip += Runner.ReportBackOnStrip;
+            if (!_strip.IsFencerOnStrip)
+            {
+                Runner.ReportLeftStrip();
+            }
         }
 
         private void Update()
@@ -29,6 +53,12 @@ namespace VrFencing.Drills
 
         private void OnDisable()
         {
+            if (_strip != null)
+            {
+                _strip.LeftStrip -= Runner.ReportLeftStrip;
+                _strip.BackOnStrip -= Runner.ReportBackOnStrip;
+            }
+
             Runner?.Cancel();
         }
     }

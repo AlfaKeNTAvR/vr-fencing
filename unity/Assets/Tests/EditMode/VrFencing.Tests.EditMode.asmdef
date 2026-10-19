@@ -6,6 +6,7 @@
         "UnityEditor.TestRunner",
         "Oculus.VR",
         "VrFencing.Strip.Core",
+        "VrFencing.Strip.Unity",
         "VrFencing.Blade.Core",
         "VrFencing.Dummy.Core",
         "VrFencing.Dummy.Unity",
