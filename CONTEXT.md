@@ -45,13 +45,29 @@ A virtual object the Fencer aims Touches at.
 _Avoid_: goal
 
 **Dummy**:
-A static, translucent body silhouette standing at the opponent's en garde line, carrying the Target Zones. It never moves or attacks.
+A static, translucent body silhouette standing at the opponent's en garde line, carrying the Target Zones. It never moves or attacks; the Armed Dummy does.
 _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 
 **Target Zone**:
 A named part of the Dummy that a Drill asks the Fencer to Touch: hand, wrist, forearm, upper arm, thigh, foot or body.
 _Avoid_: Hitbox, area
 
-**Floating Blade**:
-A disembodied virtual opponent blade that makes scripted attacks so the Fencer can practice parries.
-_Avoid_: Bot, enemy sword, opponent (reserved for a full virtual fencer)
+**Armed Dummy**:
+The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills.
+_Avoid_: Floating blade, bot, enemy sword, opponent (reserved for a full virtual fencer)
+
+**Parry**:
+A Fencer's blade contact that pushes the Armed Dummy's attacking point off the Fencer's body. Named by the line it closes: 6, 4, 8 or 7.
+_Avoid_: Block
+
+**Riposte**:
+The Fencer's Touch on the Armed Dummy right after a successful Parry.
+_Avoid_: Counter, counter-attack
+
+**Beat**:
+A sharp hit on the Armed Dummy's blade that knocks it out of line before the Fencer attacks.
+_Avoid_: Tap, knock
+
+**Stop Hit**:
+A Touch on the Armed Dummy's hand or arm while its attack is still on the way, landing first instead of parrying. If both Touches land within the double window, it counts as a double, not a Stop Hit.
+_Avoid_: Counter-attack (the broader family), counter
