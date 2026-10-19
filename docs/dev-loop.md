@@ -20,7 +20,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 | Newtonsoft Json `com.unity.nuget.newtonsoft-json` | 3.2.2 | Unity registry (JSON for the Core assemblies; already a dependency of MR Utility Kit and MCP for Unity, now pinned directly) |
 | MCP for Unity `com.coplaydev.unity-mcp` | 10.3.0 | git tag `v10.3.0` of `CoplayDev/unity-mcp` |
 
-- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log) and the arm tracking (IOBT); the `Menu` object (`MenuBehaviour`) builds the panels and the off-hand pointer at runtime and is what starts, pauses and cancels Drills. The camera rig's OVRManager asks for the body tracking permission at launch.
+- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log), the arm tracking (IOBT) and the footwork tracking (head); the `Menu` object (`MenuBehaviour`) builds the panels and the off-hand pointer at runtime and is what starts, pauses and cancels Drills. The camera rig's OVRManager asks for the body tracking permission at launch.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
 - Android package id: `com.alfakentavr.vrfencing`.
 
@@ -64,7 +64,7 @@ For Meta XR Operator on the headset (after install, once per headset reboot):
 
 The Session module writes two JSON Lines files (one JSON object per line) to `Application.persistentDataPath`, which on the Quest is `/sdcard/Android/data/com.alfakentavr.vrfencing/files/`:
 
-- `session-reps.jsonl`: one line per judged Rep (timestamp, session, Drill, Rep index, Target Zone, result, reaction time, tip speed, distance from the zone center, shrink tag, flag button, IOBT arm pose or null).
+- `session-reps.jsonl`: one line per judged Rep (timestamp, session, Drill, Rep index, Target Zone, result, reaction time, tip speed, distance from the zone center, shrink tag, flag button, IOBT arm pose or null). Drills 4 to 6 add `dummyDistance`, a compound's `secondTargetZone` and `secondTouchSeconds`, a footwork call's `footworkCall` (with `targetZone` null), and `footwork`, the footwork read from the head (see "The Drills on the headset"); lines written before these fields existed read back with them null.
 - `session-history.jsonl`: one line per finished Drill run with its results (success %, averages, hit map per Target Zone), used for the last-10-sessions trend.
 
 The `armPose` object (Tracking module, IOBT upper body) holds the blade arm's `shoulder`, `elbow` and `wrist` poses at judging time in the Strip frame (metres; +x the Fencer's right, +y up, +z toward the Dummy; any joint not tracked is null), plus:
@@ -136,19 +136,41 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
 | Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
 
-Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills after the real ones ("Test: Rep timing", whose Reps succeed on a Touch on the lit body or hand, and "Test: needs a full piste", always greyed out, to see a greyed-out row).
+Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list a test Drill after the real ones, "Test: needs a full piste", always greyed out, to see a greyed-out row.
 
 ## The Drills on the headset
 
-The Drills are data in `DrillCatalog.CreateDefault` (`Assets/VrFencing/Drills/Core/DrillRegistry.cs`); the runner and the menus need nothing per Drill. When a run starts, the Practice object's `DrillRunnerBehaviour` stands the Dummy at the Drill's Dummy Distance (scaled to the Fencer's height) and logs `[Drills] <name> started: Dummy at <preset> distance, <m> m.`; when the run ends or is cancelled the Dummy goes back to lunge distance. A named-zone cue shows the zone's name above the Dummy's head (and on the Running panel); a lit-zone cue lights the zone. Every Rep cues one of all seven Target Zones at random, and succeeds on a point-first Touch on that zone within the window; another zone, a flat contact or the window running out fails it. The window opens with the cue, so the logged reaction time runs from the cue (name shown or zone lit) to the Touch.
+The Drills are data in `DrillCatalog.CreateDefault` (`Assets/VrFencing/Drills/Core/DrillRegistry.cs`); the runner and the menus need nothing per Drill. When a run starts, the Practice object's `DrillRunnerBehaviour` stands the Dummy at the Drill's Dummy Distance (scaled to the Fencer's height) and logs `[Drills] <name> started: Dummy at <preset> distance, <m> m.`; when the run ends or is cancelled the Dummy goes back to lunge distance. A named-zone cue shows the zone's name above the Dummy's head (and on the Running panel); a lit-zone cue lights the zone. In Drills 1 to 3 every Rep cues one of all seven Target Zones at random, and succeeds on a point-first Touch on that zone within the window; another zone, a flat contact or the window running out fails it. In every Drill the window opens with the cue, so the logged reaction time runs from the cue (name shown, zone lit, Dummy moved or action called) to the Touch, or to the first head movement in Drill 6.
 
 | Drill (picker order) | Dummy Distance | Cue | Window | Strip needed (end to end, run-back included) |
 |---|---|---|---|---|
 | 1. Point control | Extension | Named zone | 3.0 s | 1.0 m (every Strip) |
 | 2. Lunge to target | Lunge | Named zone | 3.0 s | 2.5 m, no shortened variant |
 | 3. Reaction: lit target | Lunge | Lit zone, dark when the window ends | Reaction window Setting (1.5 s) | 2.5 m; with "shrink drills to fit", 1.0 m at extension distance (Reps tagged shrunk) |
+| 4. Distance choice | Extension, lunge or step-lunge, at random per Rep | The Dummy moves to the Rep's distance and its body lights | Distance-choice Setting (2.0 s) | 3.5 m, no shortened variant |
+| 5. Compound sequence | Lunge | First zone lit, both named above the Dummy ("Hand, then thigh"); the first Touch lights the second | 3.0 s to the first Touch, then the compound Setting (1.0 s) from it to the second | 3.0 m; with "shrink drills to fit", 1.0 m at extension distance |
+| 6. Footwork calls | Step-lunge (out of the way) | The action in capitals above the Dummy: ADVANCE, RETREAT, LUNGE or CHECK | Footwork-call Setting (2.0 s), judged when it ends | 3.0 m, no shortened variant |
 
 Reps per Drill and the rest between Reps are the Settings (10 and 2 s by default); in Drill 2 the rest is the time to recover.
+
+Rules for Drills 4 to 6 (`DrillRunner`, `FootworkJudging` in `Assets/VrFencing/Drills/Core/`):
+
+- **Distance choice:** a point-first Touch on the body in time, with footwork read up to the Touch that suits the distance: no step at extension distance, a lunge at lunge distance, a lunge or a step-lunge at step-lunge distance (the Dummy is out of reach with less, so a long lunge that lands counts). Anything else fails as `WrongFootwork`. Without a footwork reading (no head tracking) the Touch alone decides. The Dummy moves on each cue, after the rest, and logs `[Drills] Rep <n>: Dummy at <preset> distance, <m> m.`; return to the En Garde Line during the rest, since the distance is measured from it.
+- **Compound sequence:** the first zone's Touch must come within 3.0 s and the second zone's within the compound window of it. A wrong zone or a flat contact at either step fails the Rep; the second zone touched first is a wrong zone. The logged reaction time runs from the cue to the first Touch, `secondTouchSeconds` from the first Touch to the second contact.
+- **Footwork calls:** no blade (contacts are ignored). When the window ends, the footwork read since the cue must answer the call (a lunge call also accepts what reads as a step-lunge); no movement is a timeout, another action `WrongFootwork`. Calls are random, but once the judged advances outnumber the retreats by 2 no advance is called, and once the retreats outnumber the advances by 1 no retreat, so the Fencer stays on a 3 m Strip.
+
+The footwork is read from the head alone (`FootworkClassifier` in `Assets/VrFencing/Tracking/Core/`, fed every frame by the Practice object's `FootworkTrackingBehaviour` while Drill 4 or 6 runs), in the Strip frame from where the head was at the cue. Distances scale with the Fencer's height (H); the numbers below are for 1.65 m. Checked in order:
+
+| Read as | When |
+|---|---|
+| Lunge | Forward head speed reached 0.9 m/s (the lunge-start threshold, `LungeStart.cs`) and the head got 0.25 H (41 cm) forward; a recovery afterwards does not change it |
+| Step-lunge | As a lunge, and the head got 0.5 H (82 cm) forward |
+| Retreat | The head got 0.08 H (13 cm) back, and at least as far back as forward |
+| Check | The head got 0.04 H (7 cm) forward and came back at least half of that |
+| Advance | The head got 0.08 H (13 cm) forward and stayed |
+| None | Anything less |
+
+The onset (reaction time of a footwork call) is when the head first moved 0.02 H (3 cm) from its place. Every judged Rep of Drills 4 and 6 logs the reading in the rep log's `footwork` object (`action`, `onsetSeconds`, `forwardTravelMeters`, `backwardTravelMeters`, `peakForwardSpeedMetersPerSecond`, `headDropMeters`) and prints `[Tracking] Footwork: ...` to `adb logcat -s Unity`; tune the thresholds from those. The results' hit map lists Drill 6 per call ("Advance: Done 2 of 3") and leaves out the tip speed.
 
 All world-space text is TextMeshPro (SDF shader, drawn in both eyes under single-pass instanced stereo). Its essentials live in `Assets/TextMesh Pro/`; `VrFencing.EditorTools.TextMeshProSetup.ImportEssentialsIfMissing` re-imports them in batchmode (run without `-quit`, it exits itself). To check the panels' layout without the headset, `VrFencing.EditorTools.MenuSnapshots.RenderAll` (menu "VR Fencing > Render menu snapshots", batchmode without `-nographics`) renders every screen with sample data to `Builds/menu-snapshots/`.
 

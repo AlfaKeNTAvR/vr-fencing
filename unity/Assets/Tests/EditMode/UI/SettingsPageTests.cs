@@ -102,7 +102,7 @@ namespace VrFencing.Tests.UI
 
                 Assert.DoesNotThrow(() => DummyLayout.Create(settings.FencerHeightMeters, settings.Hand));
                 Assert.DoesNotThrow(() => StripGeometry.Create(StripGeometry.MinimumPlacedLengthMeters, settings.FencerHeightMeters, settings.WarningZone));
-                Assert.DoesNotThrow(() => DrillCatalog.CreateTimingTestDrill(settings));
+                Assert.DoesNotThrow(() => DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(settings));
             }
         }
 

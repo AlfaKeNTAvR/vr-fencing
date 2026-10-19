@@ -17,6 +17,10 @@ namespace VrFencing.Tests.Drills
             DrillCatalog.PointControlDrillId, DrillCatalog.LungeToTargetDrillId, DrillCatalog.ReactionDrillId,
         };
 
+        private static readonly string[] AllRealDrillIds = DrillOneToThreeIds
+            .Concat(new[] { DrillCatalog.DistanceChoiceDrillId, DrillCatalog.CompoundDrillId, DrillCatalog.FootworkCallsDrillId })
+            .ToArray();
+
         private static DrillDefinition Build(string id, TrainerSettings settings = null)
         {
             return DrillCatalog.CreateDefault(includeTestDrills: false).BuildAll(settings ?? new TrainerSettings()).Single(drill => drill.Id == id);
@@ -30,12 +34,12 @@ namespace VrFencing.Tests.Drills
         }
 
         [Test]
-        public void ReleaseBuildsListDrillsOneToThreeEasyToHard()
+        public void ReleaseBuildsListDrillsOneToSixEasyToHard()
         {
             var drills = DrillCatalog.CreateDefault(includeTestDrills: false).BuildAll(new TrainerSettings());
 
-            Assert.That(drills.OrderBy(drill => drill.Order).Select(drill => drill.Id), Is.EqualTo(DrillOneToThreeIds));
-            Assert.That(drills.Select(drill => drill.Order), Is.EqualTo(new[] { 1, 2, 3 }));
+            Assert.That(drills.OrderBy(drill => drill.Order).Select(drill => drill.Id), Is.EqualTo(AllRealDrillIds));
+            Assert.That(drills.Select(drill => drill.Order), Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6 }));
         }
 
         [Test]
@@ -43,8 +47,8 @@ namespace VrFencing.Tests.Drills
         {
             var drills = DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(new TrainerSettings());
 
-            var lastReal = drills.Where(drill => DrillOneToThreeIds.Contains(drill.Id)).Max(drill => drill.Order);
-            var firstTest = drills.Where(drill => !DrillOneToThreeIds.Contains(drill.Id)).Min(drill => drill.Order);
+            var lastReal = drills.Where(drill => AllRealDrillIds.Contains(drill.Id)).Max(drill => drill.Order);
+            var firstTest = drills.Where(drill => !AllRealDrillIds.Contains(drill.Id)).Min(drill => drill.Order);
             Assert.That(firstTest, Is.GreaterThan(lastReal));
         }
 
@@ -137,7 +141,7 @@ namespace VrFencing.Tests.Drills
 
             clock.Advance(0.8);
             runner.Tick();
-            runner.ReportContact(TestDrills.PointOn(runner.CurrentTargetZone));
+            runner.ReportContact(TestDrills.PointOn(runner.CurrentTargetZone.Value));
 
             Assert.That(recorder.Cues.Single().CueType, Is.EqualTo(CueType.LitTargetZone));
             Assert.That(recorder.Judged.Single().Outcome, Is.EqualTo(RepOutcome.Success));

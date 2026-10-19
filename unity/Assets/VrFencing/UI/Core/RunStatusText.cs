@@ -1,4 +1,5 @@
 using VrFencing.Drills;
+using VrFencing.Dummy;
 
 namespace VrFencing.UI
 {
@@ -25,7 +26,6 @@ namespace VrFencing.UI
         public const string PausedText = "Paused";
         public const string RestText = "Rest";
         public const string LitZoneText = "Touch the lit Target Zone";
-
         /// <param name="isFencerOnStrip">From the Strip; tells an off-strip pause from the Fencer's own.</param>
         public static RunStatus Format(DrillRunner runner, bool isFencerOnStrip)
         {
@@ -40,12 +40,28 @@ namespace VrFencing.UI
         }
 
         /// <summary>
-        /// The label above the Dummy for a Rep's cue: the Target Zone's name for a named-zone cue ("Upper arm"), empty
-        /// for a lit-zone cue, whose light on the Dummy is the cue.
+        /// The label above the Dummy for a Rep's cue: the Target Zone's name for a named-zone cue ("Upper arm"); for a
+        /// compound, both zones in order ("Hand, then thigh") while the first is lit; the action, in capitals, for a
+        /// footwork call ("ADVANCE"); empty for a single lit zone, whose light on the Dummy is the cue.
         /// </summary>
         public static string FormatDummyLabel(RepCue cue)
         {
-            return cue.CueType == CueType.NamedTargetZone ? TargetZoneNames.Get(cue.TargetZone) : string.Empty;
+            if (cue.FootworkCall.HasValue)
+            {
+                return FootworkNames.Get(cue.FootworkCall.Value).ToUpperInvariant();
+            }
+
+            if (cue.SecondTargetZone.HasValue && cue.TargetZone.HasValue)
+            {
+                return FormatCompound(cue.TargetZone.Value, cue.SecondTargetZone.Value);
+            }
+
+            return cue.CueType == CueType.NamedTargetZone && cue.TargetZone.HasValue ? TargetZoneNames.Get(cue.TargetZone.Value) : string.Empty;
+        }
+
+        private static string FormatCompound(TargetZone first, TargetZone second)
+        {
+            return $"{TargetZoneNames.Get(first)}, then {TargetZoneNames.Get(second).ToLowerInvariant()}";
         }
 
         private static string FormatInstruction(DrillRunner runner, bool isFencerOnStrip)
@@ -64,13 +80,54 @@ namespace VrFencing.UI
             {
                 case DrillState.Cue:
                 case DrillState.Window:
-                    return runner.Drill.CueType == CueType.LitTargetZone
-                        ? LitZoneText
-                        : $"Touch the {TargetZoneNames.Get(runner.CurrentTargetZone).ToLowerInvariant()}";
+                    return FormatCueInstruction(runner);
                 case DrillState.Rest:
                     return RestText;
                 default:
                     return string.Empty;
+            }
+        }
+
+        private static string FormatCueInstruction(DrillRunner runner)
+        {
+            var cue = runner.CurrentCue;
+            if (cue.FootworkCall.HasValue)
+            {
+                return FootworkNames.Get(cue.FootworkCall.Value);
+            }
+
+            if (runner.IsAwaitingSecondTouch && cue.SecondTargetZone.HasValue)
+            {
+                return $"Now the {TargetZoneNames.Get(cue.SecondTargetZone.Value).ToLowerInvariant()}!";
+            }
+
+            if (cue.SecondTargetZone.HasValue && cue.TargetZone.HasValue)
+            {
+                return "Touch the " + FormatCompound(cue.TargetZone.Value, cue.SecondTargetZone.Value).ToLowerInvariant();
+            }
+
+            if (runner.Drill.CueType == CueType.LitTargetZone || !runner.CurrentTargetZone.HasValue)
+            {
+                return LitZoneText;
+            }
+
+            return $"Touch the {TargetZoneNames.Get(runner.CurrentTargetZone.Value).ToLowerInvariant()}";
+        }
+    }
+
+    /// <summary>How footwork actions read in the cues and the results.</summary>
+    public static class FootworkNames
+    {
+        public static string Get(FootworkAction action)
+        {
+            switch (action)
+            {
+                case FootworkAction.StepLunge:
+                    return "Step-lunge";
+                case FootworkAction.None:
+                    return "No step";
+                default:
+                    return action.ToString();
             }
         }
     }

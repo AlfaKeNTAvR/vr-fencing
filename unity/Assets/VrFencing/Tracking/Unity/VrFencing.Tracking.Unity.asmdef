@@ -7,6 +7,7 @@
         "VrFencing.Session.Unity",
         "VrFencing.Drills.Core",
         "VrFencing.Drills.Unity",
+        "VrFencing.Dummy.Core",
         "VrFencing.Strip.Core",
         "VrFencing.Strip.Unity",
         "VrFencing.Settings.Core",

@@ -22,7 +22,7 @@ namespace VrFencing.Session
             string sessionId,
             string drillId,
             int repIndex,
-            TargetZone targetZone,
+            TargetZone? targetZone,
             RepOutcome result,
             TargetZone? contactZone,
             double? reactionSeconds,
@@ -31,7 +31,12 @@ namespace VrFencing.Session
             bool isShrunk,
             bool flagged,
             ArmPoseSnapshot armPose,
-            int schema = CurrentSchema)
+            int schema = CurrentSchema,
+            TargetZone? secondTargetZone = null,
+            double? secondTouchSeconds = null,
+            FootworkAction? footworkCall = null,
+            FootworkLog footwork = null,
+            DummyDistance? dummyDistance = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -62,6 +67,11 @@ namespace VrFencing.Session
             IsShrunk = isShrunk;
             Flagged = flagged;
             ArmPose = armPose;
+            SecondTargetZone = secondTargetZone;
+            SecondTouchSeconds = secondTouchSeconds;
+            FootworkCall = footworkCall;
+            Footwork = footwork;
+            DummyDistance = dummyDistance;
         }
 
         public int Schema { get; }
@@ -81,9 +91,9 @@ namespace VrFencing.Session
         [JsonProperty(Required = Required.Always)]
         public int RepIndex { get; }
 
-        /// <summary>The Target Zone the Rep cued.</summary>
-        [JsonProperty(Required = Required.Always)]
-        public TargetZone TargetZone { get; }
+        /// <summary>The Target Zone the Rep cued (a compound's first); null for a footwork call, which cues no zone.</summary>
+        [JsonProperty(Required = Required.AllowNull)]
+        public TargetZone? TargetZone { get; }
 
         [JsonProperty(Required = Required.Always)]
         public RepOutcome Result { get; }
@@ -110,6 +120,21 @@ namespace VrFencing.Session
         /// <summary>IOBT arm pose at judging time, or null when body tracking was not available.</summary>
         public ArmPoseSnapshot ArmPose { get; }
 
+        /// <summary>Compound only: the second cued zone. Null for other Drills and in lines written before it existed.</summary>
+        public TargetZone? SecondTargetZone { get; }
+
+        /// <summary>Compound only: from the first Touch to the second contact; null when no second contact came.</summary>
+        public double? SecondTouchSeconds { get; }
+
+        /// <summary>Footwork calls only: the called action.</summary>
+        public FootworkAction? FootworkCall { get; }
+
+        /// <summary>The footwork read from the head (distance choice, footwork calls); null for other Drills or when not read.</summary>
+        public FootworkLog Footwork { get; }
+
+        /// <summary>Where the Dummy stood for the Rep. Null in lines written before it existed.</summary>
+        public DummyDistance? DummyDistance { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -130,7 +155,13 @@ namespace VrFencing.Session
                 result.DistanceFromZoneCenterMeters,
                 result.IsShrunk,
                 flagged,
-                armPose);
+                armPose,
+                CurrentSchema,
+                result.RequestedSecondZone,
+                result.SecondTouchSeconds,
+                result.RequestedFootwork,
+                FootworkLog.FromReading(result.Footwork),
+                result.DummyDistance);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -149,7 +180,70 @@ namespace VrFencing.Session
                 IsShrunk,
                 flagged,
                 ArmPose,
-                Schema);
+                Schema,
+                SecondTargetZone,
+                SecondTouchSeconds,
+                FootworkCall,
+                Footwork,
+                DummyDistance);
+        }
+    }
+
+    /// <summary>
+    /// The rep log's record of the footwork read from the head (the Tracking module's footwork classifier): the action
+    /// it read and the measurements it read it from, so its thresholds can be tuned from real Reps.
+    /// </summary>
+    public sealed class FootworkLog
+    {
+        [JsonConstructor]
+        public FootworkLog(
+            FootworkAction action,
+            double? onsetSeconds,
+            float forwardTravelMeters,
+            float backwardTravelMeters,
+            float peakForwardSpeedMetersPerSecond,
+            float headDropMeters)
+        {
+            Action = action;
+            OnsetSeconds = onsetSeconds;
+            ForwardTravelMeters = forwardTravelMeters;
+            BackwardTravelMeters = backwardTravelMeters;
+            PeakForwardSpeedMetersPerSecond = peakForwardSpeedMetersPerSecond;
+            HeadDropMeters = headDropMeters;
+        }
+
+        public FootworkAction Action { get; }
+
+        /// <summary>From the cue to the head first moving off its place; null if it never did.</summary>
+        public double? OnsetSeconds { get; }
+
+        /// <summary>Farthest the head got toward the Dummy from where it was at the cue.</summary>
+        public float ForwardTravelMeters { get; }
+
+        /// <summary>Farthest the head got away from the Dummy from where it was at the cue.</summary>
+        public float BackwardTravelMeters { get; }
+
+        public float PeakForwardSpeedMetersPerSecond { get; }
+
+        /// <summary>How far the head went down from its height at the cue.</summary>
+        public float HeadDropMeters { get; }
+
+        /// <summary>The log record of a reading, or null without one.</summary>
+        public static FootworkLog FromReading(FootworkReading? reading)
+        {
+            if (!reading.HasValue)
+            {
+                return null;
+            }
+
+            var value = reading.Value;
+            return new FootworkLog(
+                value.Action,
+                value.OnsetSecondsAfterCue,
+                value.ForwardTravelMeters,
+                value.BackwardTravelMeters,
+                value.PeakForwardSpeedMetersPerSecond,
+                value.HeadDropMeters);
         }
     }
 

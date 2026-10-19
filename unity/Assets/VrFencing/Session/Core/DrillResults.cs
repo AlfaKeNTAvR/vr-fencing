@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
+using VrFencing.Drills;
 using VrFencing.Dummy;
 
 namespace VrFencing.Session
@@ -23,8 +24,11 @@ namespace VrFencing.Session
             double? averageReactionSeconds,
             double? averageTipSpeedMetersPerSecond,
             bool isShrunk,
-            IReadOnlyList<ZoneHitCount> zoneHits)
+            IReadOnlyList<ZoneHitCount> zoneHits,
+            IReadOnlyList<FootworkHitCount> footworkHits = null)
         {
+            // Results saved before footwork calls existed have no footwork hit map.
+            footworkHits = footworkHits ?? Array.Empty<FootworkHitCount>();
             if (string.IsNullOrWhiteSpace(drillId))
             {
                 throw new ArgumentException("Results need a Drill id.", nameof(drillId));
@@ -41,10 +45,10 @@ namespace VrFencing.Session
             }
 
             if (zoneHits == null
-                || zoneHits.Sum(hits => hits.Attempts) != repCount
-                || zoneHits.Sum(hits => hits.Touches) != successCount)
+                || zoneHits.Sum(hits => hits.Attempts) + footworkHits.Sum(hits => hits.Attempts) != repCount
+                || zoneHits.Sum(hits => hits.Touches) + footworkHits.Sum(hits => hits.Successes) != successCount)
             {
-                throw new ArgumentException("The hit map must account for every Rep and every Touch.", nameof(zoneHits));
+                throw new ArgumentException("The hit maps must account for every Rep and every success.", nameof(zoneHits));
             }
 
             DrillId = drillId;
@@ -54,6 +58,7 @@ namespace VrFencing.Session
             AverageTipSpeedMetersPerSecond = averageTipSpeedMetersPerSecond;
             IsShrunk = isShrunk;
             ZoneHits = zoneHits;
+            FootworkHits = footworkHits;
         }
 
         public string DrillId { get; }
@@ -77,6 +82,9 @@ namespace VrFencing.Session
 
         /// <summary>One entry per Target Zone that was cued at least once, in <see cref="TargetZone"/> order.</summary>
         public IReadOnlyList<ZoneHitCount> ZoneHits { get; }
+
+        /// <summary>Footwork calls: one entry per action that was called at least once, in <see cref="FootworkAction"/> order. Empty for other Drills.</summary>
+        public IReadOnlyList<FootworkHitCount> FootworkHits { get; }
 
         /// <summary>The hit count for a zone; zero attempts when the zone was never cued.</summary>
         public ZoneHitCount HitsFor(TargetZone zone)
@@ -109,9 +117,16 @@ namespace VrFencing.Session
 
             var successes = reps.Where(rep => rep.IsSuccess).ToArray();
             var zoneHits = reps
-                .GroupBy(rep => rep.TargetZone)
+                .Where(rep => rep.TargetZone.HasValue)
+                .GroupBy(rep => rep.TargetZone.Value)
                 .OrderBy(group => group.Key)
                 .Select(group => new ZoneHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
+                .ToArray();
+            var footworkHits = reps
+                .Where(rep => !rep.TargetZone.HasValue)
+                .GroupBy(rep => rep.FootworkCall ?? FootworkAction.None)
+                .OrderBy(group => group.Key)
+                .Select(group => new FootworkHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
                 .ToArray();
 
             return new DrillResults(
@@ -121,7 +136,8 @@ namespace VrFencing.Session
                 AverageOf(successes.Select(rep => rep.ReactionSeconds)),
                 AverageOf(successes.Select(rep => (double?)rep.TipSpeedMetersPerSecond)),
                 reps.Any(rep => rep.IsShrunk),
-                zoneHits);
+                zoneHits,
+                footworkHits);
         }
 
         /// <summary>
@@ -148,6 +164,12 @@ namespace VrFencing.Session
                 .OrderBy(group => group.Key)
                 .Select(group => new ZoneHitCount(group.Key, group.Sum(hits => hits.Attempts), group.Sum(hits => hits.Touches)))
                 .ToArray();
+            var footworkHits = parts
+                .SelectMany(part => part.FootworkHits)
+                .GroupBy(hits => hits.Call)
+                .OrderBy(group => group.Key)
+                .Select(group => new FootworkHitCount(group.Key, group.Sum(hits => hits.Attempts), group.Sum(hits => hits.Successes)))
+                .ToArray();
 
             return new DrillResults(
                 first.DrillId,
@@ -156,7 +178,8 @@ namespace VrFencing.Session
                 WeightedAverageOf(parts, part => part.AverageReactionSeconds),
                 WeightedAverageOf(parts, part => part.AverageTipSpeedMetersPerSecond),
                 first.IsShrunk,
-                zoneHits);
+                zoneHits,
+                footworkHits);
         }
 
         private static double? AverageOf(IEnumerable<double?> values)
@@ -220,6 +243,51 @@ namespace VrFencing.Session
         public override string ToString()
         {
             return $"{Zone}: {Touches}/{Attempts}";
+        }
+    }
+
+    /// <summary>One cell of the footwork hit map: how often an action was called and how often it was answered.</summary>
+    public readonly struct FootworkHitCount : IEquatable<FootworkHitCount>
+    {
+        [JsonConstructor]
+        public FootworkHitCount(FootworkAction call, int attempts, int successes)
+        {
+            if (attempts < 0 || successes < 0 || successes > attempts)
+            {
+                throw new ArgumentOutOfRangeException(nameof(successes), successes, "Successes must be between 0 and the attempts.");
+            }
+
+            Call = call;
+            Attempts = attempts;
+            Successes = successes;
+        }
+
+        public FootworkAction Call { get; }
+
+        /// <summary>Reps that called this action.</summary>
+        public int Attempts { get; }
+
+        /// <summary>Of those, Reps judged a success.</summary>
+        public int Successes { get; }
+
+        public bool Equals(FootworkHitCount other)
+        {
+            return Call == other.Call && Attempts == other.Attempts && Successes == other.Successes;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is FootworkHitCount other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return ((int)Call * 397 ^ Attempts) * 397 ^ Successes;
+        }
+
+        public override string ToString()
+        {
+            return $"{Call}: {Successes}/{Attempts}";
         }
     }
 }
