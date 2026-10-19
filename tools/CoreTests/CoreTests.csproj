@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fast Edit-mode tests for the plain C# Core assemblies, without Unity.
+    Run it through scripts/run-core-tests.sh: the script finds the Core sources
+    (asmdefs with noEngineReferences) and the test files that need no Unity
+    types, and writes them into the generated Sources.props imported below.
+    Unity Edit-mode tests (scripts/run-editmode-tests.sh) stay the merge gate.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Unity 6 compiles C# 9: keep the same language level so code that builds here builds in Unity. -->
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- Warnings stay warnings: Unity is the judge of warning policy. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <CoreTestsSourcesProps Condition="'$(CoreTestsSourcesProps)' == ''">$(MSBuildThisFileDirectory)../../Builds/core-tests/Sources.props</CoreTestsSourcesProps>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Newtonsoft.Json 13.0.2 is what com.unity.nuget.newtonsoft-json 3.2.2 ships. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+    <!-- NUnit 3, like Unity's Test Framework (NUnit 4 dropped the classic Assert API). -->
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+  </ItemGroup>
+
+  <Import Project="$(CoreTestsSourcesProps)" Condition="Exists('$(CoreTestsSourcesProps)')" />
+
+  <Target Name="RequireGeneratedSources" BeforeTargets="CoreCompile" Condition="!Exists('$(CoreTestsSourcesProps)')">
+    <Error Text="Missing $(CoreTestsSourcesProps). Run scripts/run-core-tests.sh, which generates it." />
+  </Target>
+</Project>
