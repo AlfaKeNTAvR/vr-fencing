@@ -69,5 +69,38 @@ namespace VrFencing.Tests.Drills
                 "d", "Drill", 1, requiredStripLengthMeters: 0.0f, null, 1, 0.0f, 1.0f, 0.0f,
                 CueType.NamedTargetZone, SuccessRule.PointFirstTouchOnTargetZone, new[] { TargetZone.Body }));
         }
+
+        [Test]
+        public void TheShortenedVariantKeepsTheDummyDistanceUnlessItSetsItsOwn()
+        {
+            var sameDistance = new DrillDefinition(
+                "d", "Drill", 1, 2.5f, shrunkStripLengthMeters: 1.0f, 1, 0.0f, 1.0f, 0.0f,
+                CueType.LitTargetZone, SuccessRule.PointFirstTouchOnTargetZone, new[] { TargetZone.Body },
+                DummyDistance.StepLunge);
+            var nearer = new DrillDefinition(
+                "d", "Drill", 1, 2.5f, shrunkStripLengthMeters: 1.0f, 1, 0.0f, 1.0f, 0.0f,
+                CueType.LitTargetZone, SuccessRule.PointFirstTouchOnTargetZone, new[] { TargetZone.Body },
+                DummyDistance.Lunge, shrunkDummyDistance: DummyDistance.Extension);
+
+            Assert.That(sameDistance.GetDummyDistance(isShrunk: false), Is.EqualTo(DummyDistance.StepLunge));
+            Assert.That(sameDistance.GetDummyDistance(isShrunk: true), Is.EqualTo(DummyDistance.StepLunge));
+            Assert.That(nearer.GetDummyDistance(isShrunk: false), Is.EqualTo(DummyDistance.Lunge));
+            Assert.That(nearer.GetDummyDistance(isShrunk: true), Is.EqualTo(DummyDistance.Extension));
+        }
+
+        [Test]
+        public void DefaultsToLungeDistanceAsTheSceneDoes()
+        {
+            Assert.That(TestDrills.Create().DummyDistance, Is.EqualTo(DummyDistance.Lunge));
+        }
+
+        [Test]
+        public void RejectsAShortenedDummyDistanceWithoutAShortenedVariant()
+        {
+            Assert.Throws<ArgumentException>(() => new DrillDefinition(
+                "d", "Drill", 1, 2.5f, shrunkStripLengthMeters: null, 1, 0.0f, 1.0f, 0.0f,
+                CueType.LitTargetZone, SuccessRule.PointFirstTouchOnTargetZone, new[] { TargetZone.Body },
+                DummyDistance.Lunge, shrunkDummyDistance: DummyDistance.Extension));
+        }
     }
 }

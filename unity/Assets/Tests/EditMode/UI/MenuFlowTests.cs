@@ -109,6 +109,13 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheDummyLabelNamesANamedZoneAndStaysEmptyForALitOne()
+        {
+            Assert.That(RunStatusText.FormatDummyLabel(new RepCue(0, TargetZone.UpperArm, CueType.NamedTargetZone)), Is.EqualTo("Upper arm"));
+            Assert.That(RunStatusText.FormatDummyLabel(new RepCue(0, TargetZone.Wrist, CueType.LitTargetZone)), Is.Empty);
+        }
+
+        [Test]
         public void HistoryListsDrillsInPickerOrderWithShortenedRunsApart()
         {
             var noon = SessionTestData.Noon;

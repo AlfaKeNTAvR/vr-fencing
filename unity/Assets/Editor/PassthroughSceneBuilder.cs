@@ -56,7 +56,7 @@ namespace VrFencing.EditorTools
             var enGardeLine = FindOrCreateStrip(scene);
             var dummy = PlaceDummyOnStrip(scene, enGardeLine);
             var strip = enGardeLine.GetComponentInParent<StripBehaviour>();
-            var practice = FindOrCreatePractice(scene, strip);
+            var practice = FindOrCreatePractice(scene, strip, dummy);
             var blade = FindOrCreateBlade(scene, practice, strip, dummy);
             FindOrCreateMenu(scene, practice, strip, dummy, blade);
 
@@ -190,9 +190,10 @@ namespace VrFencing.EditorTools
 
         /// <summary>
         /// The Practice object hosts the Drill runner, the session recorder that writes the rep log, and the arm
-        /// tracking that adds the IOBT arm pose to each logged Rep. Nothing starts a Drill until the UI does.
+        /// tracking that adds the IOBT arm pose to each logged Rep. Nothing starts a Drill until the UI does; the runner
+        /// stands the Dummy at each Drill's Dummy Distance while it runs.
         /// </summary>
-        private static GameObject FindOrCreatePractice(Scene scene, StripBehaviour strip)
+        private static GameObject FindOrCreatePractice(Scene scene, StripBehaviour strip, DummyBehaviour dummy)
         {
             var practice = scene.GetRootGameObjects().FirstOrDefault(root => root.name == PracticeName);
             if (practice == null)
@@ -206,6 +207,7 @@ namespace VrFencing.EditorTools
             var armTracking = GetOrAddComponent<ArmTrackingBehaviour>(practice);
 
             SetReference(drillRunner, "_strip", strip);
+            SetReference(drillRunner, "_dummy", dummy);
             SetReference(sessionRecorder, "_drillRunner", drillRunner);
             SetReference(armTracking, "_sessionRecorder", sessionRecorder);
             SetReference(armTracking, "_drillRunner", drillRunner);

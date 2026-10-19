@@ -73,6 +73,22 @@ namespace VrFencing.Tests.Dummy
             Assert.That(Vector3.Dot(dummy.transform.forward, Vector3.back), Is.EqualTo(1.0f).Within(Tolerance));
         }
 
+        [Test]
+        public void ResetDistanceStandsTheDummyBackAtTheScenesPreset()
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, Hand.Right);
+            var sceneDistance = dummy.DistanceMeters;
+
+            dummy.SetDistance(DummyDistance.Extension);
+            dummy.SetDistance(DummyDistance.StepLunge);
+            dummy.ResetDistance();
+
+            Assert.That(sceneDistance, Is.EqualTo(DistancePresets.GetDistanceMeters(DummyDistance.Lunge, 1.65f)).Within(Tolerance));
+            Assert.That(dummy.DistanceMeters, Is.EqualTo(sceneDistance).Within(Tolerance));
+            Assert.That(dummy.transform.localPosition.z, Is.EqualTo(sceneDistance).Within(Tolerance));
+        }
+
         [TestCase(Hand.Right)]
         [TestCase(Hand.Left)]
         public void RenderedZonesMatchTheZonesOnTheStrip(Hand hand)

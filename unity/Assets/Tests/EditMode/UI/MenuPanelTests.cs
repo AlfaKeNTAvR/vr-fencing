@@ -100,5 +100,46 @@ namespace VrFencing.Tests.UI
 
             Assert.That(changes, Is.EqualTo(new[] { (SettingsPage.All[1], 1), (SettingsPage.All[0], -1) }));
         }
+
+        [Test]
+        public void ANamedZoneCueIsLabelledAboveTheDummyFacingTheFencerUntilJudged()
+        {
+            var dummyObject = new GameObject("Test Dummy");
+            _created.Add(dummyObject);
+            var dummy = dummyObject.AddComponent<DummyBehaviour>();
+            dummy.Configure(1.65f, VrFencing.Settings.Hand.Right);
+            var clock = new VrFencing.Tests.Drills.FakeClock();
+            var runner = new DrillRunner(clock, new System.Random(3));
+            using var display = new DummyCueDisplay(runner, dummy);
+
+            runner.Start(DrillCatalog.CreatePointControlDrill(new VrFencing.Settings.TrainerSettings()), 4.0f, shrinkDrillsToFit: false);
+
+            var label = dummyObject.GetComponentsInChildren<TextMeshPro>(includeInactive: true).Single();
+            Assert.That(label.gameObject.activeSelf, Is.True);
+            Assert.That(label.text, Is.EqualTo(TargetZoneNames.Get(runner.CurrentTargetZone)));
+            Assert.That(label.transform.position.y, Is.GreaterThan(1.65f), "The label sits above the head, clear of every zone.");
+            Assert.That(Vector3.Dot(label.transform.forward, Vector3.forward), Is.EqualTo(1.0f).Within(1e-4f),
+                "TextMeshPro reads from its -z side, so the label must face away from the Fencer (+z along the Strip).");
+
+            runner.ReportContact(new BladeContact(runner.CurrentTargetZone, ContactKind.PointFirst, 1.0f, 0.0f));
+
+            Assert.That(label.gameObject.activeSelf, Is.False);
+        }
+
+        [Test]
+        public void ALitZoneCueShowsNoLabel()
+        {
+            var dummyObject = new GameObject("Test Dummy");
+            _created.Add(dummyObject);
+            var dummy = dummyObject.AddComponent<DummyBehaviour>();
+            dummy.Configure(1.65f, VrFencing.Settings.Hand.Right);
+            var runner = new DrillRunner(new VrFencing.Tests.Drills.FakeClock(), new System.Random(3));
+            using var display = new DummyCueDisplay(runner, dummy);
+
+            runner.Start(DrillCatalog.CreateReactionDrill(new VrFencing.Settings.TrainerSettings()), 4.0f, shrinkDrillsToFit: false);
+
+            var label = dummyObject.GetComponentsInChildren<TextMeshPro>(includeInactive: true).Single();
+            Assert.That(label.gameObject.activeSelf, Is.False);
+        }
     }
 }
