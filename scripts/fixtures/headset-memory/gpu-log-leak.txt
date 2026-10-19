@@ -1,0 +1,9 @@
+10-19 16:12:03.996 22716 22747 I Unity   : [Life] gpu experiments: none
+10-19 16:12:09.076 22716 22747 I Unity   : [Life] gpu after-resume frame 316 t 5.15 s cams 1 objects 3 enabled 1 rt 5 est 609.1 MB prof 613.7 MB xrTex 3 est 609.1 MB prof 613.6 MB texCur 4.2 MB texTotal 0.0 MB driver 638.8 MB ptLayers 1 overlays 1 xrDisplays 1 running 1
+10-19 16:12:09.080 22716 22747 I Unity   : [Life] gpu after-resume rt-top XR Texture x3 609.1 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
+10-19 16:12:32.342 22716 22747 I Unity   : [Life] gpu before-pause frame 1987 t 28.42 s cams 1 objects 3 enabled 1 rt 5 est 609.1 MB prof 613.7 MB xrTex 3 est 609.1 MB prof 613.6 MB texCur 4.2 MB texTotal 4.2 MB driver 638.8 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 16:12:32.342 22716 22747 I Unity   : [Life] gpu before-pause rt-top XR Texture x3 609.1 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
+10-19 16:12:43.408 22716 22747 I Unity   : [Life] gpu before-pause frame 2023 t 39.48 s cams 1 objects 3 enabled 1 rt 8 est 1218.2 MB prof 1227.3 MB xrTex 6 est 1218.2 MB prof 1227.3 MB texCur 4.2 MB texTotal 4.2 MB driver 1252.4 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 16:12:43.408 22716 22747 I Unity   : [Life] gpu before-pause rt-top XR Texture x6 1218.2 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB
+10-19 16:13:32.343 22716 22747 I Unity   : [Life] gpu before-pause frame 2042 t 88.42 s cams 1 objects 3 enabled 1 rt 11 est 1827.2 MB prof 1841.0 MB xrTex 9 est 1827.2 MB prof 1840.9 MB texCur 4.2 MB texTotal 4.2 MB driver 1866.1 MB ptLayers 1 overlays 1 xrDisplays 1 running 0
+10-19 16:13:32.343 22716 22747 I Unity   : [Life] gpu before-pause rt-top XR Texture x9 1827.2 MB; _128x1x2_R16_SFloat_Tex2DArray x1 0.0 MB; DefaultShadowTexture_1x1_Shadowmap x1 0.0 MB

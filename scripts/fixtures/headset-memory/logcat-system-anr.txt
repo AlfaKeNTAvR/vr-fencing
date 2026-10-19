@@ -1,0 +1,5 @@
+10-19 15:20:01.120  1234  1290 I ActivityManager: Start proc 22716:com.alfakentavr.vrfencing/u0a123 for top-activity {com.alfakentavr.vrfencing/com.unity3d.player.UnityPlayerActivity}
+10-19 15:21:44.903  1234  1301 E ActivityManager: ANR in com.alfakentavr.vrfencing (com.alfakentavr.vrfencing/com.unity3d.player.UnityPlayerActivity)
+10-19 15:21:44.903  1234  1301 E ActivityManager: PID: 22716
+10-19 15:21:44.903  1234  1301 E ActivityManager: Reason: Input dispatching timed out
+10-19 15:22:10.010  1234  1301 E ActivityManager: ANR in com.oculus.systemux (com.oculus.systemux/.VrShellActivity)

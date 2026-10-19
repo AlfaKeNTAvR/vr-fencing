@@ -177,6 +177,33 @@ A healthy wake reads: `OnApplicationPause(false)`, `On resume: passthrough initi
 "$ADB" logcat -s Unity | grep -e "\[Life\]" -e "\[Tracking\]"
 ```
 
+## Checking memory on the headset
+
+`scripts/check-headset-memory.sh` (PER-94) measures the app's GPU and RAM use after a fresh launch and after scripted sleep/wake cycles, and checks it against a budget, so a leak like PER-93 (one set of eye buffers, about 200 MB, leaked on every wake) shows up as a FAIL line instead of lag on the headset.
+
+**Never run it while Nikita is wearing or testing the headset.** It fakes the proximity sensor, restarts the app and puts the headset to sleep and wakes it. It refuses to start while the headset is awake (`dumpsys power` says `mWakefulness=Awake`), because a worn headset is always awake: put the headset on the desk, wait until it sleeps, then run. `--force` skips that check; use it only when you know nobody has the headset on. Whatever happens (error, FAIL, Ctrl+C), the script hands the proximity sensor back to the hardware (`automation_disable`), so the headset ends asleep on the desk.
+
+```bash
+scripts/check-headset-memory.sh                      # app already installed, 2 sleep/wake cycles
+scripts/check-headset-memory.sh --apk Builds/Android/vr-fencing-dev.apk --wakes 3
+scripts/check-headset-memory.sh --self-test          # parsers and budget on fixtures, no headset
+```
+
+Steps: connect (`QUEST_SERIAL`, default `192.168.1.67:5555`, with Unity's adb or `ADB`), fake worn (`am broadcast -a com.oculus.vrpowermanager.prox_close`) and `KEYCODE_WAKEUP`, install the APK if given, force-stop and launch the app, wait 30 s, record. Each cycle: `KEYCODE_SLEEP`, 10 s, `KEYCODE_WAKEUP` plus `prox_close`, 30 s, record. A last `KEYCODE_SLEEP` makes the app log its state after the last wake. Waits: `MEMCHECK_LAUNCH_WAIT_S`, `MEMCHECK_SLEEP_S`, `MEMCHECK_WAKE_WAIT_S`.
+
+Recorded each time: GL mtrack (GPU memory), total PSS and swap PSS of the app (`dumpsys meminfo`), and the system's `MemAvailable` (`/proc/meminfo`). From the Unity log of the run: the XR Texture count of every `[Life] gpu <moment> ... xrTex N` line. From `logcat -b system`: ANRs of the app.
+
+| Check | Default | Override |
+|---|---|---|
+| GL mtrack after the fresh launch | at most 1024 MB (about 44 MB since PR 38) | `MEMCHECK_MAX_FRESH_GL_MB` |
+| GL mtrack growth per wake | at most 10% of the previous value or 50 MB, whichever is larger | `MEMCHECK_MAX_WAKE_GROWTH_PCT`, `MEMCHECK_MIN_WAKE_GROWTH_MB` |
+| XR Texture count at every logged moment | 3 | `MEMCHECK_EXPECTED_XR_TEXTURES` |
+| ANR for the app in `logcat -b system` during the run | none | |
+
+Output: one `PASS: ...` or `FAIL: <reasons> (...)` line (exit 0 or 1; 4 when it refused, 2 on a setup error), and one row appended to `Logs/memory-checks.csv` (gitignored): timestamp, git commit of the checkout (not necessarily what is installed), APK path if given, and the numbers, with the per-moment values separated by `;`. The raw dumps and logs of each run are in `Logs/memory-checks/<time>/`. A run that stops on an error writes no row.
+
+It runs **on demand, not as a merge gate**: it needs the headset free and asleep, which an agent cannot know, and it takes about 2 minutes. Run it after installing a build that touches rendering, XR, passthrough or the pause/resume path, and compare the CSV rows across builds. The `[Life] gpu` lines come from `LifecycleLogBehaviour`; a build without them fails the check with "no [Life] gpu lines".
+
 ## The Strip on the headset
 
 On launch the app looks for a Strip saved in this room (a Meta spatial anchor at its En Garde Line) and asks to place one if none is found. The off-hand controller (left for a right-handed Fencer, right for a left-handed one) drives it:
