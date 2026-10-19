@@ -8,11 +8,13 @@
         "VrFencing.Strip.Core",
         "VrFencing.Blade.Core",
         "VrFencing.Dummy.Core",
+        "VrFencing.Dummy.Unity",
         "VrFencing.Drills.Core",
         "VrFencing.Session.Core",
         "VrFencing.UI.Core",
         "VrFencing.Tracking.Core",
-        "VrFencing.Settings.Core"
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity"
     ],
     "includePlatforms": [
         "Editor"
