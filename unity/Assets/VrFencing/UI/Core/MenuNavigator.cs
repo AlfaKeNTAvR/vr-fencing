@@ -11,6 +11,9 @@ namespace VrFencing.UI
         Results,
         History,
         Running,
+
+        /// <summary>The grip's angles and the thrust calibration (PER-52), opened from Settings.</summary>
+        Grip,
     }
 
     /// <summary>
@@ -29,6 +32,22 @@ namespace VrFencing.UI
 
         /// <summary>The panels are folded away by the Menu button; the chosen page is kept for when they open.</summary>
         public bool IsCollapsed { get; private set; }
+
+        /// <summary>
+        /// The thrust calibration runs (PER-52): the panels and the laser are put away so the targets are in clear view, and
+        /// the off-hand trigger cancels it.
+        /// </summary>
+        public bool IsCalibrating { get; private set; }
+
+        /// <summary>Starts or ends the thrust calibration; it ends back on the grip page.</summary>
+        public void SetCalibrating(bool isCalibrating)
+        {
+            IsCalibrating = isCalibrating;
+            if (!isCalibrating)
+            {
+                Page = MenuScreen.Grip;
+            }
+        }
 
         /// <summary>Folds the panels away, or opens them again.</summary>
         public void ToggleCollapsed()
@@ -73,10 +92,10 @@ namespace VrFencing.UI
             return isDrillRunning ? MenuScreen.Running : Page;
         }
 
-        /// <summary>The screen whose panel is on view: <see cref="GetVisibleScreen"/>, or Hidden while collapsed.</summary>
+        /// <summary>The screen whose panel is on view: <see cref="GetVisibleScreen"/>, or Hidden while collapsed or calibrating.</summary>
         public MenuScreen GetShownPanel(bool isPlacingStrip, bool isDrillRunning)
         {
-            return IsCollapsed ? MenuScreen.Hidden : GetVisibleScreen(isPlacingStrip, isDrillRunning);
+            return IsCollapsed || IsCalibrating ? MenuScreen.Hidden : GetVisibleScreen(isPlacingStrip, isDrillRunning);
         }
 
         /// <summary>The menu laser is out while a panel is on view: none to point at while folded or placing the Strip.</summary>

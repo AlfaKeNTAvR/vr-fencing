@@ -28,8 +28,12 @@ namespace VrFencing.Tests.Settings
             settings.Blade.TouchPressure = TouchPressure.OnContact;
             settings.Blade.Flex = BladeFlexSoftness.Soft;
             settings.Blade.Mount = BladeMount.FrenchPosted;
-            settings.Blade.PitchDegrees = 5.0f;
-            settings.Blade.YawDegrees = 15.0f;
+            settings.Blade.SavedAngles.Center.PitchDegrees = 1.0f;
+            settings.Blade.SavedAngles.Pistol.YawDegrees = 2.0f;
+            settings.Blade.SavedAngles.French.PitchDegrees = 3.0f;
+            settings.Blade.SavedAngles.FrenchPosted.PitchDegrees = 5.0f;
+            settings.Blade.SavedAngles.FrenchPosted.YawDegrees = 15.0f;
+            settings.Blade.SetSagittaMeters = 0.004f;
             settings.Blade.TouchHaptic = HapticPattern.Crisp;
             settings.Blade.FlatHaptic = HapticPattern.Off;
             settings.Blade.GlanceHaptic = HapticPattern.Heavy;
@@ -47,11 +51,11 @@ namespace VrFencing.Tests.Settings
 
             clone.TimeWindows.ReactionSeconds = 3.0f;
             clone.WarningZone.OffStripToleranceMeters = 0.4f;
-            clone.Blade.PitchDegrees = 30.0f;
+            clone.Blade.SavedAngles.French.PitchDegrees = 30.0f;
 
             Assert.That(settings.TimeWindows.ReactionSeconds, Is.EqualTo(new TrainerSettings().TimeWindows.ReactionSeconds));
             Assert.That(settings.WarningZone.OffStripToleranceMeters, Is.EqualTo(0.0f));
-            Assert.That(settings.Blade.PitchDegrees, Is.EqualTo(10.0f));
+            Assert.That(settings.Blade.SavedAngles.French.PitchDegrees, Is.Null);
         }
     }
 }

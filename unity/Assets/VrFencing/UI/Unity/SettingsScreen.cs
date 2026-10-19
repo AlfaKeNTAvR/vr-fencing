@@ -26,7 +26,8 @@ namespace VrFencing.UI
         private TrainerSettings _settings = new TrainerSettings();
         private int _pageIndex;
 
-        public SettingsScreen(Transform panel, Action<SettingId, int> changeSetting, Action back)
+        /// <param name="openGrip">Opens the grip page: the angles compared and the thrust calibration (PER-52).</param>
+        public SettingsScreen(Transform panel, Action<SettingId, int> changeSetting, Action openGrip, Action back)
         {
             _changeSetting = changeSetting;
             _root = new GameObject("Settings");
@@ -51,6 +52,8 @@ namespace VrFencing.UI
             _nextPage = UiButton.Create(root, "Next Page", new Vector2(-0.09f, -0.25f), new Vector2(0.08f, 0.05f), UiKit.SmallFontSize,
                 () => ChangePage(1));
             _nextPage.SetLabel(">");
+            var gripButton = UiButton.Create(root, "Grip Angles", new Vector2(0.075f, -0.25f), new Vector2(0.19f, 0.055f), UiKit.SmallFontSize, openGrip);
+            gripButton.SetLabel("Calibrate grip");
             var backButton = UiButton.Create(root, "Back", new Vector2(0.27f, -0.25f), new Vector2(0.18f, 0.055f), UiKit.BodyFontSize, back);
             backButton.SetLabel("Back");
         }

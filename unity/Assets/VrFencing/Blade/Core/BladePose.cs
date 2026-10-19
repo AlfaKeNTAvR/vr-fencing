@@ -57,11 +57,7 @@ namespace VrFencing.Blade
         /// <summary>FIE m.17.1: the bell is 3 to 5.5 cm deep.</summary>
         public const float GuardDepthMeters = 0.04f;
 
-        /// <summary>
-        /// The mount's offset from the controller for a sword hand: the guard <see cref="GetGuardForwardMeters"/> along
-        /// the controller's forward axis, turned by pitch (up positive) and yaw (right positive for the right hand).
-        /// The left hand mirrors the yaw, since its controller frame is the mirror of the right one.
-        /// </summary>
+        /// <summary>The mount for the chosen grip at its angles in use (<see cref="GripGeometry.GetActiveAngles"/>).</summary>
         public static TrackedPose GetMountInController(BladeSettings blade, Hand hand)
         {
             if (blade == null)
@@ -69,12 +65,38 @@ namespace VrFencing.Blade
                 throw new ArgumentNullException(nameof(blade));
             }
 
-            var yawDegrees = hand == Hand.Left ? -blade.YawDegrees : blade.YawDegrees;
+            return GetMountInController(blade.Mount, GripGeometry.GetActiveAngles(blade), hand);
+        }
+
+        /// <summary>
+        /// The mount's pose in the controller anchor's frame for a sword hand (PER-51): turned by pitch (up positive) and
+        /// yaw (right positive for the right hand), with the front of the guard
+        /// <see cref="GripGeometry.GetGuardForwardMeters"/> out along that turned blade line, so the guard sits on the
+        /// blade's line through the thumb web. The left hand mirrors the yaw, since its controller frame is the mirror
+        /// of the right one.
+        /// </summary>
+        public static TrackedPose GetMountInController(BladeMount mount, GripAngles angles, Hand hand)
+        {
+            var yawDegrees = hand == Hand.Left ? -angles.YawDegrees : angles.YawDegrees;
 
             // Same convention as Unity's Quaternion.Euler(x, y, 0) = yaw about y after pitch about x. Positive x
             // rotation tips +z down, so pitch up is a negative x rotation.
-            var rotation = Quaternion.CreateFromYawPitchRoll(ToRadians(yawDegrees), ToRadians(-blade.PitchDegrees), 0.0f);
-            return new TrackedPose(new Vector3(0.0f, 0.0f, GetGuardForwardMeters(blade.Mount)), rotation);
+            var rotation = Quaternion.CreateFromYawPitchRoll(ToRadians(yawDegrees), ToRadians(-angles.PitchDegrees), 0.0f);
+            var guard = Vector3.Transform(new Vector3(0.0f, 0.0f, GripGeometry.GetGuardForwardMeters(mount)), rotation);
+            return new TrackedPose(guard, rotation);
+        }
+
+        /// <summary>
+        /// The right-hand pitch and yaw that point the blade along <paramref name="directionInController"/>, a direction
+        /// in the sword-hand controller anchor's frame. The inverse of the mount's rotation.
+        /// </summary>
+        public static GripAngles GetAnglesForDirection(Vector3 directionInController, Hand hand)
+        {
+            var direction = Vector3.Normalize(directionInController);
+            var x = hand == Hand.Left ? -direction.X : direction.X;
+            var pitch = Math.Asin(Math.Max(-1.0f, Math.Min(1.0f, direction.Y)));
+            var yaw = Math.Atan2(x, direction.Z);
+            return new GripAngles((float)(pitch * 180.0 / Math.PI), (float)(yaw * 180.0 / Math.PI));
         }
 
         /// <summary>The straight blade for a controller pose, in the controller pose's frame.</summary>
@@ -84,21 +106,6 @@ namespace VrFencing.Blade
             var bladeRotation = controller.Rotation * mountInController.Rotation;
             var tip = guard + Vector3.Transform(new Vector3(0.0f, 0.0f, BladeLengthMeters), bladeRotation);
             return new BladeSegment(guard, tip);
-        }
-
-        public static float GetGuardForwardMeters(BladeMount mount)
-        {
-            switch (mount)
-            {
-                case BladeMount.Center:
-                    return 0.0f;
-                case BladeMount.Pistol:
-                    return 0.05f;
-                case BladeMount.FrenchPosted:
-                    return 0.12f;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(mount), mount, "Not a blade mount.");
-            }
         }
 
         private static float ToRadians(float degrees)

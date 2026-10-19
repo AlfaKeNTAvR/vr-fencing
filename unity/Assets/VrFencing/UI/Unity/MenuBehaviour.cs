@@ -79,6 +79,11 @@ namespace VrFencing.UI
         private HistoryScreen _history;
         private RunningPanel _runningPanel;
         private DummyCueDisplay _cueDisplay;
+        private GripScreen _gripScreen;
+        private CalibrationTargetView _calibrationTarget;
+        private ThrustCalibration _calibration;
+        private int _calibrationStartFrame;
+        private string _gripMessage = string.Empty;
 
         private MenuScreen _shownScreen = MenuScreen.Hidden;
         private bool _isDirty = true;
@@ -158,6 +163,11 @@ namespace VrFencing.UI
             }
 
             var nowSeconds = Time.timeAsDouble;
+            if (_calibration != null)
+            {
+                TickCalibration(head, nowSeconds);
+            }
+
             if (screen == MenuScreen.Running)
             {
                 _runningPanel.Refresh(RunStatusText.Format(Runner, _strip.IsFencerOnStrip), Runner.IsPausedByFencer, nowSeconds);
@@ -204,7 +214,9 @@ namespace VrFencing.UI
             UiSurface.Create(_mainPanel, "Background", MainPanelSize);
             _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Settings), () => OpenPage(MenuScreen.History),
                 ReplaceStrip, CycleTolerance);
-            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, () => OpenPage(MenuScreen.Home));
+            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, () => OpenPage(MenuScreen.Grip), () => OpenPage(MenuScreen.Home));
+            _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenPage(MenuScreen.Settings));
+            _calibrationTarget = new CalibrationTargetView(transform);
             _results = new ResultsScreen(_mainPanel, RunAgain, () => OpenPage(MenuScreen.History), () => OpenPage(MenuScreen.Home));
             _history = new HistoryScreen(_mainPanel, () => OpenPage(MenuScreen.Home));
 
@@ -236,6 +248,7 @@ namespace VrFencing.UI
             _settingsScreen.SetVisible(screen == MenuScreen.Settings);
             _results.SetVisible(screen == MenuScreen.Results);
             _history.SetVisible(screen == MenuScreen.History);
+            _gripScreen.SetVisible(screen == MenuScreen.Grip);
             _shownScreen = screen;
             _isDirty = true;
         }
@@ -252,6 +265,9 @@ namespace VrFencing.UI
                     break;
                 case MenuScreen.Results:
                     RefreshResults();
+                    break;
+                case MenuScreen.Grip:
+                    _gripScreen.Refresh(_settings, _gripMessage);
                     break;
                 case MenuScreen.History:
                     var history = _sessionRecorder.LoadHistory();
@@ -304,7 +320,82 @@ namespace VrFencing.UI
             _navigator.Open(page);
             _homeMessage = string.Empty;
             _settingsMessage = string.Empty;
+            _gripMessage = string.Empty;
             _isDirty = true;
+        }
+
+        /// <summary>Starts the thrust calibration for the chosen grip (PER-52): the panels go away and the first target shows.</summary>
+        private void StartCalibration()
+        {
+            if (_cameraRig == null || Runner.IsRunning || _strip.IsPlacing)
+            {
+                return;
+            }
+
+            var head = _cameraRig.centerEyeAnchor;
+            _calibration = new ThrustCalibration(new TrackedPose(head.position.ToNumerics(), head.rotation.ToNumerics()), _settings.Hand);
+            _calibrationStartFrame = Time.frameCount;
+            _navigator.SetCalibrating(true);
+            _isDirty = true;
+            Debug.Log($"[Blade] Grip calibration started for {_settings.Blade.Mount}, {_settings.Hand} hand.");
+        }
+
+        private void TickCalibration(Transform head, double nowSeconds)
+        {
+            var offHandTrigger = IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger;
+            var isCancelled = Time.frameCount > _calibrationStartFrame && OVRInput.GetDown(offHandTrigger, OVRInput.Controller.Touch);
+            if (head == null || isCancelled || Runner.IsRunning || _strip.IsPlacing)
+            {
+                EndCalibration("Calibration cancelled; nothing changed");
+                return;
+            }
+
+            var swordController = _settings.Hand == Hand.Left ? OVRInput.Controller.LTouch : OVRInput.Controller.RTouch;
+            var swordAnchor = _settings.Hand == Hand.Left ? _cameraRig.leftControllerAnchor : _cameraRig.rightControllerAnchor;
+            var headPose = new TrackedPose(head.position.ToNumerics(), head.rotation.ToNumerics());
+            if (OVRInput.GetControllerPositionTracked(swordController) && OVRInput.GetControllerOrientationTracked(swordController))
+            {
+                var controllerPose = new TrackedPose(swordAnchor.position.ToNumerics(), swordAnchor.rotation.ToNumerics());
+                if (_calibration.Step(nowSeconds, headPose, controllerPose))
+                {
+                    Debug.Log($"[Blade] Grip calibration: thrust {_calibration.Captures.Count} of {ThrustCalibration.TargetCount} taken.");
+                }
+            }
+
+            if (_calibration.IsComplete)
+            {
+                FinishCalibration();
+                return;
+            }
+
+            var target = _calibration.Targets[_calibration.CurrentTargetIndex].ToUnity();
+            var prompt = GripText.FormatPrompt(_calibration.CurrentTargetIndex, ThrustCalibration.TargetCount, _calibration.IsAimed, _calibration.HoldFraction);
+            _calibrationTarget.Show(target, head.position, _calibration.IsAimed, prompt);
+        }
+
+        private void FinishCalibration()
+        {
+            var fit = ThrustCalibration.Fit(_calibration.Captures, _settings.Blade, _settings.Hand);
+            var computed = GripGeometry.GetComputedAngles(_settings.Blade.Mount);
+            Debug.Log($"[Blade] Grip calibration for {_settings.Blade.Mount}: pitch {fit.Angles.PitchDegrees:0.0} yaw {fit.Angles.YawDegrees:0.0} deg, " +
+                $"spread {fit.SpreadDegrees:0.0} deg (computed pitch {computed.PitchDegrees:0} yaw {computed.YawDegrees:0}).");
+            ApplyChangedSettings(SettingsPage.SaveGripAngles(_settings, fit.Angles), SettingImpact.Blade);
+            EndCalibration(GripText.FormatResult(fit.Angles, fit.SpreadDegrees));
+        }
+
+        private void EndCalibration(string message)
+        {
+            _calibration = null;
+            _calibrationTarget.Hide();
+            _navigator.SetCalibrating(false);
+            _gripMessage = message;
+            _isDirty = true;
+        }
+
+        private void ResetGripAngles()
+        {
+            ApplyChangedSettings(SettingsPage.ResetGripAngles(_settings), SettingImpact.Blade);
+            _gripMessage = $"{SettingsPage.FormatMount(_settings.Blade.Mount)} is back on its computed angles";
         }
 
         private void StartDrill(string drillId)
@@ -361,7 +452,12 @@ namespace VrFencing.UI
 
         private void ChangeSetting(SettingId id, int direction)
         {
-            var changed = SettingsPage.Change(_settings, id, direction);
+            ApplyChangedSettings(SettingsPage.Change(_settings, id, direction), SettingsPage.GetImpact(id));
+        }
+
+        /// <summary>Saves changed Settings and hands them to the modules <paramref name="impact"/> names.</summary>
+        private void ApplyChangedSettings(TrainerSettings changed, SettingImpact impact)
+        {
             _settings = changed;
             try
             {
@@ -374,7 +470,6 @@ namespace VrFencing.UI
                 _settingsMessage = "Not saved (see log); used until the app closes";
             }
 
-            var impact = SettingsPage.GetImpact(id);
             if ((impact & SettingImpact.Dummy) != 0 && _dummy != null)
             {
                 _dummy.Configure(changed.FencerHeightMeters, changed.Hand);

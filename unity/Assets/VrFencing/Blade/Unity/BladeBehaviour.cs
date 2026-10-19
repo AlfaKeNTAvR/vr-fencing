@@ -125,7 +125,15 @@ namespace VrFencing.Blade
                 : new TrackedPose(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
             var controllerAnchor = _mount.parent;
             var controllerInRoom = new TrackedPose(controllerAnchor.position.ToNumerics(), controllerAnchor.rotation.ToNumerics());
-            var bladeInStrip = BladePose.GetBlade(StripFrame.ToStripFrame(stripInRoom, controllerInRoom), _mountInController);
+            var forteInStrip = BladePose.GetBlade(StripFrame.ToStripFrame(stripInRoom, controllerInRoom), _mountInController);
+
+            // The blade hangs (PER-52): its set curves it away from the grip's up (the thumb's side) and gravity sags it.
+            // Detection and the drawn blade both use the line from the guard to the real, drooped point.
+            var stripFromRoom = System.Numerics.Quaternion.Inverse(stripInRoom.Rotation);
+            var gripUp = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), stripFromRoom);
+            var down = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitY, stripFromRoom);
+            var droop = BladeDroop.Create(forteInStrip.Direction, gripUp, down, _settings.Blade);
+            var bladeInStrip = droop.GetChord(forteInStrip);
 
             if (hasDummy)
             {
@@ -133,10 +141,8 @@ namespace VrFencing.Blade
                 DetectContacts(now, bladeInStrip);
             }
 
-            // The grip's up (thumb side): a blade pushed straight in bulges the other way, its set (PER-50).
-            var gripUp = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), System.Numerics.Quaternion.Inverse(stripInRoom.Rotation));
             var wasDecoupled = _drawnBlade.IsDecoupled;
-            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime);
+            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime, droop);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");

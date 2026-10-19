@@ -5,8 +5,9 @@ using System.Numerics;
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// The blade as drawn (visual only; Touch detection uses the straight blade), as <see cref="SampleCount"/> + 1
-    /// centerline points from the guard to the point. It is always one smooth shape, and never passes through a body
+    /// The blade as drawn (visual only; Touch detection uses the line from the guard to the real point), as
+    /// <see cref="SampleCount"/> + 1 centerline points from the guard to the point. It hangs in its rest shape, the set
+    /// plus gravity sag (<see cref="BladeDroop"/>, PER-52). It is always one smooth shape, and never passes through a body
     /// (PER-48, PER-49):
     /// <list type="bullet">
     /// <item>the point pins on the near-side surface it meets and the blade bends in one smooth curve as the hand pushes
@@ -39,6 +40,7 @@ namespace VrFencing.Blade
         private bool _isFreeOffHand;
         private BladeSegment _drawnPose = new BladeSegment(Vector3.Zero, Vector3.UnitZ * BladePose.BladeLengthMeters);
         private IReadOnlyList<BladeObstacle> _bodies;
+        private BladeDroop _droop;
 
         public DrawnBlade()
         {
@@ -54,8 +56,14 @@ namespace VrFencing.Blade
         /// <summary>Where the drawn guard is: the hand's guard, unless <see cref="IsDecoupled"/>.</summary>
         public Vector3 GuardPosition => _samples[0];
 
-        /// <summary>Which way the drawn blade leaves the drawn guard: the hand's blade, unless <see cref="IsDecoupled"/>.</summary>
+        /// <summary>
+        /// The drawn guard's line to the drawn point's rest position: the hand's chord (guard to the drooped point), unless
+        /// <see cref="IsDecoupled"/>.
+        /// </summary>
         public Vector3 GuardDirection => _drawnPose.Direction;
+
+        /// <summary>Which way the drawn hilt points: along the forte, the rest shape's tangent at the guard (PER-52).</summary>
+        public Vector3 HiltDirection => _droop.GetHiltDirection(GuardDirection);
 
         /// <summary>
         /// The drawn hilt lags the hand: pushed or turned further than the blade can bend, or the blade held off a body
@@ -78,28 +86,39 @@ namespace VrFencing.Blade
             return _samples[index];
         }
 
-        /// <summary>Moves to the blade's new straight pose.</summary>
+        /// <summary>Moves to the blade's new pose.</summary>
+        /// <param name="straightBlade">
+        /// The guard to the real point: the chord of the rest shape (<see cref="BladeDroop.GetChord"/>), or the straight
+        /// blade with no droop.
+        /// </param>
         /// <param name="bodies">Every obstacle the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
-        /// <param name="gripUp">The grip's up (the thumb's side); the blade's set bulges a straight push the other way.</param>
+        /// <param name="gripUp">The grip's up (the thumb's side); with no droop, the blade's set bulges a straight push the other way.</param>
+        /// <param name="droop">
+        /// The rest shape this step (PER-52): drawn on top of the chord, and the side a straight push bends to. The
+        /// default is a straight blade.
+        /// </param>
         /// <returns>Why a pinned point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, float deltaSeconds)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, float deltaSeconds, BladeDroop droop = default)
         {
             if (bodies == null)
             {
                 throw new ArgumentNullException(nameof(bodies));
             }
 
+            _droop = droop;
             var wasPinned = _contact.IsPinned;
             var bowBefore = _contact.BowMeters;
             var bowDirectionBefore = _contact.BowDirection;
-            var release = _contact.Step(straightBlade, bodies, gripUp, _hasSamples ? _samples : null);
+            var release = _contact.Step(straightBlade, bodies, gripUp, _hasSamples ? _samples : null, droop.TipDeflection);
             if (_contact.IsPinned)
             {
-                // The pin holds the point; restart the flex so it does not carry stale motion into the release.
+                // The pin holds the point; restart the flex so it does not carry stale motion into the release. The rest
+                // curve rides on the pressed shape (zero at the guard and the pin), so the blade leaves the guard along the
+                // forte and does not jump as the point lands or lets go.
                 _flex.Reset();
                 for (var index = 0; index <= SampleCount; index++)
                 {
-                    _samples[index] = _contact.GetSample(index);
+                    _samples[index] = _contact.GetSample(index) + droop.GetChordOffset((float)index / SampleCount);
                 }
 
                 _drawnPose = new BladeSegment(_contact.GuardPosition, _contact.GuardPosition + (_contact.GuardDirection * BladePose.BladeLengthMeters));
@@ -179,7 +198,8 @@ namespace VrFencing.Blade
         {
             for (var index = 0; index <= SampleCount; index++)
             {
-                samples[index] = _flex.GetCenterlinePoint(pose, (float)index / SampleCount);
+                var fraction = (float)index / SampleCount;
+                samples[index] = _flex.GetCenterlinePoint(pose, fraction) + _droop.GetChordOffset(fraction);
             }
         }
     }
