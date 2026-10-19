@@ -19,9 +19,11 @@ namespace VrFencing.Tests.Tracking
         }
 
         [Test]
-        public void WithoutAnExperimentsFileTheCleanupFollowsTheDefaultConstant()
+        public void WithoutAnExperimentsFileTheCleanupIsOn()
         {
-            Assert.That(GpuExperiments.Default.DestroyStaleXrTexturesOnResume, Is.EqualTo(StaleXrTextureCleanup.IsOnByDefault));
+            Assert.That(StaleXrTextureCleanup.IsOnByDefault, Is.True);
+            Assert.That(GpuExperiments.Default.DestroyStaleXrTexturesOnResume, Is.True);
+            Assert.That(GpuExperiments.Default.Describe(), Is.EqualTo("destroyStaleXrTexturesOnResume"));
         }
 
         [Test]

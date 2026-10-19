@@ -68,9 +68,10 @@ namespace VrFencing.Tracking
     {
         /// <summary>
         /// Whether the cleanup runs when the experiments file does not set <c>destroyStaleXrTexturesOnResume</c>
-        /// (or there is no file). Off while it is proven on the headset; flip to true to make it the default.
+        /// (or there is no file). On since the headset tests of PER-93: without it every sleep/wake leaks one set of
+        /// eye buffers. <c>"destroyStaleXrTexturesOnResume": false</c> in the file still turns it off.
         /// </summary>
-        public const bool IsOnByDefault = false;
+        public const bool IsOnByDefault = true;
 
         /// <summary>How often the live XR textures are scanned while watching; each scan walks every loaded object.</summary>
         public const double ScanIntervalSeconds = 0.5;
