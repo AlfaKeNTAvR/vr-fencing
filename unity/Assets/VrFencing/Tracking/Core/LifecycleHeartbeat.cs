@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace VrFencing.Tracking
 {
@@ -63,6 +65,59 @@ namespace VrFencing.Tracking
                 eyeBuffer.RenderViewportScale,
                 urp);
         }
+
+        /// <summary>
+        /// The GPU snapshot line (PER-93), for example
+        /// "[Life] gpu after-resume frame 900 t 75.20 s cams 1 objects 2 enabled 1 rt 14 est 812.5 MB prof 640.0 MB
+        /// xrTex 3 est 600.0 MB prof 500.0 MB texCur 700.0 MB texTotal 900.0 MB driver 1200.0 MB ptLayers 1 overlays 1
+        /// xrDisplays 1 running 1" (one line). <paramref name="moment"/> names when it was taken: "launch",
+        /// "before-pause", "after-resume" or "after-cleanup". Memory is in MiB.
+        /// </summary>
+        public static string FormatGpuSnapshot(string moment, long frameCount, double realtimeSeconds, GpuMemorySnapshot snapshot)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "[Life] gpu {0} frame {1} t {2:0.00} s cams {3} objects {4} enabled {5} rt {6} xrTex {7}"
+                + " texCur {8:0.0} MB texTotal {9:0.0} MB driver {10:0.0} MB ptLayers {11} overlays {12} xrDisplays {13} running {14}",
+                moment,
+                frameCount,
+                realtimeSeconds,
+                snapshot.AllCamerasCount,
+                snapshot.CameraObjectCount,
+                snapshot.EnabledCameraCount,
+                FormatTotals(snapshot.RenderTextures),
+                FormatTotals(snapshot.XrTextures),
+                ToMebibytes(snapshot.TextureMemoryCurrentBytes),
+                ToMebibytes(snapshot.TextureMemoryTotalBytes),
+                ToMebibytes(snapshot.GraphicsDriverBytes),
+                snapshot.PassthroughLayerCount,
+                snapshot.OverlayCount,
+                snapshot.XrDisplayCount,
+                snapshot.RunningXrDisplayCount);
+        }
+
+        /// <summary>
+        /// The largest render texture groups at a snapshot (PER-93), for example
+        /// "[Life] gpu after-resume rt-top XR Texture x6 1200.0 MB; _CameraTargetAttachmentA x1 50.0 MB", so a doubled
+        /// group is visible by name. "rt-top none" when there are no render textures.
+        /// </summary>
+        public static string FormatRenderTextureGroups(string moment, IReadOnlyList<RenderTextureGroup> groups)
+        {
+            var body = groups == null || groups.Count == 0
+                ? "none"
+                : string.Join("; ", groups.Select(group => string.Format(
+                    CultureInfo.InvariantCulture, "{0} x{1} {2:0.0} MB", group.Name, group.Count, ToMebibytes(group.EstimatedBytes))));
+            return $"[Life] gpu {moment} rt-top {body}";
+        }
+
+        private static string FormatTotals(RenderTextureTotals totals) => string.Format(
+            CultureInfo.InvariantCulture,
+            "{0} est {1:0.0} MB prof {2:0.0} MB",
+            totals.Count,
+            ToMebibytes(totals.EstimatedBytes),
+            ToMebibytes(totals.ProfilerBytes));
+
+        private static double ToMebibytes(long bytes) => bytes / (1024.0 * 1024.0);
 
         private static int ToFlag(bool value) => value ? 1 : 0;
     }
