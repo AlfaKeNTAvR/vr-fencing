@@ -14,7 +14,9 @@
         "VrFencing.Settings.Unity",
         "Oculus.VR",
         "Unity.RenderPipelines.Core.Runtime",
-        "Unity.RenderPipelines.Universal.Runtime"
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Meta.XR.Movement",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

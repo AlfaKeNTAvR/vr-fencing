@@ -83,6 +83,25 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void OneBodyTrackingOwnerFeedsTheArmTrackingAndTheFencerRecorder()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var owners = Object.FindObjectsByType<VrFencing.Tracking.BodyTrackingBehaviour>(FindObjectsSortMode.None);
+            var armTracking = Object.FindFirstObjectByType<VrFencing.Tracking.ArmTrackingBehaviour>();
+            var fencerRecorder = Object.FindFirstObjectByType<VrFencing.Tracking.FencerRecorderBehaviour>();
+            var runner = Object.FindFirstObjectByType<VrFencing.Drills.DrillRunnerBehaviour>();
+
+            Assert.That(owners, Has.Length.EqualTo(1), "Exactly one component may start and stop body tracking.");
+            Assert.That(owners[0].gameObject, Is.SameAs(runner.gameObject), "It lives on the Practice object.");
+            Assert.That(fencerRecorder, Is.Not.Null, "No Fencer recorder in the passthrough scene.");
+            Assert.That(new SerializedObject(armTracking).FindProperty("_bodyTracking").objectReferenceValue, Is.SameAs(owners[0]));
+            var serializedRecorder = new SerializedObject(fencerRecorder);
+            Assert.That(serializedRecorder.FindProperty("_bodyTracking").objectReferenceValue, Is.SameAs(owners[0]));
+            Assert.That(serializedRecorder.FindProperty("_strip").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>()));
+        }
+
+        [Test]
         public void DrillRunnerMovesTheScenesDummy()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
