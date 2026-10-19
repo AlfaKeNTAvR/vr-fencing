@@ -9,6 +9,7 @@
         "VrFencing.Strip.Core",
         "VrFencing.Strip.Unity",
         "VrFencing.Blade.Core",
+        "VrFencing.Blade.Unity",
         "VrFencing.Dummy.Core",
         "VrFencing.Dummy.Unity",
         "VrFencing.Drills.Core",

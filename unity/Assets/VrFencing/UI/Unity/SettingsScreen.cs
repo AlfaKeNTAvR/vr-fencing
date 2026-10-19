@@ -6,14 +6,11 @@ using VrFencing.Settings;
 namespace VrFencing.UI
 {
     /// <summary>
-    /// The settings screen: every Setting (<see cref="SettingsPage.All"/>) with a step down and up, two pages, and a
-    /// reserved line for the Blade's per-event haptic choices, which arrive with the Blade (PER-33). Holding the trigger
-    /// on a step button repeats it. Changes are saved at once by the caller.
+    /// The settings screen: every Setting (<see cref="SettingsPage.All"/>) with a step down and up, over several pages.
+    /// Holding the trigger on a step button repeats it. Changes are saved at once by the caller.
     /// </summary>
     internal sealed class SettingsScreen
     {
-        public const string BladeHapticsNote = "Blade haptics: coming with the Blade";
-
         private const int RowsPerPage = 7;
         private const float FirstRowY = 0.165f;
         private const float RowStep = 0.055f;
@@ -58,8 +55,7 @@ namespace VrFencing.UI
             backButton.SetLabel("Back");
         }
 
-        /// <summary>Settings rows, then the reserved Blade haptics line.</summary>
-        private static int ItemCount => SettingsPage.All.Count + 1;
+        private static int ItemCount => SettingsPage.All.Count;
 
         public void SetVisible(bool isVisible)
         {
@@ -84,14 +80,10 @@ namespace VrFencing.UI
                 {
                     _rows[row].ShowNothing();
                 }
-                else if (item < SettingsPage.All.Count)
+                else
                 {
                     var id = SettingsPage.All[item];
                     _rows[row].ShowSetting(id, SettingsPage.GetLabel(id), SettingsPage.FormatValue(_settings, id));
-                }
-                else
-                {
-                    _rows[row].ShowNote(BladeHapticsNote);
                 }
             }
 

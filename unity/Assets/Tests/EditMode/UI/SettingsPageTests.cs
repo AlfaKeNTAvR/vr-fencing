@@ -107,6 +107,32 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void BladeChoicesCycleBothWaysAndShowReadableNames()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.TouchRule), Is.EqualTo("Loose"));
+            Assert.That(SettingsPage.Change(settings, SettingId.TouchRule, 1).Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
+            Assert.That(SettingsPage.Change(settings, SettingId.TouchRule, -1).Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.FlatHaptic), Is.EqualTo("Double tap"));
+            Assert.That(SettingsPage.Change(settings, SettingId.FlatHaptic, 1).Blade.FlatHaptic, Is.EqualTo(HapticPattern.Off));
+            Assert.That(SettingsPage.Change(settings, SettingId.TouchHaptic, -1).Blade.TouchHaptic, Is.EqualTo(HapticPattern.Crisp));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeMount), Is.EqualTo("Center"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladePitch), Is.EqualTo("+10 deg"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeYaw), Is.EqualTo("-10 deg"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.HapticFloor), Is.EqualTo("40%"));
+            Assert.That(SettingsPage.Change(settings, SettingId.BladePitch, 1).Blade.PitchDegrees, Is.EqualTo(15.0f));
+        }
+
+        [Test]
+        public void BladeSettingsGoToTheBladeAndTheHandMovesItToo()
+        {
+            Assert.That(SettingsPage.GetImpact(SettingId.TouchHaptic), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.BladeYaw), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.Hand) & SettingImpact.Blade, Is.EqualTo(SettingImpact.Blade));
+        }
+
+        [Test]
         public void TogglesFlipOnEitherStep()
         {
             var settings = new TrainerSettings();

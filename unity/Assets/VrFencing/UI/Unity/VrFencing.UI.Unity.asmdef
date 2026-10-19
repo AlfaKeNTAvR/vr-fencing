@@ -3,6 +3,7 @@
     "rootNamespace": "VrFencing.UI",
     "references": [
         "VrFencing.UI.Core",
+        "VrFencing.Blade.Unity",
         "VrFencing.Drills.Core",
         "VrFencing.Drills.Unity",
         "VrFencing.Dummy.Core",

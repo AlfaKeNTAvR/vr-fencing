@@ -29,6 +29,9 @@ namespace VrFencing.Settings
 
         public WarningZoneSettings WarningZone { get; set; } = new WarningZoneSettings();
 
+        /// <summary>The Blade: Touch rule, how it sits in the hand, and its haptics (PER-22 feel tests, PER-33).</summary>
+        public BladeSettings Blade { get; set; } = new BladeSettings();
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -51,6 +54,18 @@ namespace VrFencing.Settings
                     LengthOnPisteMeters = WarningZone.LengthOnPisteMeters,
                     MinimumLengthMeters = WarningZone.MinimumLengthMeters,
                     OffStripToleranceMeters = WarningZone.OffStripToleranceMeters,
+                },
+                Blade = new BladeSettings
+                {
+                    TouchRule = Blade.TouchRule,
+                    Mount = Blade.Mount,
+                    PitchDegrees = Blade.PitchDegrees,
+                    YawDegrees = Blade.YawDegrees,
+                    TouchHaptic = Blade.TouchHaptic,
+                    FlatHaptic = Blade.FlatHaptic,
+                    GlanceHaptic = Blade.GlanceHaptic,
+                    HapticFloor = Blade.HapticFloor,
+                    HapticFullStrengthSpeedMetersPerSecond = Blade.HapticFullStrengthSpeedMetersPerSecond,
                 },
             };
         }

@@ -100,7 +100,7 @@ namespace VrFencing.Drills
 
         /// <summary>
         /// Runs the Rep timing with the Fencer's Reps, rest and reaction window, lighting the body or the hand.
-        /// Until the Blade exists nothing can Touch, so every Rep times out.
+        /// A Touch on the lit zone succeeds; another zone or a flat contact fails the Rep; no contact times out.
         /// </summary>
         public static DrillDefinition CreateTimingTestDrill(TrainerSettings settings)
         {

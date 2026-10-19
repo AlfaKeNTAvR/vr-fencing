@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+using VrFencing.Settings;
+
+namespace VrFencing.Blade
+{
+    /// <summary>One step of a haptic pattern: amplitude and frequency from 0 to 1, held for a duration. Amplitude 0 is a gap.</summary>
+    public readonly struct HapticSegment
+    {
+        public HapticSegment(float amplitude, float frequency, float durationSeconds)
+        {
+            Amplitude = amplitude;
+            Frequency = frequency;
+            DurationSeconds = durationSeconds;
+        }
+
+        public float Amplitude { get; }
+
+        public float Frequency { get; }
+
+        public float DurationSeconds { get; }
+    }
+
+    /// <summary>
+    /// What the sword hand feels for each Blade event (PER-22): the chosen <see cref="HapticPattern"/> per event, played
+    /// louder the faster the tip was moving, never below <see cref="BladeSettings.HapticFloor"/>. The Unity layer plays
+    /// the patterns through the Meta Haptics SDK, since OVRInput vibration does nothing under OpenXR.
+    /// </summary>
+    public static class BladeHaptics
+    {
+        // A glance's patterns are the Touch's, this much weaker: "a light buzz, weaker than a Touch" (PER-22).
+        private const float GlanceAmplitudeScale = 0.6f;
+
+        private static readonly HapticSegment[] NoSegments = Array.Empty<HapticSegment>();
+
+        // The Touch variants, from the feel-test prototype's presets.
+        private static readonly HapticSegment[] TouchTick = { new HapticSegment(0.6f, 0.9f, 0.020f) };
+        private static readonly HapticSegment[] TouchCrisp = { new HapticSegment(1.0f, 1.0f, 0.030f) };
+        private static readonly HapticSegment[] TouchHeavy = { new HapticSegment(1.0f, 0.5f, 0.070f) };
+        private static readonly HapticSegment[] TouchDoubleTap =
+        {
+            new HapticSegment(1.0f, 1.0f, 0.025f),
+            new HapticSegment(0.0f, 0.0f, 0.040f),
+            new HapticSegment(1.0f, 1.0f, 0.025f),
+        };
+
+        // The flat-contact variants, from the same presets: softer and longer than a Touch.
+        private static readonly HapticSegment[] FlatTick = { new HapticSegment(0.3f, 0.3f, 0.030f) };
+        private static readonly HapticSegment[] FlatCrisp = { new HapticSegment(0.30f, 0.3f, 0.200f) };
+        private static readonly HapticSegment[] FlatHeavy = { new HapticSegment(0.20f, 1.0f, 0.300f) };
+        private static readonly HapticSegment[] FlatDoubleTap =
+        {
+            new HapticSegment(0.35f, 0.2f, 0.120f),
+            new HapticSegment(0.0f, 0.0f, 0.060f),
+            new HapticSegment(0.20f, 0.2f, 0.120f),
+        };
+
+        public static HapticPattern GetChosenPattern(BladeSettings blade, BladeEventType eventType)
+        {
+            switch (eventType)
+            {
+                case BladeEventType.Touch:
+                    return blade.TouchHaptic;
+                case BladeEventType.FlatContact:
+                    return blade.FlatHaptic;
+                case BladeEventType.TipGlance:
+                    return blade.GlanceHaptic;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(eventType), eventType, "Not a Blade event.");
+            }
+        }
+
+        /// <summary>The segments of <paramref name="pattern"/> as played for <paramref name="eventType"/>; empty for <see cref="HapticPattern.Off"/>.</summary>
+        public static IReadOnlyList<HapticSegment> GetSegments(BladeEventType eventType, HapticPattern pattern)
+        {
+            if (pattern == HapticPattern.Off)
+            {
+                return NoSegments;
+            }
+
+            switch (eventType)
+            {
+                case BladeEventType.Touch:
+                    return GetTouchSegments(pattern);
+                case BladeEventType.TipGlance:
+                    return Scale(GetTouchSegments(pattern), GlanceAmplitudeScale);
+                case BladeEventType.FlatContact:
+                    return GetFlatSegments(pattern);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(eventType), eventType, "Not a Blade event.");
+            }
+        }
+
+        /// <summary>
+        /// The strength multiplier for a contact at <paramref name="tipSpeedMetersPerSecond"/>: rises in a straight line
+        /// from the floor at standstill to 1 at the full-strength speed, and stays at 1 above it.
+        /// </summary>
+        public static float GetStrength(BladeSettings blade, float tipSpeedMetersPerSecond)
+        {
+            var floor = Clamp01(blade.HapticFloor);
+            if (!(blade.HapticFullStrengthSpeedMetersPerSecond > 0.0f))
+            {
+                return 1.0f;
+            }
+
+            var speedFraction = Clamp01(Math.Max(0.0f, tipSpeedMetersPerSecond) / blade.HapticFullStrengthSpeedMetersPerSecond);
+            return floor + ((1.0f - floor) * speedFraction);
+        }
+
+        /// <summary>
+        /// A Meta Haptics Studio clip (.haptic, version 1) for the segments: stepped amplitude and frequency envelopes.
+        /// Plain text, so the Unity layer can build clips at runtime without assets.
+        /// </summary>
+        public static string BuildClipJson(IReadOnlyList<HapticSegment> segments)
+        {
+            // Each step holds its value until just before the next starts, so the envelope is square, not ramped.
+            const float EdgeSeconds = 0.0005f;
+            var amplitude = new StringBuilder();
+            var frequency = new StringBuilder();
+            var time = 0.0f;
+            foreach (var segment in segments)
+            {
+                var end = time + segment.DurationSeconds;
+                AppendPoint(amplitude, "amplitude", time, segment.Amplitude);
+                AppendPoint(amplitude, "amplitude", end - EdgeSeconds, segment.Amplitude);
+                AppendPoint(frequency, "frequency", time, segment.Frequency);
+                AppendPoint(frequency, "frequency", end - EdgeSeconds, segment.Frequency);
+                time = end;
+            }
+
+            AppendPoint(amplitude, "amplitude", time, 0.0f);
+            AppendPoint(frequency, "frequency", time, 0.0f);
+            return "{\"version\":{\"major\":1,\"minor\":0,\"patch\":0}," +
+                "\"metadata\":{\"editor\":\"VR Fencing\",\"source\":\"\",\"project\":\"blade\",\"tags\":[],\"description\":\"\"}," +
+                "\"signals\":{\"continuous\":{\"envelopes\":{" +
+                $"\"amplitude\":[{amplitude}],\"frequency\":[{frequency}]" + "}}}}";
+        }
+
+        private static HapticSegment[] GetTouchSegments(HapticPattern pattern)
+        {
+            switch (pattern)
+            {
+                case HapticPattern.Tick:
+                    return TouchTick;
+                case HapticPattern.Crisp:
+                    return TouchCrisp;
+                case HapticPattern.Heavy:
+                    return TouchHeavy;
+                case HapticPattern.DoubleTap:
+                    return TouchDoubleTap;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(pattern), pattern, "Not a haptic pattern.");
+            }
+        }
+
+        private static HapticSegment[] GetFlatSegments(HapticPattern pattern)
+        {
+            switch (pattern)
+            {
+                case HapticPattern.Tick:
+                    return FlatTick;
+                case HapticPattern.Crisp:
+                    return FlatCrisp;
+                case HapticPattern.Heavy:
+                    return FlatHeavy;
+                case HapticPattern.DoubleTap:
+                    return FlatDoubleTap;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(pattern), pattern, "Not a haptic pattern.");
+            }
+        }
+
+        private static HapticSegment[] Scale(HapticSegment[] segments, float amplitudeScale)
+        {
+            var scaled = new HapticSegment[segments.Length];
+            for (var index = 0; index < segments.Length; index++)
+            {
+                var segment = segments[index];
+                scaled[index] = new HapticSegment(segment.Amplitude * amplitudeScale, segment.Frequency, segment.DurationSeconds);
+            }
+
+            return scaled;
+        }
+
+        private static void AppendPoint(StringBuilder points, string key, float time, float value)
+        {
+            if (points.Length > 0)
+            {
+                points.Append(',');
+            }
+
+            points.Append("{\"time\":").Append(time.ToString("0.####", CultureInfo.InvariantCulture))
+                .Append(",\"").Append(key).Append("\":").Append(Clamp01(value).ToString("0.###", CultureInfo.InvariantCulture))
+                .Append('}');
+        }
+
+        private static float Clamp01(float value)
+        {
+            return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+        }
+    }
+}

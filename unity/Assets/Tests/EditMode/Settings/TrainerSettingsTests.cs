@@ -116,6 +116,41 @@ namespace VrFencing.Tests.Settings
         }
 
         [Test]
+        public void BladeSettingsSaveAndLoadAsReadableText()
+        {
+            var saved = new TrainerSettings();
+            saved.Blade.TouchRule = TouchRule.Strict;
+            saved.Blade.Mount = BladeMount.Pistol;
+            saved.Blade.PitchDegrees = 15.0f;
+            saved.Blade.GlanceHaptic = HapticPattern.Off;
+            saved.Blade.HapticFloor = 0.3f;
+
+            SettingsStorage.Save(saved, _settingsPath);
+            var loaded = SettingsStorage.Load(_settingsPath);
+
+            Assert.That(File.ReadAllText(_settingsPath), Does.Contain("\"Strict\"").And.Contain("\"Pistol\""));
+            Assert.That(loaded.Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
+            Assert.That(loaded.Blade.Mount, Is.EqualTo(BladeMount.Pistol));
+            Assert.That(loaded.Blade.PitchDegrees, Is.EqualTo(15.0f));
+            Assert.That(loaded.Blade.YawDegrees, Is.EqualTo(-10.0f));
+            Assert.That(loaded.Blade.GlanceHaptic, Is.EqualTo(HapticPattern.Off));
+            Assert.That(loaded.Blade.HapticFloor, Is.EqualTo(0.3f));
+        }
+
+        [Test]
+        public void AFileFromBeforeTheBladeGetsTheBladeDefaults()
+        {
+            File.WriteAllText(_settingsPath, "{ \"Hand\": \"Left\" }");
+
+            var blade = SettingsStorage.Load(_settingsPath).Blade;
+
+            Assert.That(blade.TouchRule, Is.EqualTo(TouchRule.Loose));
+            Assert.That(blade.TouchHaptic, Is.EqualTo(HapticPattern.Heavy));
+            Assert.That(blade.FlatHaptic, Is.EqualTo(HapticPattern.DoubleTap));
+            Assert.That(blade.GlanceHaptic, Is.EqualTo(HapticPattern.Tick));
+        }
+
+        [Test]
         public void SaveWritesTheHandAsReadableText()
         {
             SettingsStorage.Save(new TrainerSettings { Hand = Hand.Left }, _settingsPath);

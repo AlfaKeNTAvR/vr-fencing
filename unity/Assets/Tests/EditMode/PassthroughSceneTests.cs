@@ -85,6 +85,23 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void BladeReportsToThePracticeRunnerAndTestsTheDummyOnTheStrip()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var blades = Object.FindObjectsByType<VrFencing.Blade.BladeBehaviour>(FindObjectsSortMode.None);
+            var menu = Object.FindFirstObjectByType<VrFencing.UI.MenuBehaviour>();
+
+            Assert.That(blades, Has.Length.EqualTo(1), "There must be exactly one Blade.");
+            var serializedBlade = new SerializedObject(blades[0]);
+            Assert.That(serializedBlade.FindProperty("_drillRunner").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Drills.DrillRunnerBehaviour>()));
+            Assert.That(serializedBlade.FindProperty("_dummy").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>()));
+            Assert.That(serializedBlade.FindProperty("_strip").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>()));
+            Assert.That(new SerializedObject(menu).FindProperty("_blade").objectReferenceValue, Is.SameAs(blades[0]),
+                "The menu hands changed Blade Settings to the Blade.");
+        }
+
+        [Test]
         public void CameraRigAsksForTheBodyTrackingPermission()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
