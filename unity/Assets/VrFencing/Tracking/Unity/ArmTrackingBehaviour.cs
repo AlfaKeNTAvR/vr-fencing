@@ -16,6 +16,11 @@ namespace VrFencing.Tracking
     /// not supported, or stopped) the rep log gets a null arm pose; when the headset falls back to low fidelity
     /// the poses are still logged with their fidelity. Both are noted in the device log with a <c>[Tracking]</c> tag.
     /// </para>
+    /// <para>
+    /// Body tracking stops while the app is paused (the headset asleep), has lost input focus, or the headset is off the
+    /// head, and restarts once all have cleared (PER-43: left running through sleep it lagged passthrough and the
+    /// system menu after wake). <see cref="BodyTrackingLifecycle"/> decides; this only forwards the events.
+    /// </para>
     /// </summary>
     public sealed class ArmTrackingBehaviour : MonoBehaviour
     {
@@ -43,6 +48,7 @@ namespace VrFencing.Tracking
         private StripBehaviour _strip;
 
         private readonly RepArmTracker _tracker = new RepArmTracker();
+        private readonly BodyTrackingLifecycle _lifecycle = new BodyTrackingLifecycle();
         private OVRPlugin.BodyState _bodyState;
         private OVRCameraRig _cameraRig;
         private OVRPlugin.BoneId[] _bladeArmJoints = RightArmJoints;
@@ -63,6 +69,10 @@ namespace VrFencing.Tracking
         private void OnEnable()
         {
             OVRPermissionsRequester.PermissionGranted += OnPermissionGranted;
+            OVRManager.InputFocusLost += OnInputFocusLost;
+            OVRManager.InputFocusAcquired += OnInputFocusAcquired;
+            OVRManager.HMDUnmounted += OnHeadsetUnmounted;
+            OVRManager.HMDMounted += OnHeadsetMounted;
             TryStartBodyTracking();
             if (_sessionRecorder != null)
             {
@@ -111,16 +121,65 @@ namespace VrFencing.Tracking
         private void OnDisable()
         {
             OVRPermissionsRequester.PermissionGranted -= OnPermissionGranted;
+            OVRManager.InputFocusLost -= OnInputFocusLost;
+            OVRManager.InputFocusAcquired -= OnInputFocusAcquired;
+            OVRManager.HMDUnmounted -= OnHeadsetUnmounted;
+            OVRManager.HMDMounted -= OnHeadsetMounted;
             if (_sessionRecorder != null && _sessionRecorder.ArmPoseSource == (Func<ArmPoseSnapshot>)SnapshotJudgedRep)
             {
                 _sessionRecorder.ArmPoseSource = null;
             }
 
-            if (_isBodyTrackingRunning)
+            StopBodyTracking("component disabled");
+        }
+
+        private void OnApplicationPause(bool isPaused)
+        {
+            ApplyLifecycleEvent(isPaused ? LifecycleEvent.AppPaused : LifecycleEvent.AppResumed);
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            ApplyLifecycleEvent(hasFocus ? LifecycleEvent.FocusRegained : LifecycleEvent.FocusLost);
+        }
+
+        private void OnInputFocusLost() => ApplyLifecycleEvent(LifecycleEvent.FocusLost);
+
+        private void OnInputFocusAcquired() => ApplyLifecycleEvent(LifecycleEvent.FocusRegained);
+
+        private void OnHeadsetUnmounted() => ApplyLifecycleEvent(LifecycleEvent.HeadsetRemoved);
+
+        private void OnHeadsetMounted() => ApplyLifecycleEvent(LifecycleEvent.HeadsetPutOn);
+
+        private void ApplyLifecycleEvent(LifecycleEvent lifecycleEvent)
+        {
+            var decision = _lifecycle.Apply(lifecycleEvent, _isBodyTrackingRunning);
+            switch (decision.Action)
             {
-                OVRPlugin.StopBodyTracking();
-                _isBodyTrackingRunning = false;
+                case BodyTrackingAction.Stop:
+                    StopBodyTracking(decision.Reason);
+                    break;
+                case BodyTrackingAction.Start:
+                    Debug.Log($"[Tracking] Restarting body tracking ({decision.Reason}).");
+                    TryStartBodyTracking();
+                    break;
             }
+        }
+
+        private void StopBodyTracking(string reason)
+        {
+            if (!_isBodyTrackingRunning)
+            {
+                return;
+            }
+
+            var isStopped = OVRPlugin.StopBodyTracking();
+            _isBodyTrackingRunning = false;
+            // The next start logs its fidelity and any unavailability afresh.
+            _lastLoggedFidelity = null;
+            _lastUnavailableMessage = null;
+            var failureNote = isStopped ? string.Empty : ", but the runtime reported a stop failure";
+            Debug.Log($"[Tracking] Body tracking stopped ({reason}){failureNote}.");
         }
 
         private void OnDestroy()
@@ -163,6 +222,12 @@ namespace VrFencing.Tracking
         {
             if (_isBodyTrackingRunning)
             {
+                return;
+            }
+
+            if (!_lifecycle.ShouldRun)
+            {
+                LogUnavailableOnChange($"[Tracking] Body tracking held off ({_lifecycle.DescribeHolds()}); it restarts once that clears.");
                 return;
             }
 
@@ -228,7 +293,7 @@ namespace VrFencing.Tracking
             }
 
             _lastLoggedFidelity = fidelity;
-            Debug.Log($"[Tracking] Body tracking fidelity: {fidelity}.");
+            Debug.Log($"[Tracking] Body tracking fidelity reported by the runtime: {fidelity}.");
         }
 
         private void LogUnavailableOnChange(string message)
