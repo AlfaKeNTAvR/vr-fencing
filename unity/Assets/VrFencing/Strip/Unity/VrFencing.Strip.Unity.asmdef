@@ -2,7 +2,11 @@
     "name": "VrFencing.Strip.Unity",
     "rootNamespace": "VrFencing.Strip",
     "references": [
-        "VrFencing.Strip.Core"
+        "VrFencing.Strip.Core",
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity",
+        "Oculus.VR",
+        "Oculus.Haptics"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

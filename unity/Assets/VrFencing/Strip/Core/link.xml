@@ -1,0 +1,4 @@
+<!-- The saved Strip anchors are read and written by Newtonsoft.Json through reflection; keep IL2CPP code stripping from removing their constructors and properties. -->
+<linker>
+    <assembly fullname="VrFencing.Strip.Core" preserve="all"/>
+</linker>

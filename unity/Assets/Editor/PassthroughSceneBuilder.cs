@@ -1,10 +1,12 @@
-// Builds the minimal passthrough scene: Meta camera rig with passthrough as the
-// background, plus one small reference cube so a headset screenshot shows that
-// virtual content is composited over the real room, and the Dummy.
+// Builds the passthrough scene: Meta camera rig with passthrough as the
+// background, the Strip, and the Dummy standing on it under the En Garde Line.
+using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using VrFencing.Dummy;
+using VrFencing.Strip;
 
 namespace VrFencing.EditorTools
 {
@@ -12,15 +14,22 @@ namespace VrFencing.EditorTools
     {
         private const string CameraRigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
         private const string CameraRigName = "OVRCameraRig";
-        private const string ReferenceCubeName = "ReferenceCube";
+        // The first scenes had a grey test cube; the Strip and the Dummy are the visual references now.
+        private const string ObsoleteReferenceCubeName = "ReferenceCube";
 
-        private const float ReferenceCubeEdgeMeters = 0.1f;
-        private static readonly Vector3 ReferenceCubePositionMeters = new(0f, 1.2f, 1.0f);
-
+        private const string StripName = "Strip";
+        private const string EnGardeLineName = "En Garde Line";
         private const string DummyName = "Dummy";
 
-        // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset.
+        // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset along the Strip.
         private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
+
+        /// <summary>Batchmode and menu entry point: brings the passthrough scene up to date.</summary>
+        [MenuItem("VR Fencing/Update passthrough scene")]
+        public static void UpdatePassthroughScene()
+        {
+            CreateOrUpdateScene(QuestProjectSetup.PassthroughScenePath);
+        }
 
         /// <summary>Creates the scene if missing, otherwise opens it; then makes sure every required object is set up.</summary>
         public static void CreateOrUpdateScene(string scenePath)
@@ -33,8 +42,9 @@ namespace VrFencing.EditorTools
             var cameraRig = FindOrCreateCameraRig(scene);
             EnablePassthrough(cameraRig);
             MakeCameraBackgroundTransparent(cameraRig);
-            FindOrCreateReferenceCube(scene);
-            FindOrCreateDummy(scene);
+            RemoveObsoleteReferenceCube(scene);
+            var enGardeLine = FindOrCreateStrip(scene);
+            PlaceDummyOnStrip(scene, enGardeLine);
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -95,37 +105,66 @@ namespace VrFencing.EditorTools
             }
         }
 
-        private static void FindOrCreateReferenceCube(Scene scene)
+        private static void RemoveObsoleteReferenceCube(Scene scene)
         {
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (root.name == ReferenceCubeName)
-                    return;
+                if (root.name == ObsoleteReferenceCubeName)
+                    Object.DestroyImmediate(root);
             }
-
-            var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            cube.name = ReferenceCubeName;
-            cube.transform.position = ReferenceCubePositionMeters;
-            cube.transform.localScale = Vector3.one * ReferenceCubeEdgeMeters;
-            SceneManager.MoveGameObjectToScene(cube, scene);
         }
 
         /// <summary>
-        /// The Dummy stands at the scene origin's lunge distance until the Strip exists to parent it to the
-        /// En Garde Line; it builds its silhouette from the settings when the app starts.
+        /// The Strip at the scene origin with its En Garde Line child (the Strip frame). At runtime the Strip moves the
+        /// En Garde Line to the placed or restored Strip. Returns the En Garde Line.
         /// </summary>
-        private static void FindOrCreateDummy(Scene scene)
+        private static Transform FindOrCreateStrip(Scene scene)
         {
+            StripBehaviour strip = null;
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (root.GetComponent<VrFencing.Dummy.DummyBehaviour>() != null)
-                    return;
+                strip = root.GetComponent<StripBehaviour>();
+                if (strip != null)
+                    break;
             }
 
-            var dummy = new GameObject(DummyName);
-            dummy.transform.SetPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
-            dummy.AddComponent<VrFencing.Dummy.DummyBehaviour>();
-            SceneManager.MoveGameObjectToScene(dummy, scene);
+            if (strip == null)
+            {
+                var stripObject = new GameObject(StripName);
+                SceneManager.MoveGameObjectToScene(stripObject, scene);
+                strip = stripObject.AddComponent<StripBehaviour>();
+            }
+
+            var serializedStrip = new SerializedObject(strip);
+            var enGardeLineProperty = serializedStrip.FindProperty("_enGardeLine");
+            var enGardeLine = enGardeLineProperty.objectReferenceValue as Transform;
+            if (enGardeLine == null)
+            {
+                enGardeLine = new GameObject(EnGardeLineName).transform;
+                enGardeLine.SetParent(strip.transform, false);
+                enGardeLineProperty.objectReferenceValue = enGardeLine;
+                serializedStrip.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            return enGardeLine;
+        }
+
+        /// <summary>
+        /// The Dummy stands under the En Garde Line, so it follows the Strip; it builds its silhouette from the
+        /// settings when the app starts. An older scene's Dummy at the root is moved there.
+        /// </summary>
+        private static void PlaceDummyOnStrip(Scene scene, Transform enGardeLine)
+        {
+            var dummy = Object.FindObjectsByType<DummyBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.gameObject.scene == scene);
+            if (dummy == null)
+            {
+                dummy = new GameObject(DummyName).AddComponent<DummyBehaviour>();
+                SceneManager.MoveGameObjectToScene(dummy.gameObject, scene);
+            }
+
+            dummy.transform.SetParent(enGardeLine, false);
+            dummy.transform.SetLocalPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
         }
 
         private static void EnsureSceneFolder(string scenePath)
