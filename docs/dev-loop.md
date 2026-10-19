@@ -20,7 +20,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 | Newtonsoft Json `com.unity.nuget.newtonsoft-json` | 3.2.2 | Unity registry (JSON for the Core assemblies; already a dependency of MR Utility Kit and MCP for Unity, now pinned directly) |
 | MCP for Unity `com.coplaydev.unity-mcp` | 10.3.0 | git tag `v10.3.0` of `CoplayDev/unity-mcp` |
 
-- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log) and the arm tracking (IOBT); nothing starts a Drill until the UI does. The camera rig's OVRManager asks for the body tracking permission at launch.
+- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log) and the arm tracking (IOBT); the `Menu` object (`MenuBehaviour`) builds the panels and the off-hand pointer at runtime and is what starts, pauses and cancels Drills. The camera rig's OVRManager asks for the body tracking permission at launch.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
 - Android package id: `com.alfakentavr.vrfencing`.
 
@@ -95,11 +95,27 @@ On launch the app looks for a Strip saved in this room (a Meta spatial anchor at
 
 | Button | Does |
 |---|---|
-| Trigger | Placement: first press at the En Garde Line (over the front foot, standing en garde), second at the far end |
+| Trigger | Placement: first press at the En Garde Line (over the front foot, standing en garde), second at the far end. Outside placement it is the menu pointer's select |
 | Y (left) / B (right) | Re-place the Strip; press again to cancel and keep the old one |
 | X (left) / A (right) | Cycle the off-strip tolerance 0 / 0.2 / 0.4 m, shown in front of you and saved to Settings |
 
 The Strip extends behind the En Garde Line by the en garde stance (0.30 of the Fencer's height) plus the rear Warning Zone, so about 1 m of free floor is needed behind the first point. Saved Strips are listed in `strip-anchors.json` next to the settings file (`/sdcard/Android/data/com.alfakentavr.vrfencing/files/`), newest first, at most 10 rooms; each launch tries all of them and uses the newest anchor the headset finds in the room. Anchor save and restore steps are logged with a `[Strip]` tag (`adb logcat -s Unity`). Anchors need the anchor support and `USE_ANCHOR_API` permission the project already enables (`Assets/Oculus/OculusProjectConfig.asset`, `Assets/Plugins/Android/AndroidManifest.xml`).
+
+## The menus on the headset
+
+World-space panels float about 1.1 m in front of the Fencer, a little below eye level; they follow the head's position and turn with it once the Fencer looks more than 40 degrees away. A laser from the off-hand controller points, its trigger presses (hold it on a settings step button to repeat). Everything mirrors with the sword hand setting. Placing the Strip hides the panels, since placement uses the same trigger.
+
+| Screen | Holds |
+|---|---|
+| Home | The Drill picker, easy to hard; Drills that don't fit the Strip are greyed out with "Needs a N m Strip". Start, Settings, History, Re-place Strip, and the off-strip tolerance (same as X / A) |
+| Running (during a Drill) | Small panel low on the off-hand side: Drill and Rep, the cue or why it is paused, Pause/Resume, Cancel, Flag Rep |
+| Results (after each Drill) | Success %, average reaction time and tip speed, the hit map per Target Zone, the last-10-sessions trend; Run again, History, Done |
+| History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
+| Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
+
+Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list two test Drills ("Test: Rep timing", which times out every Rep until the Blade exists, and "Test: needs a full piste", always greyed out) so the flow can be tried before Drills 1 to 6 land.
+
+All world-space text is TextMeshPro (SDF shader, drawn in both eyes under single-pass instanced stereo). Its essentials live in `Assets/TextMesh Pro/`; `VrFencing.EditorTools.TextMeshProSetup.ImportEssentialsIfMissing` re-imports them in batchmode (run without `-quit`, it exits itself). To check the panels' layout without the headset, `VrFencing.EditorTools.MenuSnapshots.RenderAll` (menu "VR Fencing > Render menu snapshots", batchmode without `-nographics`) renders every screen with sample data to `Builds/menu-snapshots/`.
 
 ## The MCP servers (`.mcp.json`)
 
