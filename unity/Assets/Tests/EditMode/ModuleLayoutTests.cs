@@ -10,7 +10,7 @@ namespace VrFencing.Tests
     {
         private static readonly string[] Modules =
         {
-            "Strip", "Blade", "Dummy", "Drills", "Session", "UI", "Tracking", "Settings",
+            "Strip", "Blade", "Dummy", "Drills", "Session", "UI", "Tracking", "Settings", "Partner",
         };
 
         [Test]

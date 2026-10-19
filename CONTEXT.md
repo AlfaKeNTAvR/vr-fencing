@@ -103,3 +103,29 @@ _Avoid_: Tap, knock
 **Stop Hit**:
 A Touch on the Armed Dummy's hand or arm while its attack is still on the way, landing first instead of parrying. If both Touches land within the double window, it counts as a double, not a Stop Hit.
 _Avoid_: Counter-attack (the broader family), counter
+
+### Partner
+
+**Partner**:
+The second Fencer in a two-headset session: a fixed person in another room (or the PC Editor standing in for them), joined over the internet. In the app, also the side that joins the Host's session.
+_Avoid_: Player 2, guest, friend
+
+**Host**:
+The Fencer whose app creates the session (Nikita's headset): it shows the Join Code, picks the mode, and runs the session for both. The Host leaving ends it for both.
+_Avoid_: Server, owner, room creator
+
+**Join Code**:
+The 6-character code (from 20 letters and digits that cannot be confused, such as FGR78N) the Host's Partner page shows; the Partner types it on a large keypad to join. Read out over voice.
+_Avoid_: Room code, invite, password
+
+**Partner page**:
+The menu page next to Drills that connects two Fencers: Host, Join (the keypad), the Bout / Paired Practice switch (Host only) and Leave. While connected, solo Drills are off and the Dummy is hidden.
+_Avoid_: Lobby, multiplayer menu
+
+**Bout**:
+Two Fencers fencing each other freely on a shared Strip, with a virtual judge lighting Touches and doubles (no score or timer in v1).
+_Avoid_: Match, game
+
+**Paired Practice**:
+Two connected Fencers practicing actions together with Touch detection, lights and haptics, but no roles, lock-out or competition; each has a resettable tally.
+_Avoid_: Free play, training mode

@@ -15,6 +15,8 @@
         "VrFencing.Settings.Unity",
         "VrFencing.Strip.Core",
         "VrFencing.Strip.Unity",
+        "VrFencing.Partner.Core",
+        "VrFencing.Partner.Unity",
         "Oculus.VR",
         "Unity.TextMeshPro"
     ],

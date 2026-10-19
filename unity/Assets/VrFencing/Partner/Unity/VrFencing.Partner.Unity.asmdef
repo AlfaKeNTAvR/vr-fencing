@@ -1,0 +1,20 @@
+{
+    "name": "VrFencing.Partner.Unity",
+    "rootNamespace": "VrFencing.Partner",
+    "references": [
+        "VrFencing.Partner.Core",
+        "Unity.Netcode.Runtime",
+        "Unity.Services.Core",
+        "Unity.Services.Authentication",
+        "Unity.Services.Multiplayer"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

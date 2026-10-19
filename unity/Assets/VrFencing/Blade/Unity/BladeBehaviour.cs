@@ -135,15 +135,21 @@ namespace VrFencing.Blade
             var droop = BladeDroop.Create(forteInStrip.Direction, gripUp, down, _settings.Blade);
             var bladeInStrip = droop.GetChord(forteInStrip);
 
+            // The Dummy is hidden while in a Partner session (PER-80): nothing to touch or bend on then.
+            var isDummyShown = hasDummy && _dummy.gameObject.activeInHierarchy;
             if (hasDummy)
             {
                 RestartOnJump(stripInRoom);
+            }
+
+            if (isDummyShown)
+            {
                 DetectContacts(now, bladeInStrip);
             }
 
             var wasDecoupled = _drawnBlade.IsDecoupled;
             var wasOnSide = _drawnBlade.IsOnSide;
-            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime, droop);
+            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(isDummyShown), gripUp, Time.deltaTime, droop);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");

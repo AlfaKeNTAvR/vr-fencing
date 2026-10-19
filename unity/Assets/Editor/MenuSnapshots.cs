@@ -10,6 +10,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Partner;
 using VrFencing.Session;
 using VrFencing.Settings;
 using VrFencing.Strip;
@@ -39,8 +40,17 @@ namespace VrFencing.EditorTools
             var settings = new TrainerSettings();
             var drills = DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(settings).Concat(SampleDrills()).ToArray();
 
-            var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { });
-            home.Refresh(DrillPicker.BuildEntries(drills, 3.4f, settings.ShrinkDrillsToFit), "Strip: 3.4 m", 0.2f, "Drill cancelled before any Rep was judged");
+            var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+            home.Refresh(DrillPicker.BuildEntries(drills, 3.4f, settings.ShrinkDrillsToFit), "Strip: 3.4 m", 0.2f, "Drill cancelled before any Rep was judged",
+                "Partner", areSoloDrillsAllowed: true);
+
+            // The Partner page (PER-80): the waiting Host's code, then the Partner's keypad.
+            var partner = new PartnerScreen(mainPanel, () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { });
+            var hosting = new PartnerSession();
+            hosting.BeginHost();
+            hosting.OnHostReady("FGR78N");
+            var typing = new PartnerSession();
+            typing.BeginEnteringCode();
 
             var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, _ => { }, () => { }, () => { });
 
@@ -63,7 +73,7 @@ namespace VrFencing.EditorTools
             var screens = new (string Name, Action<bool> SetVisible)[]
             {
                 ("home", home.SetVisible), ("settings", settingsScreen.SetVisible), ("results", results.SetVisible), ("history", historyScreen.SetVisible),
-                ("grip", grip.SetVisible),
+                ("grip", grip.SetVisible), ("partner", partner.SetVisible),
             };
             foreach (var screen in screens)
             {
@@ -83,6 +93,15 @@ namespace VrFencing.EditorTools
                         Render(camera, "settings-" + SettingGroups.GetLabel(group).ToLowerInvariant());
                     }
 
+                    continue;
+                }
+
+                if (screen.Name == "partner")
+                {
+                    partner.Refresh(hosting, "1.0");
+                    Render(camera, "partner-host");
+                    partner.Refresh(typing, "1.0");
+                    Render(camera, "partner-keypad");
                     continue;
                 }
 

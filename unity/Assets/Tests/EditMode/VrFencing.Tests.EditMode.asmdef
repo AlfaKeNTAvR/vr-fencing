@@ -21,7 +21,10 @@
         "VrFencing.Tracking.Core",
         "VrFencing.Tracking.Unity",
         "VrFencing.Settings.Core",
-        "VrFencing.Settings.Unity"
+        "VrFencing.Settings.Unity",
+        "VrFencing.Partner.Core",
+        "VrFencing.Partner.Unity",
+        "Unity.Netcode.Runtime"
     ],
     "includePlatforms": [
         "Editor"
