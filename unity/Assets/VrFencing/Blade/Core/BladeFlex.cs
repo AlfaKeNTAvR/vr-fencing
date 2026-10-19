@@ -28,6 +28,12 @@ namespace VrFencing.Blade
         private const float NaturalFrequencyHertz = 7.0f;
         private const float DampingRatio = 0.6f;
 
+        // Let go of a held bend (the point slid off or came out of a body, the drawn blade caught up with the hand), a
+        // real épée rings: a few quick decaying cycles. So the spring rings lightly damped until it is nearly still,
+        // then is well damped again (motion alone never rings it, so a held blade stays calm).
+        private const float RingingDampingRatio = 0.12f;
+        private const float RingingEndsMeters = 0.002f;
+
         // The point's position is low-passed with this time constant before its speed is taken: frame-to-frame
         // tracking noise differentiated twice is far larger than any real acceleration.
         private const float SmoothingSeconds = 0.03f;
@@ -40,9 +46,13 @@ namespace VrFencing.Blade
         private Vector3 _bendVelocity;
         private Vector3? _smoothedTip;
         private Vector3? _previousDrivingVelocity;
+        private bool _isRinging;
 
         /// <summary>The drawn point minus the straight point.</summary>
         public Vector3 Bend => _bend;
+
+        /// <summary>True while a let-go bend rings out (lightly damped), after <see cref="SpringBackFrom"/>.</summary>
+        public bool IsRinging => _isRinging;
 
         /// <summary>Straightens the blade at once, e.g. after the blade jumped.</summary>
         public void Reset()
@@ -51,17 +61,19 @@ namespace VrFencing.Blade
             _bendVelocity = Vector3.Zero;
             _smoothedTip = null;
             _previousDrivingVelocity = null;
+            _isRinging = false;
         }
 
         /// <summary>
         /// Starts the spring from <paramref name="bend"/> at rest (made perpendicular to the blade and limited), with the
         /// blade's motion history restarted at <paramref name="straightBlade"/>: the point was held elsewhere (pinned on
-        /// a body) and now springs back.
+        /// a body, or held off the hand) and now springs back, ringing a few decaying cycles.
         /// </summary>
         public void SpringBackFrom(BladeSegment straightBlade, Vector3 bend)
         {
             Reset();
             _bend = bend;
+            _isRinging = true;
             KeepPerpendicularAndLimited(straightBlade.Direction);
         }
 
@@ -77,37 +89,41 @@ namespace VrFencing.Blade
             }
 
             var frameSeconds = Math.Min(deltaSeconds, MaxFrameSeconds);
-            var tip = straightBlade.TipPosition;
+            var tipAcceleration = FindDrivingAcceleration(straightBlade.TipPosition, frameSeconds);
+            var angularFrequency = 2.0f * (float)Math.PI * NaturalFrequencyHertz;
+            var dampingRatio = _isRinging ? RingingDampingRatio : DampingRatio;
+            var substeps = (int)Math.Ceiling(frameSeconds / MaxSubstepSeconds);
+            var substepSeconds = frameSeconds / substeps;
+            for (var step = 0; step < substeps; step++)
+            {
+                var springAcceleration = (-angularFrequency * angularFrequency * _bend) - (2.0f * dampingRatio * angularFrequency * _bendVelocity);
+                _bendVelocity += (springAcceleration - tipAcceleration) * substepSeconds;
+                _bend += _bendVelocity * substepSeconds;
+            }
+
+            KeepPerpendicularAndLimited(straightBlade.Direction);
+            if (_isRinging && _bend.Length() + (_bendVelocity.Length() / angularFrequency) < RingingEndsMeters)
+            {
+                _isRinging = false;
+            }
+        }
+
+        /// <summary>The smoothed, deadbanded acceleration of the point; zero until there are two frames of motion.</summary>
+        private Vector3 FindDrivingAcceleration(Vector3 tip, float frameSeconds)
+        {
             if (!_smoothedTip.HasValue)
             {
                 _smoothedTip = tip;
-                return;
+                return Vector3.Zero;
             }
 
             var previousSmoothedTip = _smoothedTip.Value;
             var smoothedTip = Vector3.Lerp(previousSmoothedTip, tip, frameSeconds / (SmoothingSeconds + frameSeconds));
             _smoothedTip = smoothedTip;
             var drivingVelocity = ApplyDeadband((smoothedTip - previousSmoothedTip) / frameSeconds);
-            if (!_previousDrivingVelocity.HasValue)
-            {
-                _previousDrivingVelocity = drivingVelocity;
-                return;
-            }
-
-            var tipAcceleration = (drivingVelocity - _previousDrivingVelocity.Value) / frameSeconds;
+            var previousDrivingVelocity = _previousDrivingVelocity;
             _previousDrivingVelocity = drivingVelocity;
-
-            var angularFrequency = 2.0f * (float)Math.PI * NaturalFrequencyHertz;
-            var substeps = (int)Math.Ceiling(frameSeconds / MaxSubstepSeconds);
-            var substepSeconds = frameSeconds / substeps;
-            for (var step = 0; step < substeps; step++)
-            {
-                var springAcceleration = (-angularFrequency * angularFrequency * _bend) - (2.0f * DampingRatio * angularFrequency * _bendVelocity);
-                _bendVelocity += (springAcceleration - tipAcceleration) * substepSeconds;
-                _bend += _bendVelocity * substepSeconds;
-            }
-
-            KeepPerpendicularAndLimited(straightBlade.Direction);
+            return previousDrivingVelocity.HasValue ? (drivingVelocity - previousDrivingVelocity.Value) / frameSeconds : Vector3.Zero;
         }
 
         /// <summary>

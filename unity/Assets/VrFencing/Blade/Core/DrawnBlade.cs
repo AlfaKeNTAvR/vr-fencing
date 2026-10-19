@@ -1,24 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using VrFencing.Dummy;
 
 namespace VrFencing.Blade
 {
     /// <summary>
     /// The blade as drawn (visual only; Touch detection uses the straight blade), as <see cref="SampleCount"/> + 1
-    /// centerline points from the guard to the point. It never passes through a body (PER-48):
+    /// centerline points from the guard to the point. It is always one smooth shape, and never passes through a body
+    /// (PER-48, PER-49):
     /// <list type="bullet">
-    /// <item>the point pins on the near-side surface it meets and the blade bows as the hand pushes on
-    /// (<see cref="BladeContactBend"/>); past the most bow the drawn blade lags the hand
-    /// (<see cref="IsDecoupled"/>);</item>
-    /// <item>otherwise it flexes on fast moves (<see cref="BladeFlex"/>), and when a pinned point lets go the flex
-    /// starts from the bent pose and the blade springs back;</item>
-    /// <item>every point along the blade is then kept out of every body, pushed back out on the side it was on the
-    /// step before, so the blade's body cannot cut through a thin arm either.</item>
+    /// <item>the point pins on the near-side surface it meets and the blade bends in one smooth curve as the hand pushes
+    /// on (<see cref="BladeContactBend"/>);</item>
+    /// <item>otherwise it flexes on fast moves (<see cref="BladeFlex"/>);</item>
+    /// <item>a shape that would pass into or through a body (the flat swept into the Dummy's arm) is not taken: the drawn
+    /// blade stops at the closest allowed pose on the way back to where it was drawn, or holds there, and lags the hand
+    /// (<see cref="IsDecoupled"/>) until the hand's own pose is reachable again: back, or around;</item>
+    /// <item>when a pinned point lets go, or the drawn blade catches up with the hand, it springs back ringing a few
+    /// decaying cycles, like a real épée.</item>
     /// </list>
-    /// The bodies are plain capsules, so another blade's capsule can join them later (the Armed Dummy, PER-40).
-    /// Positions in any one frame (the Strip frame in the app), meters, time in seconds.
+    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules and the floor, and another blade's capsule can
+    /// join them later (the Armed Dummy, PER-40). Positions in any one frame (the Strip frame in the app), meters, time
+    /// in seconds.
     /// </summary>
     public sealed class DrawnBlade
     {
@@ -28,33 +30,46 @@ namespace VrFencing.Blade
         /// <summary>The drawn blade's points keep this far out of a body's surface: about the blade's half-width.</summary>
         public const float BladeRadiusMeters = 0.004f;
 
-        // Overlapping bodies (hand and wrist) can push a point from one into the other; a second pass settles it.
-        private const int ConstraintPasses = 2;
-
         private readonly BladeFlex _flex = new BladeFlex();
         private readonly BladeContactBend _contact = new BladeContactBend();
         private readonly Vector3[] _samples = new Vector3[SampleCount + 1];
-        private readonly Vector3[] _previousSamples = new Vector3[SampleCount + 1];
-        private bool _hasPreviousSamples;
+        private readonly Vector3[] _candidate = new Vector3[SampleCount + 1];
+        private readonly DrawnShape.PoseTest _tryFreeShape;
+        private bool _hasSamples;
+        private bool _isFreeOffHand;
+        private BladeSegment _drawnPose = new BladeSegment(Vector3.Zero, Vector3.UnitZ * BladePose.BladeLengthMeters);
+        private IReadOnlyList<BladeObstacle> _bodies;
+
+        public DrawnBlade()
+        {
+            _tryFreeShape = TryFreeShape;
+        }
 
         /// <summary>The fast-move flex; its bend is zero while the point is pinned.</summary>
         public BladeFlex Flex => _flex;
 
-        /// <summary>The pin against a body and the bow.</summary>
+        /// <summary>The pin against a body and the bend.</summary>
         public BladeContactBend Contact => _contact;
 
         /// <summary>Where the drawn guard is: the hand's guard, unless <see cref="IsDecoupled"/>.</summary>
         public Vector3 GuardPosition => _samples[0];
 
-        /// <summary>The hand pushed further than the blade can bow: the drawn blade stays put and lags the hand.</summary>
-        public bool IsDecoupled => _contact.IsDecoupled;
+        /// <summary>Which way the drawn blade leaves the drawn guard: the hand's blade, unless <see cref="IsDecoupled"/>.</summary>
+        public Vector3 GuardDirection => _drawnPose.Direction;
+
+        /// <summary>
+        /// The drawn hilt lags the hand: pushed or turned further than the blade can bend, or the blade held off a body
+        /// the hand went through. A ghost hilt shows the hand.
+        /// </summary>
+        public bool IsDecoupled => _contact.IsPinned ? _contact.IsDecoupled : _isFreeOffHand;
 
         /// <summary>Straight again at once, nothing pinned, e.g. after the blade or the Strip jumped.</summary>
         public void Reset()
         {
             _flex.Reset();
             _contact.Reset();
-            _hasPreviousSamples = false;
+            _hasSamples = false;
+            _isFreeOffHand = false;
         }
 
         /// <summary>The drawn centerline point <paramref name="index"/>, 0 at the guard to <see cref="SampleCount"/> at the point.</summary>
@@ -64,10 +79,10 @@ namespace VrFencing.Blade
         }
 
         /// <summary>Moves to the blade's new straight pose.</summary>
-        /// <param name="bodies">Every capsule the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
-        /// <param name="bowDirection">Which way the blade bows when pushed straight in (the grip's up).</param>
+        /// <param name="bodies">Every obstacle the drawn blade cannot pass, in the blade's frame, in the same order every step.</param>
+        /// <param name="bowDirection">Which way the blade bows when first pushed straight in (the grip's up).</param>
         /// <returns>Why a pinned point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<Capsule> bodies, Vector3 bowDirection, float deltaSeconds)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection, float deltaSeconds)
         {
             if (bodies == null)
             {
@@ -76,34 +91,35 @@ namespace VrFencing.Blade
 
             var wasPinned = _contact.IsPinned;
             var bowBefore = _contact.BowMeters;
-            var release = _contact.Step(straightBlade, bodies, bowDirection);
+            var bowDirectionBefore = _contact.BowDirection;
+            var release = _contact.Step(straightBlade, bodies, bowDirection, _hasSamples ? _samples : null);
             if (_contact.IsPinned)
             {
                 // The pin holds the point; restart the flex so it does not carry stale motion into the release.
                 _flex.Reset();
+                for (var index = 0; index <= SampleCount; index++)
+                {
+                    _samples[index] = _contact.GetSample(index);
+                }
+
+                _drawnPose = new BladeSegment(_contact.GuardPosition, _contact.GuardPosition + (_contact.GuardDirection * BladePose.BladeLengthMeters));
+                _hasSamples = true;
+                _isFreeOffHand = false;
+                return release;
             }
-            else if (wasPinned)
+
+            if (wasPinned)
             {
                 // Spring back from where the point was drawn, plus the bow, both limited by the flex.
                 var heldOffset = _samples[SampleCount] - straightBlade.TipPosition;
-                _flex.SpringBackFrom(straightBlade, heldOffset + (bowDirection * Math.Min(bowBefore, BladeFlex.MaxBendMeters)));
+                _flex.SpringBackFrom(straightBlade, heldOffset + (bowDirectionBefore * Math.Min(bowBefore, BladeFlex.MaxBendMeters)));
             }
             else
             {
                 _flex.Step(straightBlade, deltaSeconds);
             }
 
-            for (var index = 0; index <= SampleCount; index++)
-            {
-                var fraction = (float)index / SampleCount;
-                _samples[index] = _contact.IsPinned
-                    ? _contact.GetCenterlinePoint(straightBlade, fraction)
-                    : _flex.GetCenterlinePoint(straightBlade, fraction);
-            }
-
-            KeepOutOfBodies(bodies);
-            Array.Copy(_samples, _previousSamples, _samples.Length);
-            _hasPreviousSamples = true;
+            DrawFree(straightBlade, bodies);
             return release;
         }
 
@@ -116,63 +132,55 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// Keeps every drawn point but the guard (the hand) out of every body. A point whose path from its last drawn
-        /// position runs into a body is held where it met the surface, even if the hand has carried it right across
-        /// in one step; it follows again once that path is clear (the hand came back or went around). A point found
-        /// inside is pushed out on the side it was on the step before.
+        /// The free blade (nothing pinned): the hand's flexed blade if it is clear of every body and got there without
+        /// crossing one; else the allowed pose closest to the hand on the way back to the last drawn pose; else it holds.
         /// </summary>
-        private void KeepOutOfBodies(IReadOnlyList<Capsule> bodies)
+        private void DrawFree(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies)
         {
-            for (var pass = 0; pass < ConstraintPasses; pass++)
+            if (!_hasSamples)
             {
-                for (var index = 1; index <= SampleCount; index++)
+                _drawnPose = straightBlade;
+                FillFlexed(straightBlade, _samples);
+                _hasSamples = true;
+                return;
+            }
+
+            _bodies = bodies;
+            var reached = DrawnShape.FindClosestAllowed(straightBlade, _drawnPose, _tryFreeShape);
+            _bodies = null;
+            if (reached.HasValue)
+            {
+                if (_isFreeOffHand && reached.Value == 0.0f)
                 {
-                    foreach (var body in bodies)
+                    // Caught up with the hand: the blade springs from where it was drawn instead of jumping, if that is clear.
+                    _flex.SpringBackFrom(straightBlade, _samples[SampleCount] - straightBlade.TipPosition);
+                    FillFlexed(straightBlade, _candidate);
+                    if (!DrawnShape.IsClear(_candidate, _samples, bodies, BladeRadiusMeters, 1, sweepsTip: true))
                     {
-                        var previous = _hasPreviousSamples ? _previousSamples[index] : (Vector3?)null;
-                        _samples[index] = previous.HasValue
-                            ? HoldOnNearSide(_samples[index], body, previous.Value)
-                            : _samples[index];
-                        _samples[index] = PushOut(_samples[index], body, previous);
+                        _flex.Reset();
+                        FillFlexed(straightBlade, _candidate);
                     }
                 }
+
+                Array.Copy(_candidate, _samples, _samples.Length);
+                _drawnPose = reached.Value > 0.0f ? DrawnShape.Interpolate(straightBlade, _drawnPose, reached.Value) : straightBlade;
             }
+
+            _isFreeOffHand = DrawnShape.IsOffHand(_drawnPose.GuardPosition, _drawnPose.Direction, straightBlade);
         }
 
-        /// <summary>Where the path from <paramref name="previous"/> meets the body, resting on its surface; the point itself if the path is clear.</summary>
-        private static Vector3 HoldOnNearSide(Vector3 point, Capsule body, Vector3 previous)
+        private bool TryFreeShape(BladeSegment pose)
         {
-            // Held points rest at the full margin, so their next path starts outside this slightly smaller one.
-            if (!SegmentMath.TryFindCapsuleEntry(previous, point, body, BladeRadiusMeters * 0.5f, out var fraction))
-            {
-                return point;
-            }
-
-            var entry = Vector3.Lerp(previous, point, fraction);
-            var onAxis = SegmentMath.FindClosestPointOnSegment(entry, body.Start, body.End);
-            return onAxis + (SegmentMath.FindOutwardNormal(entry, body) * (body.RadiusMeters + BladeRadiusMeters));
+            FillFlexed(pose, _candidate);
+            return DrawnShape.IsClear(_candidate, _samples, _bodies, BladeRadiusMeters, 1, sweepsTip: true);
         }
 
-        private static Vector3 PushOut(Vector3 point, Capsule body, Vector3? previous)
+        private void FillFlexed(BladeSegment pose, Vector3[] samples)
         {
-            var reach = body.RadiusMeters + BladeRadiusMeters;
-            var onAxis = SegmentMath.FindClosestPointOnSegment(point, body.Start, body.End);
-            if (Vector3.Distance(point, onAxis) >= reach - 1e-5f)
+            for (var index = 0; index <= SampleCount; index++)
             {
-                return point;
+                samples[index] = _flex.GetCenterlinePoint(pose, (float)index / SampleCount);
             }
-
-            var outward = SegmentMath.FindOutwardNormal(point, body);
-            if (previous.HasValue)
-            {
-                var fromPrevious = previous.Value - onAxis;
-                if (fromPrevious.LengthSquared() > 1e-10f)
-                {
-                    outward = Vector3.Normalize(fromPrevious);
-                }
-            }
-
-            return onAxis + (outward * reach);
         }
     }
 }

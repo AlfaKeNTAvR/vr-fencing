@@ -122,20 +122,22 @@ The approach is the point's motion over the last 40 ms before it entered (stretc
 
 Haptics play on the sword hand through the Meta Haptics SDK (OVRInput vibration does nothing under OpenXR). Strength rises with tip speed from the "Haptic strength when slow" floor (default 40%) to full at "Full haptic strength at" (default 2.0 m/s), on top of each event's pattern (Off, Tick, Crisp, Heavy, Double tap). The blade drawn bends up to 7 cm on fast moves and springs back; detection always uses the straight blade. A held blade stays still: the flex ignores point speeds under 0.35 m/s (tracking jitter, slow aiming), smooths the point over 30 ms and is damped (7 Hz spring, damping ratio 0.6) (PER-48).
 
-The drawn blade never passes through the Dummy (any capsule, Target Zone or not; `BladeContactBend` and `DrawnBlade` in the Blade Core, generic capsules so a blade can join them later). The hand is not stopped; the drawn blade is:
+The drawn blade never passes through the Dummy or the floor (any capsule, Target Zone or not, and the floor plane; `BladeObstacle`, `BladeContactBend`, `BladeArc`, `DrawnShape` and `DrawnBlade` in the Blade Core, generic obstacles so a blade can join them later). It is always one smooth curve of the blade's full length: it bends in the plane of the push (sideways when the point is off the hand's line, bowing out when pushed straight in), never more sharply than the bow of a 15 cm straight push (about a 14 cm radius), and never folds. The hand is not stopped; the drawn blade is:
 
 | Situation | Drawn blade | Haptic |
 |---|---|---|
 | The point meets a body (found along its whole path since the last frame, so a fast thrust cannot tunnel) | The point pins on that near-side surface | The event haptic (Touch, glance) as before |
-| The hand pushes on, up to 15 cm past the surface | The blade keeps its 90 cm length and bows upward from the grip (by more than 10 cm at 15 cm of push); it leaves the guard along the hand | A buzz every 0.06 s, from 25% as the point lands to 100% at 15 cm of push |
-| The hand pushes past 15 cm, even through the body | The drawn blade holds at the most bow and lags the hand; a faint ghost hilt shows where the hand is | Full-strength buzz |
+| The hand pushes on, up to 15 cm past the surface straight in (somewhat more when turned) | The blade bends in one smooth curve and leaves the guard along the hand (by more than 10 cm of bow at 15 cm of straight push) | A buzz every 0.06 s, from 25% as the point lands to 100% at 15 cm of push |
+| The hand asks for more bend than the blade has (pushed further, front or side, or turned more than 40 degrees off the line to the point) | The drawn hilt stops following: it takes the reachable pose closest to the hand on the way to the blade lined up on the point at 15 cm of push, or holds; a faint ghost hilt shows where the hand is. It follows again once the hand is back within reach | Full-strength buzz |
 | The hand turns the blade more than 20 degrees off the line to the point (about 30 cm sideways) | The point slides over the surface, never through it | Buzz continues |
-| The hand comes back out or goes around (the straight point is outside every body with a clear path to the pin) | The point lets go and the blade springs back | Stops |
-| The blade body is pushed or swept into a body | Each drawn point is held on the side it came from until the hand goes back or around | Flat-contact haptic as before |
+| The hand comes back out or goes around (the straight point is outside every body with a clear path to the pin) | The point lets go and the blade springs back ringing a few decaying cycles (7 Hz, damping 0.12 until nearly still) | Stops |
+| The blade body is pushed or swept into a body | The whole drawn blade stops at the body's near side and lags the hand (ghost hilt), until the hand goes back or around; catching up, it rings out the same way | Flat-contact haptic as before, full buzz while it lags |
 
-Each release logs `[Blade] Point released: CameOut` (or `BodyMoved` when the Dummy changes distance), and crossing the 15 cm limit logs a line both ways.
+Each release logs `[Blade] Point released: CameOut` (or `BodyMoved` when the Dummy changes distance), and the drawn blade starting or stopping to lag the hand logs a line both ways.
 
-Every event prints a `[Blade]` line to `adb logcat -s Unity`: event, zone, tip speed, approach and blade angles, distance from the zone center, and the rule.
+The floor (Strip frame y = 0, the tracking floor; the room's y = 0 before a Strip is placed) is an obstacle under the same rule (PER-49): the point pins on it, the blade bends, lags past the most bend and slides along it, and the whole drawn blade stays above it. Floor contacts are not Touches, never reach the Drill runner and play only the press buzz.
+
+Every event prints a `[Blade]` line to `adb logcat -s Unity`: event, zone, tip speed, approach and blade angles, distance from the zone center, and the rule. For a flat contact the approach is the motion of the blade point nearest the contact and the blade angle is against the surface normal (about 90 degrees for a true flat); no angle is ever NaN.
 
 ## The menus on the headset
 
@@ -148,6 +150,8 @@ World-space panels float about 1.1 m in front of the Fencer, a little below eye 
 | Results (after each Drill) | Success %, average reaction time and tip speed, the hit map per Target Zone, the last-10-sessions trend; Run again, History, Done |
 | History | Every Drill with saved runs (shortened runs listed apart), its newest run and its trend |
 | Settings | Every Setting with - and +, saved at once; height and hand rebuild the Dummy and the Strip |
+
+A small burger button (three bars) sits low on the off-hand side, just past the Running panel's spot, whenever the Strip is not being placed: point and pull the trigger to fold every panel away (Home, Settings, Results, History and the Running panel, which otherwise sits in view during a Drill) and again to open them. The laser keeps working on it while the panels are folded; the button is lit while they are open. The folded state is remembered between sessions (Unity PlayerPrefs, key `VrFencing.MenuCollapsed`).
 
 Pause from the menu holds the Drill until Resume, even back on the Strip; leaving the Strip pauses it as before. Development builds also list a test Drill after the real ones, "Test: needs a full piste", always greyed out, to see a greyed-out row.
 

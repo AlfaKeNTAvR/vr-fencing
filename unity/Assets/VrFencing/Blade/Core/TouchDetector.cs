@@ -102,19 +102,36 @@ namespace VrFencing.Blade
 
                 if (TryFindBodyContact(zone.Shape, previous.Blade, current.Blade, rules, out var contactPoint))
                 {
-                    (events ??= new List<BladeEvent>()).Add(new BladeEvent(
-                        BladeEventType.FlatContact,
-                        zone.Zone,
-                        contactPoint,
-                        FindStepSpeed(previous, current),
-                        float.NaN,
-                        float.NaN,
-                        Vector3.Distance(contactPoint, zone.Shape.Center)));
+                    (events ??= new List<BladeEvent>()).Add(ClassifyFlatContact(zone, contactPoint, previous, current));
                 }
             }
 
             Record(current, zones, rules);
             return events ?? (IReadOnlyList<BladeEvent>)NoEvents;
+        }
+
+        /// <summary>
+        /// A flat contact's angles, so they read like a point entry's: the approach is the motion of the blade point
+        /// nearest the contact over this step, the blade axis the blade's direction, both against the inward normal
+        /// (a true flat is near 90 degrees on the blade axis).
+        /// </summary>
+        private static BladeEvent ClassifyFlatContact(ZoneCapsule zone, Vector3 contactPoint, BladeSample previous, BladeSample current)
+        {
+            var inwardNormal = -SegmentMath.FindOutwardNormal(contactPoint, zone.Shape);
+            var blade = current.Blade.TipPosition - current.Blade.GuardPosition;
+            var fraction = blade.LengthSquared() > MinChordLengthSquared
+                ? Math.Max(0.0f, Math.Min(1.0f, Vector3.Dot(contactPoint - current.Blade.GuardPosition, blade) / blade.LengthSquared()))
+                : 0.0f;
+            var motion = Vector3.Lerp(current.Blade.GuardPosition, current.Blade.TipPosition, fraction)
+                - Vector3.Lerp(previous.Blade.GuardPosition, previous.Blade.TipPosition, fraction);
+            return new BladeEvent(
+                BladeEventType.FlatContact,
+                zone.Zone,
+                contactPoint,
+                FindStepSpeed(previous, current),
+                SegmentMath.FindAngleDegrees(motion, inwardNormal),
+                SegmentMath.FindAngleDegrees(current.Blade.Direction, inwardNormal),
+                Vector3.Distance(contactPoint, zone.Shape.Center));
         }
 
         private BladeEvent? FindTipEntry(BladeSample previous, BladeSample current, IReadOnlyList<ZoneCapsule> zones, TouchRules rules)

@@ -17,11 +17,29 @@ namespace VrFencing.UI
     /// Which screen the menu shows. The Fencer moves between Home, Settings, Results and History; a running Drill
     /// always shows the Running panel, and placing the Strip hides the menu so the off-hand trigger is free for it.
     /// A finished Drill opens its results, unless no Rep was judged.
+    ///
+    /// The burger button folds the panels away (<see cref="IsCollapsed"/>) so they do not block the view of the Dummy:
+    /// the burger itself stays, and the pointer with it, everywhere but during Strip placement.
     /// </summary>
     public sealed class MenuNavigator
     {
         /// <summary>The page chosen while no Drill runs.</summary>
         public MenuScreen Page { get; private set; } = MenuScreen.Home;
+
+        /// <summary>The panels are folded away behind the burger button; the chosen page is kept for when they open.</summary>
+        public bool IsCollapsed { get; private set; }
+
+        /// <summary>Folds the panels away, or opens them again.</summary>
+        public void ToggleCollapsed()
+        {
+            IsCollapsed = !IsCollapsed;
+        }
+
+        /// <summary>Sets the folded state, e.g. as remembered from the last session.</summary>
+        public void SetCollapsed(bool isCollapsed)
+        {
+            IsCollapsed = isCollapsed;
+        }
 
         /// <summary>Opens a page. Running and Hidden follow the Drill and the Strip, so they cannot be opened.</summary>
         public void Open(MenuScreen page)
@@ -48,6 +66,18 @@ namespace VrFencing.UI
             }
 
             return isDrillRunning ? MenuScreen.Running : Page;
+        }
+
+        /// <summary>The screen whose panel is on view: <see cref="GetVisibleScreen"/>, or Hidden while collapsed.</summary>
+        public MenuScreen GetShownPanel(bool isPlacingStrip, bool isDrillRunning)
+        {
+            return IsCollapsed ? MenuScreen.Hidden : GetVisibleScreen(isPlacingStrip, isDrillRunning);
+        }
+
+        /// <summary>The burger button (and the pointer to press it) is out whenever the Strip is not being placed.</summary>
+        public bool IsBurgerShown(bool isPlacingStrip)
+        {
+            return !isPlacingStrip;
         }
     }
 

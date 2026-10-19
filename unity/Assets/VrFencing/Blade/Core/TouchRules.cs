@@ -108,10 +108,10 @@ namespace VrFencing.Blade
         /// <summary>The tip's speed over the approach window before the contact.</summary>
         public float TipSpeedMetersPerSecond { get; }
 
-        /// <summary>Angle between the tip's approach and the inward surface normal; NaN for flat contact.</summary>
+        /// <summary>Angle between the tip's approach and the inward surface normal; for a flat contact, the motion of the blade point nearest the contact. 180 with no motion, never NaN.</summary>
         public float ApproachAngleDegrees { get; }
 
-        /// <summary>Angle between the blade (guard to point) and the inward surface normal; NaN for flat contact.</summary>
+        /// <summary>Angle between the blade (guard to point) and the inward surface normal, 0 to 180 (about 90 for a flat contact).</summary>
         public float BladeAxisAngleDegrees { get; }
 
         /// <summary>From the contact point to the middle of the zone's capsule axis.</summary>

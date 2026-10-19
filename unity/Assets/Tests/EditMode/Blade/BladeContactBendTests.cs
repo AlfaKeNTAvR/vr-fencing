@@ -18,7 +18,8 @@ namespace VrFencing.Tests.Blade
         // A wide body whose front surface is the plane z = 1 near x = 0: the axis runs along x at z = 1.2.
         private const float WallAxisZ = 1.2f;
         private const float WallRadius = 0.2f;
-        private static readonly IReadOnlyList<Capsule> Wall = new[] { new Capsule(new Vector3(-2.0f, 1.0f, WallAxisZ), new Vector3(2.0f, 1.0f, WallAxisZ), WallRadius) };
+        private static readonly Capsule WallCapsule = new Capsule(new Vector3(-2.0f, 1.0f, WallAxisZ), new Vector3(2.0f, 1.0f, WallAxisZ), WallRadius);
+        private static readonly IReadOnlyList<BladeObstacle> Wall = new BladeObstacle[] { WallCapsule };
 
         // The point rests on the surface: the surface minus the drawn point's radius.
         private const float PinnedZ = 1.0f - BladeContactBend.PointRadiusMeters;
@@ -122,7 +123,7 @@ namespace VrFencing.Tests.Blade
         {
             // A ball: moving the hand sideways, the point slides around its near side and comes off beside it.
             var center = new Vector3(0.0f, 1.0f, 1.2f);
-            var ball = new[] { new Capsule(center, center, 0.2f) };
+            var ball = new BladeObstacle[] { new Capsule(center, center, 0.2f) };
             var drawn = new DrawnBlade();
             drawn.Step(BladeAt(0.0f, 0.0f), ball, Vector3.UnitY, FrameSeconds);
             drawn.Step(BladeAt(0.0f, 0.2f), ball, Vector3.UnitY, FrameSeconds);
@@ -165,7 +166,8 @@ namespace VrFencing.Tests.Blade
         public void TheFlatSweptAcrossAThinArmInOneFrameStaysOnTheNearSide()
         {
             // A forearm-thin upright capsule halfway along the blade; the blade sweeps 40 cm sideways across it in one frame.
-            var arm = new[] { new Capsule(new Vector3(0.0f, 0.5f, 0.45f), new Vector3(0.0f, 1.5f, 0.45f), 0.03f) };
+            var armCapsule = new Capsule(new Vector3(0.0f, 0.5f, 0.45f), new Vector3(0.0f, 1.5f, 0.45f), 0.03f);
+            var arm = new BladeObstacle[] { armCapsule };
             var drawn = new DrawnBlade();
             drawn.Step(BladeAt(-0.2f, 0.0f), arm, Vector3.UnitY, FrameSeconds);
 
@@ -175,7 +177,7 @@ namespace VrFencing.Tests.Blade
             Assert.That(middle.X, Is.LessThan(-0.03f), "The middle of the blade is held on the side it came from.");
             for (var index = 1; index <= DrawnBlade.SampleCount; index++)
             {
-                Assert.That(SegmentMath.FindDistanceToCapsule(drawn.GetSample(index), arm[0]), Is.GreaterThanOrEqualTo(DrawnBlade.BladeRadiusMeters - 1e-4f));
+                Assert.That(SegmentMath.FindDistanceToCapsule(drawn.GetSample(index), armCapsule), Is.GreaterThanOrEqualTo(DrawnBlade.BladeRadiusMeters - 1e-4f));
             }
         }
 
@@ -183,7 +185,7 @@ namespace VrFencing.Tests.Blade
         public void ThePointLetsGoWhenTheBodyMovesAway()
         {
             var bend = PinAt(0.12f);
-            var movedWall = new[] { new Capsule(new Vector3(-2.0f, 1.0f, 1.5f), new Vector3(2.0f, 1.0f, 1.5f), 0.2f) };
+            var movedWall = new BladeObstacle[] { new Capsule(new Vector3(-2.0f, 1.0f, 1.5f), new Vector3(2.0f, 1.0f, 1.5f), 0.2f) };
 
             Assert.That(bend.Step(BladeAt(0.0f, 0.12f), movedWall, Vector3.UnitY), Is.EqualTo(PinRelease.BodyMoved));
         }
@@ -193,7 +195,7 @@ namespace VrFencing.Tests.Blade
         {
             // The head is not a Target Zone, but the point cannot pass it either.
             var layout = DummyLayout.Create(1.65f, Hand.Right);
-            var body = layout.GetBodyOnStrip(2.0f);
+            var body = layout.GetBodyOnStrip(2.0f).Select(part => (BladeObstacle)part).ToList();
             var head = DummyLayout.DummyToStrip(layout.SilhouetteParts[0].Start, 2.0f);
             var bend = new BladeContactBend();
             var approach = new Vector3(0.0f, 0.0f, 1.2f);
@@ -244,7 +246,7 @@ namespace VrFencing.Tests.Blade
             for (var index = 1; index <= DrawnBlade.SampleCount; index++)
             {
                 var sample = drawn.GetSample(index);
-                Assert.That(SegmentMath.FindDistanceToCapsule(sample, Wall[0]), Is.GreaterThanOrEqualTo(DrawnBlade.BladeRadiusMeters - 1e-4f), $"{when}: point {index} is in the body");
+                Assert.That(SegmentMath.FindDistanceToCapsule(sample, WallCapsule), Is.GreaterThanOrEqualTo(DrawnBlade.BladeRadiusMeters - 1e-4f), $"{when}: point {index} is in the body");
                 Assert.That(sample.Z, Is.LessThan(WallAxisZ), $"{when}: point {index} is on the far side");
             }
         }

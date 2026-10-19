@@ -13,8 +13,9 @@ namespace VrFencing.Blade
     /// Zones. Touches and flat contacts go to the Drill runner (<see cref="DrillRunner.ReportContact"/>); glances are
     /// felt and seen but never reported, since only the point scores. Every event plays its haptic pattern, Touches
     /// flash the Dummy's zone. The drawn point stops against any part of the Dummy and the drawn blade bows as the hand
-    /// pushes on (<see cref="DrawnBlade"/>, PER-48). All rules and math are in the Blade Core; this only reads the
-    /// controller, draws and forwards.
+    /// pushes on (<see cref="DrawnBlade"/>, PER-48); the floor stops it the same way (PER-49), but floor contacts are
+    /// never Touches and never reach the Drill runner, only the press buzz. All rules and math are in the Blade Core;
+    /// this only reads the controller, draws and forwards.
     ///
     /// The blade uses no buttons, so it never competes with the off-hand menu laser or the Strip buttons.
     /// </summary>
@@ -41,6 +42,7 @@ namespace VrFencing.Blade
 
         private readonly TouchDetector _detector = new TouchDetector();
         private readonly DrawnBlade _drawnBlade = new DrawnBlade();
+        private readonly List<BladeObstacle> _obstacles = new List<BladeObstacle>();
 
         private TrainerSettings _settings;
         private TouchRules _rules;
@@ -132,9 +134,8 @@ namespace VrFencing.Blade
 
             // A pressed épée bows up from the grip: the drawn blade bows toward the mount's up.
             var bowDirection = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), System.Numerics.Quaternion.Inverse(stripInRoom.Rotation));
-            IReadOnlyList<Capsule> bodies = hasDummy ? _dummy.GetBodyOnStrip() : System.Array.Empty<Capsule>();
             var wasDecoupled = _drawnBlade.IsDecoupled;
-            var release = _drawnBlade.Step(bladeInStrip, bodies, bowDirection, Time.deltaTime);
+            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), bowDirection, Time.deltaTime);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");
@@ -143,18 +144,38 @@ namespace VrFencing.Blade
             if (_drawnBlade.IsDecoupled != wasDecoupled)
             {
                 Debug.Log(_drawnBlade.IsDecoupled
-                    ? $"[Blade] Pushed past {BladeContactBend.MaxPushMeters * 100.0f:0} cm: the drawn blade holds and lags the hand"
-                    : "[Blade] Hand back within the bow: the drawn blade follows it again");
+                    ? $"[Blade] Bent as far as it goes (push {_drawnBlade.Contact.PushMeters * 100.0f:0} cm, pinned {_drawnBlade.Contact.IsPinned}): the drawn blade holds and lags the hand"
+                    : "[Blade] Hand back within reach: the drawn blade follows it again");
             }
 
             PlayPressHaptic((float)now);
             _visual.Draw(_drawnBlade, stripInRoom, (float)now);
         }
 
-        /// <summary>While the point is pinned, a buzz that grows with the push, full once the hand is past the most bow.</summary>
+        /// <summary>
+        /// The Dummy's whole body and the floor, in the Strip frame. Without a Strip the room frame stands in, and its
+        /// y = 0 is the floor too (floor-level tracking).
+        /// </summary>
+        private IReadOnlyList<BladeObstacle> GatherObstacles(bool hasDummy)
+        {
+            _obstacles.Clear();
+            if (hasDummy)
+            {
+                foreach (var capsule in _dummy.GetBodyOnStrip())
+                {
+                    _obstacles.Add(capsule);
+                }
+            }
+
+            _obstacles.Add(BladeObstacle.Floor);
+            return _obstacles;
+        }
+
+        /// <summary>While the point is pinned, a buzz that grows with the push; full while the drawn blade lags the hand.</summary>
         private void PlayPressHaptic(float now)
         {
-            if (!_drawnBlade.Contact.IsPinned || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
+            var isPressing = _drawnBlade.Contact.IsPinned || _drawnBlade.IsDecoupled;
+            if (!isPressing || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
             {
                 return;
             }
