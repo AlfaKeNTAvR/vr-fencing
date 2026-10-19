@@ -67,6 +67,10 @@ namespace VrFencing.EditorTools
             if (manager == null)
                 manager = cameraRig.AddComponent<OVRManager>();
             manager.isInsightPassthroughEnabled = true;
+            // Floor level puts the tracking origin on the real floor, so scene heights are
+            // heights above the floor. The default (eye level) puts it at head height,
+            // which floated the reference cube ~1.2 m above the Fencer's head.
+            manager.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
             EditorUtility.SetDirty(manager);
 
             if (cameraRig.GetComponent<OVRPassthroughLayer>() == null)
