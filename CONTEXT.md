@@ -38,7 +38,15 @@ _Avoid_: Trial, round
 
 **Target**:
 A virtual object the Fencer aims Touches at.
-_Avoid_: Dummy (unless it is body-shaped), goal
+_Avoid_: goal
+
+**Dummy**:
+A static, translucent body silhouette standing at the opponent's en garde line, carrying the Target Zones. It never moves or attacks.
+_Avoid_: Opponent (reserved for a full virtual fencer), mannequin
+
+**Target Zone**:
+A named part of the Dummy that a Drill asks the Fencer to Touch: hand, wrist, forearm, upper arm, thigh, foot or body.
+_Avoid_: Hitbox, area
 
 **Floating Blade**:
 A disembodied virtual opponent blade that makes scripted attacks so the Fencer can practice parries.
