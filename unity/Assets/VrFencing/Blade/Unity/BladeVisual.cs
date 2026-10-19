@@ -103,7 +103,7 @@ namespace VrFencing.Blade
             // bend further or is held off a body).
             _hilt.localPosition = ToMount(stripInRoom, drawnBlade.GuardPosition);
             var hiltDirection = _mount.InverseTransformDirection(
-                System.Numerics.Vector3.Transform(drawnBlade.GuardDirection, stripInRoom.Rotation).ToUnity());
+                System.Numerics.Vector3.Transform(drawnBlade.HiltDirection, stripInRoom.Rotation).ToUnity());
             _hilt.localRotation = hiltDirection.sqrMagnitude > 1e-8f ? Quaternion.FromToRotation(Vector3.forward, hiltDirection) : Quaternion.identity;
             if (_ghost.activeSelf != drawnBlade.IsDecoupled)
             {

@@ -173,6 +173,19 @@ namespace VrFencing.Blade
             return (float)(Math.Acos(cosine) * 180.0 / Math.PI);
         }
 
+        /// <summary>The shortest rotation that turns unit vector <paramref name="from"/> onto unit vector <paramref name="to"/>; none if they are parallel.</summary>
+        public static Quaternion FindRotationBetween(Vector3 from, Vector3 to)
+        {
+            var axis = Vector3.Cross(from, to);
+            var sine = axis.Length();
+            if (sine < 1e-7f)
+            {
+                return Quaternion.Identity;
+            }
+
+            return Quaternion.CreateFromAxisAngle(axis / sine, (float)Math.Atan2(sine, Vector3.Dot(from, to)));
+        }
+
         private static float Clamp01(float value)
         {
             return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);

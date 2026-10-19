@@ -29,6 +29,21 @@ namespace VrFencing.Tests.UI
                 covered.Add(changed[0]);
             }
 
+            // Pitch and yaw save the chosen grip's own angles: the other grips' are reached by choosing that grip first.
+            foreach (var mount in new[] { BladeMount.Pistol, BladeMount.French, BladeMount.FrenchPosted })
+            {
+                var onGrip = defaults.Clone();
+                onGrip.Blade.Mount = mount;
+                var onGripLeaves = SettingsLeaves.Read(onGrip);
+                foreach (var id in new[] { SettingId.BladePitch, SettingId.BladeYaw })
+                {
+                    var after = SettingsLeaves.Read(SettingsPage.Change(onGrip, id, 1));
+                    var changed = onGripLeaves.Keys.Where(path => !Equals(onGripLeaves[path], after[path])).ToArray();
+                    Assert.That(changed, Has.Length.EqualTo(1), $"{id} on {mount} should change exactly one Setting.");
+                    covered.Add(changed[0]);
+                }
+            }
+
             Assert.That(covered, Is.EquivalentTo(before.Keys), "A Setting is missing from the settings screen, or shown twice.");
         }
 
@@ -118,10 +133,49 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingsPage.Change(settings, SettingId.FlatHaptic, 1).Blade.FlatHaptic, Is.EqualTo(HapticPattern.Off));
             Assert.That(SettingsPage.Change(settings, SettingId.TouchHaptic, -1).Blade.TouchHaptic, Is.EqualTo(HapticPattern.Crisp));
             Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeMount), Is.EqualTo("Center"));
-            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladePitch), Is.EqualTo("+10 deg"));
-            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeYaw), Is.EqualTo("-10 deg"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladePitch), Is.EqualTo("-10 deg"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeYaw), Is.EqualTo("0 deg"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeSet), Is.EqualTo("0.7 cm"));
             Assert.That(SettingsPage.FormatValue(settings, SettingId.HapticFloor), Is.EqualTo("40%"));
-            Assert.That(SettingsPage.Change(settings, SettingId.BladePitch, 1).Blade.PitchDegrees, Is.EqualTo(15.0f));
+            Assert.That(SettingsPage.Change(settings, SettingId.BladePitch, 1).Blade.SavedAngles.Center.PitchDegrees, Is.EqualTo(-9.0f));
+            Assert.That(SettingsPage.Change(settings, SettingId.BladeSet, 1).Blade.SetSagittaMeters, Is.EqualTo(0.008f).Within(1e-6f));
+        }
+
+        [Test]
+        public void TheGripCyclesThroughAllFourAndShowsItsComputedAngles()
+        {
+            var settings = new TrainerSettings();
+            var names = new List<string>();
+            var pitches = new List<string>();
+            for (var i = 0; i < 4; i++)
+            {
+                settings = SettingsPage.Change(settings, SettingId.BladeMount, 1);
+                names.Add(SettingsPage.FormatValue(settings, SettingId.BladeMount));
+                pitches.Add(SettingsPage.FormatValue(settings, SettingId.BladePitch) + " / " + SettingsPage.FormatValue(settings, SettingId.BladeYaw));
+            }
+
+            Assert.That(names, Is.EqualTo(new[] { "Pistol", "French", "French posted", "Center" }));
+            Assert.That(pitches, Is.EqualTo(new[] { "-12 deg / -3 deg", "-13 deg / -4 deg", "-13 deg / -4 deg", "-10 deg / 0 deg" }));
+        }
+
+        [Test]
+        public void SavingAndResettingTheGripsAnglesOnlyTouchesTheChosenGrip()
+        {
+            var settings = new TrainerSettings();
+            settings.Blade.Mount = BladeMount.French;
+            settings.Blade.SavedAngles.Pistol.PitchDegrees = 4.0f;
+
+            var calibrated = SettingsPage.SaveGripAngles(settings, new GripAngles(-11.4f, 60.0f));
+
+            Assert.That(calibrated.Blade.SavedAngles.French.PitchDegrees, Is.EqualTo(-11.0f), "Rounded to a degree.");
+            Assert.That(calibrated.Blade.SavedAngles.French.YawDegrees, Is.EqualTo(SettingsPage.MaxAngleDegrees), "Kept in range.");
+            Assert.That(settings.Blade.SavedAngles.French.PitchDegrees, Is.Null, "The settings passed in are untouched.");
+
+            var reset = SettingsPage.ResetGripAngles(calibrated);
+
+            Assert.That(GripGeometry.GetActiveAngles(reset.Blade).PitchDegrees, Is.EqualTo(-13.0f));
+            Assert.That(GripGeometry.GetActiveAngles(reset.Blade).YawDegrees, Is.EqualTo(-4.0f));
+            Assert.That(reset.Blade.SavedAngles.Pistol.PitchDegrees, Is.EqualTo(4.0f), "Another grip keeps its own angles.");
         }
 
         [Test]
@@ -155,6 +209,8 @@ namespace VrFencing.Tests.UI
         {
             Assert.That(SettingsPage.GetImpact(SettingId.TouchHaptic), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.GetImpact(SettingId.BladeYaw), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.BladeSet), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.BladeMount), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.GetImpact(SettingId.Hand) & SettingImpact.Blade, Is.EqualTo(SettingImpact.Blade));
         }
 

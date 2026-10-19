@@ -28,6 +28,7 @@ namespace VrFencing.UI
         BladeMount,
         BladePitch,
         BladeYaw,
+        BladeSet,
         TouchHaptic,
         FlatHaptic,
         GlanceHaptic,
@@ -62,6 +63,9 @@ namespace VrFencing.UI
     /// </summary>
     public static class SettingsPage
     {
+        /// <summary>The blade's pitch and yaw stay within this of the controller's forward axis, either way.</summary>
+        public const float MaxAngleDegrees = 45.0f;
+
         // Ranges: wide enough for any adult Fencer and any Drill pace, narrow enough that every value is valid.
         private static readonly Dictionary<SettingId, NumberSetting> Numbers = new Dictionary<SettingId, NumberSetting>
         {
@@ -83,10 +87,15 @@ namespace VrFencing.UI
                 settings => settings.WarningZone.LengthOnPisteMeters, (settings, value) => settings.WarningZone.LengthOnPisteMeters = value),
             [SettingId.WarningZoneMinimumLength] = new NumberSetting(0.2f, 1.5f, 0.1f, "0.0", "m",
                 settings => settings.WarningZone.MinimumLengthMeters, (settings, value) => settings.WarningZone.MinimumLengthMeters = value),
-            [SettingId.BladePitch] = new NumberSetting(-45.0f, 45.0f, 5.0f, "+0;-0;0", "deg",
-                settings => settings.Blade.PitchDegrees, (settings, value) => settings.Blade.PitchDegrees = value),
-            [SettingId.BladeYaw] = new NumberSetting(-45.0f, 45.0f, 5.0f, "+0;-0;0", "deg",
-                settings => settings.Blade.YawDegrees, (settings, value) => settings.Blade.YawDegrees = value),
+            // Pitch and yaw show the chosen grip's angles in use; a step saves that grip's own angle (PER-52).
+            [SettingId.BladePitch] = new NumberSetting(-MaxAngleDegrees, MaxAngleDegrees, 1.0f, "+0;-0;0", "deg",
+                settings => GripGeometry.GetActiveAngles(settings.Blade).PitchDegrees,
+                (settings, value) => settings.Blade.SavedAngles.For(settings.Blade.Mount).PitchDegrees = value),
+            [SettingId.BladeYaw] = new NumberSetting(-MaxAngleDegrees, MaxAngleDegrees, 1.0f, "+0;-0;0", "deg",
+                settings => GripGeometry.GetActiveAngles(settings.Blade).YawDegrees,
+                (settings, value) => settings.Blade.SavedAngles.For(settings.Blade.Mount).YawDegrees = value),
+            [SettingId.BladeSet] = new NumberSetting(0.0f, 0.01f, 0.001f, "0.0", "cm",
+                settings => settings.Blade.SetSagittaMeters, (settings, value) => settings.Blade.SetSagittaMeters = value, displayScale: 100.0f),
             [SettingId.HapticFloor] = new NumberSetting(0.0f, 1.0f, 0.1f, "0%", string.Empty,
                 settings => settings.Blade.HapticFloor, (settings, value) => settings.Blade.HapticFloor = value),
             [SettingId.HapticFullStrengthSpeed] = new NumberSetting(0.5f, 6.0f, 0.5f, "0.0", "m/s",
@@ -117,9 +126,10 @@ namespace VrFencing.UI
                 case SettingId.TouchRule: return "Touch rule";
                 case SettingId.TouchPressure: return "Touch pressure";
                 case SettingId.BladeFlex: return "Blade flex";
-                case SettingId.BladeMount: return "Blade in the hand";
+                case SettingId.BladeMount: return "Grip";
                 case SettingId.BladePitch: return "Blade pitch (up +)";
                 case SettingId.BladeYaw: return "Blade yaw (right +)";
+                case SettingId.BladeSet: return "Blade set (curve)";
                 case SettingId.TouchHaptic: return "Haptic: Touch";
                 case SettingId.FlatHaptic: return "Haptic: flat contact";
                 case SettingId.GlanceHaptic: return "Haptic: glance";
@@ -156,7 +166,7 @@ namespace VrFencing.UI
                     return FormatHaptic(settings.Blade.GlanceHaptic);
                 default:
                     var number = Numbers[id];
-                    return FormatNumber(number.Get(settings), number.Format, number.Unit);
+                    return FormatNumber(number.Get(settings) * number.DisplayScale, number.Format, number.Unit);
             }
         }
 
@@ -181,6 +191,7 @@ namespace VrFencing.UI
                 case SettingId.BladeMount:
                 case SettingId.BladePitch:
                 case SettingId.BladeYaw:
+                case SettingId.BladeSet:
                 case SettingId.TouchHaptic:
                 case SettingId.FlatHaptic:
                 case SettingId.GlanceHaptic:
@@ -250,6 +261,34 @@ namespace VrFencing.UI
             return changed;
         }
 
+        /// <summary>
+        /// The settings with the chosen grip's own pitch and yaw saved (from the thrust calibration), rounded to a whole
+        /// degree and kept within the pitch and yaw steps' range.
+        /// </summary>
+        public static TrainerSettings SaveGripAngles(TrainerSettings settings, GripAngles angles)
+        {
+            var changed = settings.Clone();
+            var saved = changed.Blade.SavedAngles.For(changed.Blade.Mount);
+            saved.PitchDegrees = ClampAngle(angles.PitchDegrees);
+            saved.YawDegrees = ClampAngle(angles.YawDegrees);
+            return changed;
+        }
+
+        /// <summary>The settings with the chosen grip back on its computed angles (its saved ones cleared).</summary>
+        public static TrainerSettings ResetGripAngles(TrainerSettings settings)
+        {
+            var changed = settings.Clone();
+            var saved = changed.Blade.SavedAngles.For(changed.Blade.Mount);
+            saved.PitchDegrees = null;
+            saved.YawDegrees = null;
+            return changed;
+        }
+
+        private static float ClampAngle(float degrees)
+        {
+            return Math.Min(MaxAngleDegrees, Math.Max(-MaxAngleDegrees, (float)Math.Round(degrees)));
+        }
+
         /// <summary>The next (or, stepping down, previous) value of a choice, wrapping around at both ends.</summary>
         private static T Cycle<T>(T current, int direction)
             where T : struct, Enum
@@ -260,14 +299,16 @@ namespace VrFencing.UI
             return values[next];
         }
 
-        private static string FormatMount(BladeMount mount)
+        /// <summary>The grip's name as the settings and calibration screens show it.</summary>
+        public static string FormatMount(BladeMount mount)
         {
             switch (mount)
             {
                 case BladeMount.Center: return "Center";
-                case BladeMount.Pistol: return "Pistol +5 cm";
-                case BladeMount.FrenchPosted: return "French +12 cm";
-                default: throw new ArgumentOutOfRangeException(nameof(mount), mount, "Not a blade mount.");
+                case BladeMount.Pistol: return "Pistol";
+                case BladeMount.French: return "French";
+                case BladeMount.FrenchPosted: return "French posted";
+                default: throw new ArgumentOutOfRangeException(nameof(mount), mount, "Not a grip.");
             }
         }
 
@@ -302,7 +343,10 @@ namespace VrFencing.UI
             private readonly float _step;
             private readonly Action<TrainerSettings, float> _set;
 
-            public NumberSetting(float min, float max, float step, string format, string unit, Func<TrainerSettings, float> get, Action<TrainerSettings, float> set)
+            /// <param name="displayScale">Shown as the value times this, e.g. 100 to show meters in centimeters.</param>
+            public NumberSetting(
+                float min, float max, float step, string format, string unit, Func<TrainerSettings, float> get, Action<TrainerSettings, float> set,
+                float displayScale = 1.0f)
             {
                 _min = min;
                 _max = max;
@@ -311,7 +355,10 @@ namespace VrFencing.UI
                 Unit = unit;
                 Get = get;
                 _set = set;
+                DisplayScale = displayScale;
             }
+
+            public float DisplayScale { get; }
 
             public string Format { get; }
 

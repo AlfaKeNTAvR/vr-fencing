@@ -91,7 +91,7 @@ namespace VrFencing.Tests.UI
         public void SettingsStepButtonsChangeTheirSetting()
         {
             var changes = new List<(SettingId, int)>();
-            var screen = new SettingsScreen(CreatePanel(), (id, direction) => changes.Add((id, direction)), () => { });
+            var screen = new SettingsScreen(CreatePanel(), (id, direction) => changes.Add((id, direction)), () => { }, () => { });
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), string.Empty);
 
             var buttons = _created[0].GetComponentsInChildren<UiButton>();

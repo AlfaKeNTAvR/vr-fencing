@@ -42,8 +42,14 @@ namespace VrFencing.EditorTools
             var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { });
             home.Refresh(DrillPicker.BuildEntries(drills, 3.4f, settings.ShrinkDrillsToFit), "Strip: 3.4 m", 0.2f, "Drill cancelled before any Rep was judged");
 
-            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, () => { });
+            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, () => { }, () => { });
             settingsScreen.Refresh(settings, string.Empty);
+
+            var gripSettings = settings.Clone();
+            gripSettings.Blade.Mount = BladeMount.French;
+            gripSettings = SettingsPage.SaveGripAngles(gripSettings, new GripAngles(-11.0f, -2.0f));
+            var grip = new GripScreen(mainPanel, () => { }, () => { }, () => { });
+            grip.Refresh(gripSettings, GripText.FormatResult(new GripAngles(-11.0f, -2.0f), 3.0f));
 
             var record = SampleRecord("lunge", DateTimeOffset.UtcNow, wasCancelled: true);
             var history = new SessionHistory(Enumerable.Range(0, 12).Select(day => SampleRecord("lunge", DateTimeOffset.UtcNow.AddDays(day - 12), false))
@@ -58,6 +64,7 @@ namespace VrFencing.EditorTools
             var screens = new (string Name, Action<bool> SetVisible)[]
             {
                 ("home", home.SetVisible), ("settings", settingsScreen.SetVisible), ("results", results.SetVisible), ("history", historyScreen.SetVisible),
+                ("grip", grip.SetVisible),
             };
             foreach (var screen in screens)
             {

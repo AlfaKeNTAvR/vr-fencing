@@ -62,20 +62,7 @@ namespace VrFencing.Settings
                     MinimumLengthMeters = WarningZone.MinimumLengthMeters,
                     OffStripToleranceMeters = WarningZone.OffStripToleranceMeters,
                 },
-                Blade = new BladeSettings
-                {
-                    TouchRule = Blade.TouchRule,
-                    TouchPressure = Blade.TouchPressure,
-                    Flex = Blade.Flex,
-                    Mount = Blade.Mount,
-                    PitchDegrees = Blade.PitchDegrees,
-                    YawDegrees = Blade.YawDegrees,
-                    TouchHaptic = Blade.TouchHaptic,
-                    FlatHaptic = Blade.FlatHaptic,
-                    GlanceHaptic = Blade.GlanceHaptic,
-                    HapticFloor = Blade.HapticFloor,
-                    HapticFullStrengthSpeedMetersPerSecond = Blade.HapticFullStrengthSpeedMetersPerSecond,
-                },
+                Blade = Blade.Clone(),
                 LaserTiltDegrees = LaserTiltDegrees,
             };
         }

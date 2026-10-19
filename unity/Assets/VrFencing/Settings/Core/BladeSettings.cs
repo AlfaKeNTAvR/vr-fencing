@@ -39,16 +39,22 @@ namespace VrFencing.Settings
         Soft,
     }
 
-    /// <summary>Where the front of the guard sits along the sword-hand controller's forward axis.</summary>
+    /// <summary>
+    /// The grip the virtual épée has in the hand (PER-51, PER-52). Each sets how far ahead of the controller the front of
+    /// the guard sits on the blade's line, and the computed pitch and yaw (<see cref="GripGeometry"/>).
+    /// </summary>
     public enum BladeMount
     {
-        /// <summary>Guard at the controller's center (the feel-test choice).</summary>
+        /// <summary>Guard at the controller's center, the blade on the forearm line.</summary>
         Center,
 
-        /// <summary>Guard 5 cm ahead, like a pistol grip.</summary>
+        /// <summary>A pistol grip (Visconti, Belgian): guard 5.5 cm ahead, the hand right behind it.</summary>
         Pistol,
 
-        /// <summary>Guard 12 cm ahead, like a French grip held posted.</summary>
+        /// <summary>A French grip held normally: guard 7.5 cm ahead, canted slightly down and inward.</summary>
+        French,
+
+        /// <summary>A French grip held posted (the hand slid back toward the pommel): guard 13 cm ahead.</summary>
         FrenchPosted,
     }
 
@@ -74,9 +80,9 @@ namespace VrFencing.Settings
     }
 
     /// <summary>
-    /// The Blade's Settings. Defaults from the PER-22 feel tests: Center mount, pitch +10 degrees, yaw -10 degrees,
-    /// Touch = Heavy, flat contact = Double tap, glance = Tick, loose Touch rule; PER-50: realistic Touch pressure,
-    /// normal blade flex.
+    /// The Blade's Settings. Defaults from the PER-22 feel tests: Touch = Heavy, flat contact = Double tap, glance = Tick,
+    /// loose Touch rule; PER-50: realistic Touch pressure, normal blade flex; PER-52: Center grip at its computed pitch
+    /// and yaw (nothing saved), a 0.7 cm set.
     /// Angles are for the right hand; the left hand mirrors the yaw.
     /// </summary>
     public sealed class BladeSettings
@@ -87,13 +93,20 @@ namespace VrFencing.Settings
 
         public BladeFlexSoftness Flex { get; set; } = BladeFlexSoftness.Normal;
 
+        /// <summary>The grip: where the guard sits and the computed angles (<see cref="GripGeometry"/>).</summary>
         public BladeMount Mount { get; set; } = BladeMount.Center;
 
-        /// <summary>Tips the blade up (positive) or down from the controller's forward axis.</summary>
-        public float PitchDegrees { get; set; } = 10.0f;
+        /// <summary>
+        /// The Fencer's own pitch and yaw per grip, from the thrust calibration or stepped on the settings screen. An
+        /// angle left unset uses the grip's computed one.
+        /// </summary>
+        public SavedGripAngles SavedAngles { get; set; } = new SavedGripAngles();
 
-        /// <summary>Turns the blade right (positive) or left, for a right-handed Fencer.</summary>
-        public float YawDegrees { get; set; } = -10.0f;
+        /// <summary>
+        /// The blade's set: its deliberate downward curve, as the gap under the blade's middle on a flat surface (FIE
+        /// m.16.2: under 1 cm). It drops the point 4 times this below the forte's line.
+        /// </summary>
+        public float SetSagittaMeters { get; set; } = 0.007f;
 
         public HapticPattern TouchHaptic { get; set; } = HapticPattern.Heavy;
 
@@ -109,5 +122,75 @@ namespace VrFencing.Settings
 
         /// <summary>Tip speed at contact that gives full haptic strength.</summary>
         public float HapticFullStrengthSpeedMetersPerSecond { get; set; } = 2.0f;
+
+        /// <summary>A deep copy.</summary>
+        public BladeSettings Clone()
+        {
+            return new BladeSettings
+            {
+                TouchRule = TouchRule,
+                TouchPressure = TouchPressure,
+                Flex = Flex,
+                Mount = Mount,
+                SavedAngles = SavedAngles.Clone(),
+                SetSagittaMeters = SetSagittaMeters,
+                TouchHaptic = TouchHaptic,
+                FlatHaptic = FlatHaptic,
+                GlanceHaptic = GlanceHaptic,
+                HapticFloor = HapticFloor,
+                HapticFullStrengthSpeedMetersPerSecond = HapticFullStrengthSpeedMetersPerSecond,
+            };
+        }
+    }
+
+    /// <summary>One grip's saved pitch and yaw (right hand, degrees). An angle left null uses the grip's computed one.</summary>
+    public sealed class GripAngleOverride
+    {
+        /// <summary>Tips the blade up (positive) or down from the controller's forward axis.</summary>
+        public float? PitchDegrees { get; set; }
+
+        /// <summary>Turns the blade right (positive) or left, for a right-handed Fencer.</summary>
+        public float? YawDegrees { get; set; }
+
+        public GripAngleOverride Clone()
+        {
+            return new GripAngleOverride { PitchDegrees = PitchDegrees, YawDegrees = YawDegrees };
+        }
+    }
+
+    /// <summary>The Fencer's saved angles, one slot per grip, so changing grip keeps each grip's own calibration.</summary>
+    public sealed class SavedGripAngles
+    {
+        public GripAngleOverride Center { get; set; } = new GripAngleOverride();
+
+        public GripAngleOverride Pistol { get; set; } = new GripAngleOverride();
+
+        public GripAngleOverride French { get; set; } = new GripAngleOverride();
+
+        public GripAngleOverride FrenchPosted { get; set; } = new GripAngleOverride();
+
+        /// <summary>The slot for <paramref name="mount"/>, to read or to change in place.</summary>
+        public GripAngleOverride For(BladeMount mount)
+        {
+            switch (mount)
+            {
+                case BladeMount.Center: return Center;
+                case BladeMount.Pistol: return Pistol;
+                case BladeMount.French: return French;
+                case BladeMount.FrenchPosted: return FrenchPosted;
+                default: throw new System.ArgumentOutOfRangeException(nameof(mount), mount, "Not a grip.");
+            }
+        }
+
+        public SavedGripAngles Clone()
+        {
+            return new SavedGripAngles
+            {
+                Center = Center.Clone(),
+                Pistol = Pistol.Clone(),
+                French = French.Clone(),
+                FrenchPosted = FrenchPosted.Clone(),
+            };
+        }
     }
 }

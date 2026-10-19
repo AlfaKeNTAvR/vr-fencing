@@ -14,6 +14,14 @@ _Avoid_: Player, user
 A valid hit: the point of the blade landing on a target with enough pressure (750 g on a real épée's point; in the app, pushed in a few millimeters or arriving fast). In épée only the point scores, anywhere on the body.
 _Avoid_: Hit, score, strike
 
+**Grip**:
+How the épée is held, chosen in Settings: Center, Pistol, French or French posted. It sets where the virtual blade sits on the controller (how far ahead the guard is, and the blade's pitch and yaw), computed from the hand's geometry and fine-tuned per grip by a thrust calibration.
+_Avoid_: Mount, blade alignment
+
+**Set**:
+The deliberate slight curve of an épée blade toward the palm side (under 1 cm). With gravity sag it makes the point hang a few centimeters below the forte's line, and a straight push bends the blade further that way.
+_Avoid_: Bend (reserved for the blade bowing under pressure)
+
 **Strip**:
 The rectangular practice lane the Fencer advances and retreats along, laid out in the real room with a configurable length.
 _Avoid_: Piste (reserve for the regulation 14 m competition lane), track, lane

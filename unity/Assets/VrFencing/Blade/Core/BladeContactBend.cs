@@ -28,7 +28,8 @@ namespace VrFencing.Blade
     /// PER-50): one smooth curve of the blade's full length that leaves the guard along the hand, ends on the pin, and
     /// has no curvature at the point. It bends in the plane of the hand's blade and the line to the point, and bulges to
     /// the side the hand's blade points to from that line, so it curves over toward the point. Pushed straight in, the
-    /// side is the blade's set (toward the grip's palm side, turning with the wrist) unless the hand is moving sideways
+    /// side is the way the blade hangs: its set (toward the grip's palm side, turning with the wrist) plus gravity sag
+    /// (<see cref="BladeDroop"/>, PER-52), unless the hand is moving sideways
     /// (it bulges the way the hand moves). The side holds through a press (hysteresis) and changes only when the point
     /// is clearly on the other side of the hand's line (<see cref="FlipMeters"/>), or that side is blocked by a body.</item>
     /// <item>The point slides along the surface, never through it, when the blade turns more than
@@ -157,8 +158,13 @@ namespace VrFencing.Blade
         /// The blade as drawn before this step (<see cref="DrawnBlade.SampleCount"/> + 1 points), if any: a new pin is only
         /// taken when the pinned shape can be reached from it without passing through a body.
         /// </param>
+        /// <param name="restBend">
+        /// Where the blade's rest shape hangs its point (<see cref="BladeDroop.TipDeflection"/>: the set plus gravity sag,
+        /// PER-52): a straight push bends the blade further that way. Zero for a straight blade: the set alone, away from
+        /// <paramref name="gripUp"/>.
+        /// </param>
         /// <returns>Why the point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, Vector3[] drawnBefore = null)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 gripUp, Vector3[] drawnBefore = null, Vector3 restBend = default)
         {
             if (bodies == null)
             {
@@ -192,7 +198,7 @@ namespace VrFencing.Blade
                 _pinnedBody = body;
                 _hasShape = false;
                 _fallbackDirection = straightBlade.Direction;
-                _bowDirection = FindStartingBow(straightBlade.Direction, gripUp, tip - previousTip.Value);
+                _bowDirection = FindStartingBow(straightBlade.Direction, gripUp, restBend, tip - previousTip.Value);
                 _lastBladeDirection = straightBlade.Direction;
                 _lastGripUp = gripUp;
                 _shape = default;
@@ -441,12 +447,17 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// The side a new press bulges to: the blade's set (away from the grip's up), unless the point was moving sideways
-        /// as it landed: then the blade drags behind the hand and bulges the way it moved.
+        /// The side a new press bulges to: the way the blade already hangs (its set plus gravity sag, PER-52; the set alone,
+        /// away from the grip's up, for a straight blade), unless the point was moving sideways as it landed: then the
+        /// blade drags behind the hand and bulges the way it moved. An axially loaded slender blade buckles toward the
+        /// curve it already has.
         /// </summary>
-        private static Vector3 FindStartingBow(Vector3 bladeDirection, Vector3 gripUp, Vector3 tipStep)
+        private static Vector3 FindStartingBow(Vector3 bladeDirection, Vector3 gripUp, Vector3 restBend, Vector3 tipStep)
         {
-            var set = -FindPerpendicularDirection(gripUp, bladeDirection);
+            var restAcross = restBend - (Vector3.Dot(restBend, bladeDirection) * bladeDirection);
+            var set = restAcross.LengthSquared() > 1e-8f
+                ? Vector3.Normalize(restAcross)
+                : -FindPerpendicularDirection(gripUp, bladeDirection);
             var sideways = tipStep - (Vector3.Dot(tipStep, bladeDirection) * bladeDirection);
             return FindPerpendicularDirection((set * SetBiasMeters) + sideways, bladeDirection);
         }

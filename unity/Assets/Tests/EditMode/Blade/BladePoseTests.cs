@@ -1,5 +1,5 @@
-// Where the blade sits on the sword-hand controller (PER-22 feel test 1: Center mount, pitch +10, yaw -10), and that
-// the left hand mirrors it.
+// Where the blade sits on the sword-hand controller: each grip's computed mount (PER-51, PER-52), the Fencer's saved
+// angles over it, the guard on the blade's line, and that the left hand mirrors it.
 using NUnit.Framework;
 using UnityEngine;
 using VrFencing.Blade;
@@ -14,47 +14,83 @@ namespace VrFencing.Tests.Blade
         private static readonly TrackedPose ControllerAtOrigin = new TrackedPose(NumericsVector3.Zero, NumericsQuaternion.Identity);
 
         [Test]
-        public void DefaultsAreTheFeelTestAlignment()
+        public void DefaultsAreTheCenterGripAtItsComputedAngles()
         {
             var blade = new BladeSettings();
 
             Assert.That(blade.Mount, Is.EqualTo(BladeMount.Center));
-            Assert.That(blade.PitchDegrees, Is.EqualTo(10.0f));
-            Assert.That(blade.YawDegrees, Is.EqualTo(-10.0f));
+            Assert.That(GripGeometry.GetActiveAngles(blade).PitchDegrees, Is.EqualTo(-10.0f));
+            Assert.That(GripGeometry.GetActiveAngles(blade).YawDegrees, Is.EqualTo(0.0f));
             Assert.That(blade.TouchRule, Is.EqualTo(TouchRule.Loose));
         }
 
         [Test]
-        public void StraightMountPutsTheTipABladeLengthAheadOfTheGuard()
+        public void AStraightMountPutsTheTipABladeLengthAheadOfTheGuard()
         {
-            var settings = new BladeSettings { Mount = BladeMount.Pistol, PitchDegrees = 0.0f, YawDegrees = 0.0f };
+            var settings = new BladeSettings { Mount = BladeMount.Pistol };
+            settings.SavedAngles.Pistol.PitchDegrees = 0.0f;
+            settings.SavedAngles.Pistol.YawDegrees = 0.0f;
 
             var blade = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(settings, Hand.Right));
 
-            AssertClose(blade.GuardPosition, new NumericsVector3(0.0f, 0.0f, 0.05f));
-            AssertClose(blade.TipPosition, new NumericsVector3(0.0f, 0.0f, 0.05f + BladePose.BladeLengthMeters));
+            AssertClose(blade.GuardPosition, new NumericsVector3(0.0f, 0.0f, 0.055f));
+            AssertClose(blade.TipPosition, new NumericsVector3(0.0f, 0.0f, 0.055f + BladePose.BladeLengthMeters));
         }
 
         [Test]
-        public void PositivePitchTipsTheBladeUpAndNegativeYawTurnsItLeft()
+        public void TheGuardSitsOnTheBladesLineThroughTheControllersOrigin([Values] BladeMount mount)
         {
-            var blade = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(new BladeSettings(), Hand.Right));
+            var blade = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(new BladeSettings { Mount = mount }, Hand.Right));
 
-            Assert.That(blade.TipPosition.Y, Is.EqualTo(BladePose.BladeLengthMeters * Mathf.Sin(10.0f * Mathf.Deg2Rad)).Within(1e-4f));
-            Assert.That(blade.TipPosition.X, Is.LessThan(-0.1f));
-            Assert.That(blade.TipPosition.Z, Is.GreaterThan(0.8f));
+            AssertClose(blade.GuardPosition, blade.Direction * GripGeometry.GetGuardForwardMeters(mount));
         }
 
         [Test]
-        public void LeftHandMirrorsTheYawAndKeepsThePitch()
+        public void TheComputedGripsPointTheBladeDownAlongTheForearmAndCantTheFrenchGripInward()
         {
-            var mount = BladePose.GetMountInController(new BladeSettings(), Hand.Right);
-            var mirroredMount = BladePose.GetMountInController(new BladeSettings(), Hand.Left);
+            var center = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(new BladeSettings(), Hand.Right));
+            Assert.That(center.TipPosition.Y, Is.EqualTo(-BladePose.BladeLengthMeters * Mathf.Sin(10.0f * Mathf.Deg2Rad)).Within(1e-4f), "10 degrees down.");
+            Assert.That(center.TipPosition.X, Is.EqualTo(0.0f).Within(1e-5f));
 
-            var right = BladePose.GetBlade(ControllerAtOrigin, mount);
-            var left = BladePose.GetBlade(ControllerAtOrigin, mirroredMount);
+            var french = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(new BladeSettings { Mount = BladeMount.French }, Hand.Right));
+            Assert.That(french.TipPosition.X, Is.LessThan(-0.05f), "Inward (left for the right hand).");
+            Assert.That(french.Direction.Y, Is.EqualTo(-Mathf.Sin(13.0f * Mathf.Deg2Rad)).Within(1e-4f));
+        }
+
+        [Test]
+        public void SavedAnglesOverrideTheComputedOnesForTheirGripOnly()
+        {
+            var settings = new BladeSettings { Mount = BladeMount.French };
+            settings.SavedAngles.French.PitchDegrees = 10.0f;
+            settings.SavedAngles.Pistol.YawDegrees = 20.0f;
+
+            var angles = GripGeometry.GetActiveAngles(settings);
+
+            Assert.That(angles.PitchDegrees, Is.EqualTo(10.0f));
+            Assert.That(angles.YawDegrees, Is.EqualTo(-4.0f), "The yaw is still the French grip's computed one.");
+        }
+
+        [Test]
+        public void LeftHandMirrorsTheYawAndKeepsThePitch([Values] BladeMount mount)
+        {
+            var settings = new BladeSettings { Mount = mount };
+            var right = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(settings, Hand.Right));
+            var left = BladePose.GetBlade(ControllerAtOrigin, BladePose.GetMountInController(settings, Hand.Left));
 
             AssertClose(left.TipPosition, new NumericsVector3(-right.TipPosition.X, right.TipPosition.Y, right.TipPosition.Z));
+            AssertClose(left.GuardPosition, new NumericsVector3(-right.GuardPosition.X, right.GuardPosition.Y, right.GuardPosition.Z));
+        }
+
+        [Test]
+        public void AnglesForADirectionUndoTheMount([Values(Hand.Right, Hand.Left)] Hand hand)
+        {
+            var angles = new GripAngles(-12.5f, 7.0f);
+            var mount = BladePose.GetMountInController(BladeMount.Pistol, angles, hand);
+
+            var found = BladePose.GetAnglesForDirection(NumericsVector3.Transform(NumericsVector3.UnitZ, mount.Rotation), hand);
+
+            Assert.That(found.PitchDegrees, Is.EqualTo(angles.PitchDegrees).Within(1e-3f));
+            Assert.That(found.YawDegrees, Is.EqualTo(angles.YawDegrees).Within(1e-3f));
         }
 
         [Test]
@@ -67,7 +103,7 @@ namespace VrFencing.Tests.Blade
             try
             {
                 controllerObject.transform.SetPositionAndRotation(new Vector3(0.3f, 1.2f, 0.4f), Quaternion.Euler(20.0f, -35.0f, 15.0f));
-                var mountInController = BladePose.GetMountInController(new BladeSettings { Mount = BladeMount.FrenchPosted, PitchDegrees = 15.0f, YawDegrees = -20.0f }, Hand.Right);
+                var mountInController = BladePose.GetMountInController(BladeMount.FrenchPosted, new GripAngles(15.0f, -20.0f), Hand.Right);
                 mountObject.transform.SetParent(controllerObject.transform, false);
                 mountObject.transform.SetLocalPositionAndRotation(mountInController.Position.ToUnity(), mountInController.Rotation.ToUnity());
 
