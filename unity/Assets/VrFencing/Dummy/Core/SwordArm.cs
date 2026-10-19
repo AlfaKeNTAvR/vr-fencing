@@ -80,44 +80,50 @@ namespace VrFencing.Dummy
     /// </summary>
     public sealed class SwordArm
     {
-        private readonly TrackedPose[] _localPoses;
-        private readonly TrackedPose[] _poses;
+        private const int JointCount = 3;
+
+        private readonly TrackedPose[] _localPoses = new TrackedPose[JointCount];
+        private readonly TrackedPose[] _poses = new TrackedPose[JointCount];
         private readonly float _heightMeters;
 
         /// <exception cref="ArgumentException">A rotation in <paramref name="pose"/> is zero (an unset pose).</exception>
         public SwordArm(float heightMeters, Hand hand, SwordArmPose pose)
         {
             DummyLayout.RequirePositiveHeight(heightMeters);
-            RequireRotation(pose.Shoulder, nameof(pose.Shoulder));
-            RequireRotation(pose.Elbow, nameof(pose.Elbow));
-            RequireRotation(pose.Wrist, nameof(pose.Wrist));
-
             _heightMeters = heightMeters;
             Hand = hand;
-            Pose = pose;
-
-            _localPoses = new[]
-            {
-                new TrackedPose(EnGardePose.SwordShoulder * heightMeters, Quaternion.Normalize(pose.Shoulder)),
-                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.UpperArmLength * heightMeters), Quaternion.Normalize(pose.Elbow)),
-                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.ForearmLength * heightMeters), Quaternion.Normalize(pose.Wrist)),
-            };
-            for (var joint = 0; joint < _localPoses.Length; joint++)
-            {
-                _localPoses[joint] = HandMirroring.ForHand(_localPoses[joint], hand);
-            }
-
-            _poses = new TrackedPose[_localPoses.Length];
-            _poses[0] = _localPoses[0];
-            for (var joint = 1; joint < _localPoses.Length; joint++)
-            {
-                _poses[joint] = Compose(_poses[joint - 1], _localPoses[joint]);
-            }
+            SetPose(pose);
         }
 
         public Hand Hand { get; }
 
-        public SwordArmPose Pose { get; }
+        public SwordArmPose Pose { get; private set; }
+
+        /// <summary>
+        /// Moves this arm to <paramref name="pose"/> in place, without allocating: the Armed Dummy re-poses its arm
+        /// every frame (PER-96).
+        /// </summary>
+        /// <exception cref="ArgumentException">A rotation in <paramref name="pose"/> is zero (an unset pose).</exception>
+        internal void SetPose(SwordArmPose pose)
+        {
+            RequireRotation(pose.Shoulder, nameof(pose.Shoulder));
+            RequireRotation(pose.Elbow, nameof(pose.Elbow));
+            RequireRotation(pose.Wrist, nameof(pose.Wrist));
+            Pose = pose;
+
+            _localPoses[(int)ArmJoint.Shoulder] = HandMirroring.ForHand(
+                new TrackedPose(EnGardePose.SwordShoulder * _heightMeters, Quaternion.Normalize(pose.Shoulder)), Hand);
+            _localPoses[(int)ArmJoint.Elbow] = HandMirroring.ForHand(
+                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.UpperArmLength * _heightMeters), Quaternion.Normalize(pose.Elbow)), Hand);
+            _localPoses[(int)ArmJoint.Wrist] = HandMirroring.ForHand(
+                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.ForearmLength * _heightMeters), Quaternion.Normalize(pose.Wrist)), Hand);
+
+            _poses[0] = _localPoses[0];
+            for (var joint = 1; joint < JointCount; joint++)
+            {
+                _poses[joint] = Compose(_poses[joint - 1], _localPoses[joint]);
+            }
+        }
 
         /// <summary>The joint's pose in its parent's frame (the Dummy frame for the shoulder).</summary>
         public TrackedPose GetLocalPose(ArmJoint joint)

@@ -9,7 +9,8 @@ namespace VrFencing.Dummy
     /// <summary>
     /// The Dummy as data: its Target Zones and the rest of its silhouette, as capsules in the Dummy frame
     /// (origin on the floor under the front foot, +x the Dummy's right, +y up, +z toward the Fencer),
-    /// scaled to <see cref="HeightMeters"/>. Immutable; <see cref="WithArmPose"/> gives the layout for another arm pose.
+    /// scaled to <see cref="HeightMeters"/>. Only the sword arm ever changes: <see cref="PoseArm"/> moves it in place
+    /// (the Armed Dummy does every frame, so it must not allocate), <see cref="WithArmPose"/> gives a separate layout.
     ///
     /// The sword arm is a joint chain (<see cref="Arm"/>): the hand, wrist, forearm and upper arm zones are derived
     /// from its joint poses. The body, thigh and foot zones and the silhouette are fixed to the stance.
@@ -71,6 +72,24 @@ namespace VrFencing.Dummy
         public DummyLayout WithArmPose(SwordArmPose armPose)
         {
             return new DummyLayout(HeightMeters, new SwordArm(HeightMeters, Hand, armPose), _silhouetteParts);
+        }
+
+        /// <summary>
+        /// Moves the sword arm, and the hand, wrist, forearm and upper arm zones with it, to <paramref name="armPose"/>
+        /// in place, without allocating. The stance (feet, legs, body) stays put.
+        /// </summary>
+        /// <exception cref="ArgumentException">A rotation in <paramref name="armPose"/> is zero (an unset pose).</exception>
+        public void PoseArm(SwordArmPose armPose)
+        {
+            Arm.SetPose(armPose);
+            for (var index = 0; index < _zones.Length; index++)
+            {
+                var zone = _zones[index].Zone;
+                if (SwordArm.IsArmZone(zone))
+                {
+                    _zones[index] = new ZoneCapsule(zone, Arm.GetZone(zone));
+                }
+            }
         }
 
         public Capsule GetZone(TargetZone zone)

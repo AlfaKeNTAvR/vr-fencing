@@ -15,13 +15,13 @@ namespace VrFencing.Dummy
     /// <summary>Where an Armed Dummy attack is in its script.</summary>
     public enum AttackPhase
     {
-        /// <summary>En garde, before the random delay runs out.</summary>
+        /// <summary>En garde with the blade in line, before the random delay runs out.</summary>
         Waiting,
 
         /// <summary>The short, visible draw-back before the thrust.</summary>
         WindUp,
 
-        /// <summary>The point travels to the aim.</summary>
+        /// <summary>The point travels straight to the aim.</summary>
         Thrust,
 
         /// <summary>The point stays at the aim a moment.</summary>
@@ -35,110 +35,96 @@ namespace VrFencing.Dummy
     }
 
     /// <summary>
-    /// One scripted straight thrust of the Armed Dummy (PER-23, prototype PER-95), as arm poses over time: en garde
-    /// (<see cref="SwordArmReach.PoseEnGarde"/>) for a random delay, a short wind-up, the thrust to the aim at the attack's speed, a short hold, then back to
-    /// en garde. A Parry (<see cref="ReportParried"/>) cuts the thrust or hold short and recovers from where the arm is.
+    /// One scripted straight thrust of the Armed Dummy (PER-96, from the PER-95 prototype), as sword arm poses over
+    /// time: en garde with the blade in line (<see cref="SwordArmReach.PoseEnGarde"/>) for a random delay, a short
+    /// wind-up, the thrust, a short hold, then back to en garde. A Parry (<see cref="ReportParried"/>) cuts the thrust
+    /// or hold short and recovers from where the arm is. Only the arm moves; the feet stay planted.
     ///
-    /// The thrust follows a minimum-jerk profile (smooth start and stop, like a reaching arm); its length in time is set
-    /// so the point's peak speed is the attack's speed. Poses are right-handed (<see cref="SwordArmPose"/>).
-    /// Times in seconds on any one clock.
+    /// The thrust moves the point along a straight line from the wind-up to the aim (<see cref="Path"/>), the arm
+    /// posed by <see cref="SwordArmReach.PoseToReach"/> at each instant, so every pose is within the joint limits and
+    /// the point's peak speed is the speed level's. All numbers are in <see cref="ArmedDummyTuning"/>.
+    /// Poses are right-handed (<see cref="SwordArmPose"/>); positions are in the Dummy's own frame. Times in seconds on
+    /// any one clock.
     /// </summary>
     public sealed class ArmedDummyAttack
     {
-        /// <summary>The random delay before the wind-up starts, at least (PER-23: 1 to 3 s).</summary>
-        public const float MinimumDelaySeconds = 1.0f;
-
-        /// <inheritdoc cref="MinimumDelaySeconds"/>
-        public const float MaximumDelaySeconds = 3.0f;
-
-        /// <summary>The wind-up: short, but long enough to read as the cue.</summary>
-        public const float WindUpSeconds = 0.35f;
-
-        /// <summary>How long the point stays at the aim before recovering.</summary>
-        public const float HoldSeconds = 0.3f;
-
-        /// <summary>Back to en garde.</summary>
-        public const float RecoverSeconds = 0.6f;
-
-        /// <summary>Peak speed of a minimum-jerk move as a multiple of its average speed.</summary>
-        public const float MinimumJerkPeakFactor = 1.875f;
-
-        /// <summary>Points sampled along the thrust's path to measure its length.</summary>
-        private const int PathSamples = 32;
-
         private readonly double _startSeconds;
+        private readonly float _heightMeters;
+        private readonly float _bladeLengthMeters;
         private readonly SwordArmPose _guard;
         private readonly SwordArmPose _windUp;
         private readonly SwordArmPose _thrust;
+        private readonly Vector3 _rightHandedStart;
+        private readonly Vector3 _rightHandedAim;
         private double _recoverStartSeconds;
         private SwordArmPose _recoverFrom;
 
-        /// <param name="startSeconds">When the attack begins (the delay runs from here).</param>
-        /// <param name="delaySeconds">How long the arm stays en garde before the wind-up.</param>
-        /// <param name="guard">The en garde pose before and after.</param>
-        /// <param name="windUp">The pose at the end of the wind-up.</param>
-        /// <param name="thrust">The pose with the point at the aim.</param>
-        /// <param name="thrustSeconds">How long the thrust takes from the wind-up to the aim.</param>
-        /// <exception cref="ArgumentOutOfRangeException">The delay is negative or the thrust takes no time.</exception>
-        public ArmedDummyAttack(double startSeconds, float delaySeconds, SwordArmPose guard, SwordArmPose windUp, SwordArmPose thrust, float thrustSeconds)
+        private ArmedDummyAttack(
+            double startSeconds, float delaySeconds, float heightMeters, Hand hand, Vector3 rightHandedAim, AttackSpeed speed, float bladeLengthMeters)
         {
-            if (!(delaySeconds >= 0.0f) || float.IsInfinity(delaySeconds))
-            {
-                throw new ArgumentOutOfRangeException(nameof(delaySeconds), delaySeconds, "Must be a non-negative number of seconds.");
-            }
-
-            if (!(thrustSeconds > 0.0f) || float.IsInfinity(thrustSeconds))
-            {
-                throw new ArgumentOutOfRangeException(nameof(thrustSeconds), thrustSeconds, "Must be a positive number of seconds.");
-            }
-
             _startSeconds = startSeconds;
+            _heightMeters = heightMeters;
+            _bladeLengthMeters = bladeLengthMeters;
             DelaySeconds = delaySeconds;
-            _guard = guard;
-            _windUp = windUp;
-            _thrust = thrust;
-            ThrustSeconds = thrustSeconds;
-            _recoverStartSeconds = ThrustEndSeconds + HoldSeconds;
-            _recoverFrom = thrust;
+            Speed = speed;
+
+            _guard = SwordArmReach.PoseEnGarde(heightMeters, bladeLengthMeters);
+            _windUp = SwordArmReach.PoseWindUp(heightMeters, bladeLengthMeters);
+            _rightHandedStart = SwordArmReach.GetPoint(heightMeters, _windUp, bladeLengthMeters);
+            _thrust = SwordArmReach.PoseToReach(heightMeters, rightHandedAim, bladeLengthMeters);
+            _rightHandedAim = SwordArmReach.GetPoint(heightMeters, _thrust, bladeLengthMeters);
+
+            var lengthMeters = Vector3.Distance(_rightHandedStart, _rightHandedAim);
+            ThrustSeconds = Math.Max(
+                ArmedDummyTuning.MinimumThrustSeconds, AttackPath.MinimumJerkPeakFactor * lengthMeters / GetPeakPointSpeed(speed));
+            Path = new AttackPath(ToHand(_rightHandedStart, hand), ToHand(_rightHandedAim, hand), ThrustStartSeconds, ThrustSeconds);
+
+            _recoverStartSeconds = ThrustEndSeconds + ArmedDummyTuning.HoldSeconds;
+            _recoverFrom = _thrust;
         }
 
         public float DelaySeconds { get; }
 
+        public AttackSpeed Speed { get; }
+
         public float ThrustSeconds { get; }
+
+        /// <summary>The point's planned straight path in the thrust, in the Dummy frame, for judging.</summary>
+        public AttackPath Path { get; }
 
         /// <summary>When the wind-up starts.</summary>
         public double WindUpStartSeconds => _startSeconds + DelaySeconds;
 
         /// <summary>When the thrust starts, at the end of the wind-up.</summary>
-        public double ThrustStartSeconds => WindUpStartSeconds + WindUpSeconds;
+        public double ThrustStartSeconds => WindUpStartSeconds + ArmedDummyTuning.WindUpSeconds;
 
         /// <summary>When the point reaches the aim, unless parried before.</summary>
         public double ThrustEndSeconds => ThrustStartSeconds + ThrustSeconds;
 
         /// <summary>When the recovery is over and the arm is en garde again.</summary>
-        public double DoneSeconds => _recoverStartSeconds + RecoverSeconds;
+        public double DoneSeconds => _recoverStartSeconds + ArmedDummyTuning.RecoverSeconds;
 
         /// <summary>True once a Parry cut the thrust or the hold short.</summary>
         public bool IsParried { get; private set; }
 
-        /// <summary>The point's peak speed for a speed level (PER-23: slow 0.5, medium 1.5, real 2.5 to 3 m/s; real is taken mid-range).</summary>
+        /// <summary>The point's peak speed for a speed level (<see cref="ArmedDummyTuning"/>).</summary>
         /// <exception cref="ArgumentOutOfRangeException">Not a speed level.</exception>
         public static float GetPeakPointSpeed(AttackSpeed speed)
         {
             switch (speed)
             {
                 case AttackSpeed.Slow:
-                    return 0.5f;
+                    return ArmedDummyTuning.SlowPointSpeedMetersPerSecond;
                 case AttackSpeed.Medium:
-                    return 1.5f;
+                    return ArmedDummyTuning.MediumPointSpeedMetersPerSecond;
                 case AttackSpeed.Real:
-                    return 2.75f;
+                    return ArmedDummyTuning.RealPointSpeedMetersPerSecond;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(speed), speed, "Not an attack speed.");
             }
         }
 
-        /// <summary>A random delay from <see cref="MinimumDelaySeconds"/> to <see cref="MaximumDelaySeconds"/>.</summary>
+        /// <summary>A random delay from <see cref="ArmedDummyTuning.MinimumDelaySeconds"/> to <see cref="ArmedDummyTuning.MaximumDelaySeconds"/>.</summary>
         public static float DrawDelaySeconds(Random random)
         {
             if (random == null)
@@ -146,37 +132,32 @@ namespace VrFencing.Dummy
                 throw new ArgumentNullException(nameof(random));
             }
 
-            return MinimumDelaySeconds + ((MaximumDelaySeconds - MinimumDelaySeconds) * (float)random.NextDouble());
+            return ArmedDummyTuning.MinimumDelaySeconds
+                + ((ArmedDummyTuning.MaximumDelaySeconds - ArmedDummyTuning.MinimumDelaySeconds) * (float)random.NextDouble());
         }
 
         /// <summary>
-        /// Plans a thrust at <paramref name="aim"/> (right-handed Dummy frame) for a Dummy of
-        /// <paramref name="heightMeters"/> holding a blade of <paramref name="bladeLengthMeters"/>: wind-up from en garde, then a thrust whose point peaks at the speed level's speed.
+        /// Plans a thrust at <paramref name="aim"/> (in the Dummy frame, see <see cref="AttackAim"/>) for a Dummy of
+        /// <paramref name="heightMeters"/> and <paramref name="hand"/> holding a blade of <paramref name="bladeLengthMeters"/>:
+        /// en garde for <paramref name="delaySeconds"/> from <paramref name="startSeconds"/>, the wind-up, then the
+        /// thrust at the speed level's speed. An aim out of reach gets the point as near it as the arm reaches.
         /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// The delay is outside <see cref="ArmedDummyTuning.MinimumDelaySeconds"/> to
+        /// <see cref="ArmedDummyTuning.MaximumDelaySeconds"/>, the height is not positive, or the speed is not a level.
+        /// </exception>
         public static ArmedDummyAttack Plan(
-            double startSeconds, float delaySeconds, float heightMeters, Vector3 aim, AttackSpeed speed, float bladeLengthMeters)
+            double startSeconds, float delaySeconds, float heightMeters, Hand hand, Vector3 aim, AttackSpeed speed, float bladeLengthMeters)
         {
-            var windUp = SwordArmReach.PoseWindUp(heightMeters, bladeLengthMeters);
-            var thrust = SwordArmReach.PoseToReach(heightMeters, aim, bladeLengthMeters);
-            var pathMeters = MeasurePointPathMeters(heightMeters, windUp, thrust, bladeLengthMeters);
-            var thrustSeconds = Math.Max(0.05f, MinimumJerkPeakFactor * pathMeters / GetPeakPointSpeed(speed));
-            var guard = SwordArmReach.PoseEnGarde(heightMeters, bladeLengthMeters);
-            return new ArmedDummyAttack(startSeconds, delaySeconds, guard, windUp, thrust, thrustSeconds);
-        }
-
-        /// <summary>The length of the path the point takes from <paramref name="from"/> to <paramref name="to"/>.</summary>
-        public static float MeasurePointPathMeters(float heightMeters, SwordArmPose from, SwordArmPose to, float bladeLengthMeters)
-        {
-            var length = 0.0f;
-            var previous = GetPoint(heightMeters, from, bladeLengthMeters);
-            for (var sample = 1; sample <= PathSamples; sample++)
+            if (!(delaySeconds >= ArmedDummyTuning.MinimumDelaySeconds && delaySeconds <= ArmedDummyTuning.MaximumDelaySeconds))
             {
-                var point = GetPoint(heightMeters, SwordArmPose.Slerp(from, to, (float)sample / PathSamples), bladeLengthMeters);
-                length += Vector3.Distance(previous, point);
-                previous = point;
+                throw new ArgumentOutOfRangeException(nameof(delaySeconds), delaySeconds,
+                    $"Must be from {ArmedDummyTuning.MinimumDelaySeconds} to {ArmedDummyTuning.MaximumDelaySeconds} s.");
             }
 
-            return length;
+            DummyLayout.RequirePositiveHeight(heightMeters);
+            GetPeakPointSpeed(speed);
+            return new ArmedDummyAttack(startSeconds, delaySeconds, heightMeters, hand, ToHand(aim, hand), speed, bladeLengthMeters);
         }
 
         public AttackPhase GetPhase(double nowSeconds)
@@ -204,19 +185,21 @@ namespace VrFencing.Dummy
             return nowSeconds < ThrustEndSeconds ? AttackPhase.Thrust : AttackPhase.Hold;
         }
 
-        /// <summary>The arm pose at <paramref name="nowSeconds"/>.</summary>
+        /// <summary>The right-handed arm pose at <paramref name="nowSeconds"/> (<see cref="SwordArm"/> mirrors it for a left hand).</summary>
         public SwordArmPose GetPose(double nowSeconds)
         {
             switch (GetPhase(nowSeconds))
             {
                 case AttackPhase.WindUp:
-                    return SwordArmPose.Slerp(_guard, _windUp, SmoothStep(Fraction(nowSeconds, WindUpStartSeconds, WindUpSeconds)));
+                    return SwordArmPose.Slerp(_guard, _windUp, SmoothStep(Fraction(nowSeconds, WindUpStartSeconds, ArmedDummyTuning.WindUpSeconds)));
                 case AttackPhase.Thrust:
-                    return SwordArmPose.Slerp(_windUp, _thrust, MinimumJerk(Fraction(nowSeconds, ThrustStartSeconds, ThrustSeconds)));
+                    var point = Vector3.Lerp(_rightHandedStart, _rightHandedAim, Path.GetProgress(nowSeconds));
+                    return SwordArmReach.PoseToReach(_heightMeters, point, _bladeLengthMeters);
                 case AttackPhase.Hold:
                     return _thrust;
                 case AttackPhase.Recover:
-                    return SwordArmPose.Slerp(_recoverFrom, _guard, MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, RecoverSeconds)));
+                    return SwordArmPose.Slerp(
+                        _recoverFrom, _guard, AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds)));
                 default:
                     return _guard;
             }
@@ -241,9 +224,10 @@ namespace VrFencing.Dummy
             return true;
         }
 
-        private static Vector3 GetPoint(float heightMeters, SwordArmPose pose, float bladeLengthMeters)
+        /// <summary>Between the Dummy frame and the right-handed Dummy frame: a reflection, its own inverse.</summary>
+        private static Vector3 ToHand(Vector3 position, Hand hand)
         {
-            return new SwordArm(heightMeters, Hand.Right, pose).GetBladePoint(bladeLengthMeters);
+            return hand == Hand.Left ? HandMirroring.MirrorPosition(position) : position;
         }
 
         private static float Fraction(double nowSeconds, double startSeconds, float durationSeconds)
@@ -254,13 +238,6 @@ namespace VrFencing.Dummy
         private static float SmoothStep(float fraction)
         {
             return fraction * fraction * (3.0f - (2.0f * fraction));
-        }
-
-        /// <summary>10 f^3 - 15 f^4 + 6 f^5: zero speed and acceleration at both ends, peak speed 1.875 at the middle.</summary>
-        private static float MinimumJerk(float fraction)
-        {
-            var cube = fraction * fraction * fraction;
-            return cube * (10.0f + (fraction * ((6.0f * fraction) - 15.0f)));
         }
     }
 }

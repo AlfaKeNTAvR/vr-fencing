@@ -24,22 +24,9 @@ namespace VrFencing.Blade
         private const float SparkDiameterMeters = 0.03f;
         private const float SparkSeconds = 0.12f;
 
-        // Hand and forearm aims sit behind the Fencer's guard, along their blade: the hand just behind it, the forearm
-        // a forearm's middle further back.
-        private const float HandBehindGuardMeters = 0.06f;
-        private const float ForearmBehindGuardMeters = 0.2f;
-
         private static readonly Color SparkColor = new Color(1.0f, 0.95f, 0.5f);
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly BladeObstacle[] FloorOnly = { BladeObstacle.Floor };
-
-        private enum AttackTarget
-        {
-            Hand,
-            Forearm,
-            Chest,
-            Thigh,
-        }
 
         private readonly DummyBehaviour _dummy;
         private readonly DrillRunner _runner;
@@ -157,13 +144,17 @@ namespace VrFencing.Blade
                 return;
             }
 
+            var layout = _dummy.Layout;
             var speed = (AttackSpeed)(cue.RepIndex % 3);
-            var target = (AttackTarget)_random.Next(4);
+            var target = AttackAim.DrawTarget(_random);
             var delay = ArmedDummyAttack.DrawDelaySeconds(_random);
-            var aim = GetAimInRightHandedDummyFrame(target);
-            _attack = ArmedDummyAttack.Plan(Time.timeAsDouble, delay, _dummy.Layout.HeightMeters, aim, speed, BladePose.BladeLengthMeters);
+            var aim = AttackAim.GetAimInDummyFrame(
+                target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
+            _attack = ArmedDummyAttack.Plan(Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters);
+            var missMeters = System.Numerics.Vector3.Distance(_attack.Path.AimPoint, aim);
             Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
-                $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms.");
+                $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms over {_attack.Path.LengthMeters * 100.0f:0} cm" +
+                (missMeters > 0.01f ? $", lands {missMeters * 100.0f:0} cm off the aim (out of the arm's reach)." : "."));
         }
 
         private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)
@@ -187,42 +178,6 @@ namespace VrFencing.Blade
             var point = DummyLayout.DummyToStrip(arm.GetBladePoint(BladePose.BladeLengthMeters), distance);
             var wristUp = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, arm.GetPose(ArmJoint.Wrist).Rotation);
             return (new BladeSegment(guard, point), DirectionToStrip(wristUp));
-        }
-
-        /// <summary>
-        /// The aim in the right-handed Dummy frame. The Fencer is taken to stand en garde at the En Garde Line in the
-        /// Dummy's own stance and size (the Dummy is the Fencer's height), so chest and thigh are its body and thigh zones
-        /// as seen from the Strip frame; hand and forearm follow the Fencer's live blade.
-        /// </summary>
-        private System.Numerics.Vector3 GetAimInRightHandedDummyFrame(AttackTarget target)
-        {
-            var layout = _dummy.Layout;
-            System.Numerics.Vector3 aimOnStrip;
-            switch (target)
-            {
-                case AttackTarget.Hand when _lastFencerBlade.HasValue:
-                    aimOnStrip = _lastFencerBlade.Value.GuardPosition - (_lastFencerBlade.Value.Direction * HandBehindGuardMeters);
-                    break;
-                case AttackTarget.Forearm when _lastFencerBlade.HasValue:
-                    aimOnStrip = _lastFencerBlade.Value.GuardPosition - (_lastFencerBlade.Value.Direction * ForearmBehindGuardMeters);
-                    break;
-                case AttackTarget.Thigh:
-                    aimOnStrip = FrontOf(layout.GetZone(TargetZone.Thigh));
-                    break;
-                default:
-                    aimOnStrip = FrontOf(layout.GetZone(TargetZone.Body));
-                    break;
-            }
-
-            // The Dummy frame is the Strip frame turned half a turn about the vertical and moved along the Strip.
-            var aim = DummyLayout.DummyToStrip(aimOnStrip, _dummy.DistanceMeters);
-            return layout.Hand == Hand.Left ? HandMirroring.MirrorPosition(aim) : aim;
-        }
-
-        /// <summary>The front of a Fencer zone, toward the Dummy (+z in the Strip frame).</summary>
-        private static System.Numerics.Vector3 FrontOf(Capsule zone)
-        {
-            return zone.Center + new System.Numerics.Vector3(0.0f, 0.0f, zone.RadiusMeters);
         }
 
         private static System.Numerics.Vector3 DirectionToStrip(System.Numerics.Vector3 directionInDummyFrame)
