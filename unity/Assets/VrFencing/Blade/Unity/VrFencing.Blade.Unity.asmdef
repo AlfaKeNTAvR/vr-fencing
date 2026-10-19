@@ -1,0 +1,16 @@
+{
+    "name": "VrFencing.Blade.Unity",
+    "rootNamespace": "VrFencing.Blade",
+    "references": [
+        "VrFencing.Blade.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

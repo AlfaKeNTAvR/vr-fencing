@@ -1,0 +1,14 @@
+{
+    "name": "VrFencing.Strip.Core",
+    "rootNamespace": "VrFencing.Strip",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
