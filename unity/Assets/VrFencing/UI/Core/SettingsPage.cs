@@ -31,6 +31,7 @@ namespace VrFencing.UI
         GlanceHaptic,
         HapticFloor,
         HapticFullStrengthSpeed,
+        LaserTilt,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -89,6 +90,8 @@ namespace VrFencing.UI
             [SettingId.HapticFullStrengthSpeed] = new NumberSetting(0.5f, 6.0f, 0.5f, "0.0", "m/s",
                 settings => settings.Blade.HapticFullStrengthSpeedMetersPerSecond,
                 (settings, value) => settings.Blade.HapticFullStrengthSpeedMetersPerSecond = value),
+            [SettingId.LaserTilt] = new NumberSetting(-30.0f, 60.0f, 5.0f, "+0;-0;0", "deg",
+                settings => settings.LaserTiltDegrees, (settings, value) => settings.LaserTiltDegrees = value),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -118,6 +121,7 @@ namespace VrFencing.UI
                 case SettingId.GlanceHaptic: return "Haptic: glance";
                 case SettingId.HapticFloor: return "Haptic strength when slow";
                 case SettingId.HapticFullStrengthSpeed: return "Full haptic strength at";
+                case SettingId.LaserTilt: return "Menu laser tilt (down +)";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -173,6 +177,9 @@ namespace VrFencing.UI
                 case SettingId.HapticFloor:
                 case SettingId.HapticFullStrengthSpeed:
                     return SettingImpact.Blade;
+                case SettingId.LaserTilt:
+                    // The menu reads it every frame.
+                    return SettingImpact.None;
                 default:
                     return SettingImpact.Drills;
             }

@@ -58,7 +58,8 @@ namespace VrFencing.UI
         /// <param name="controller">The off-hand controller anchor, or null when it is not tracked.</param>
         /// <param name="trigger">The off-hand index trigger.</param>
         /// <param name="isActive">A panel is shown and the trigger is free for the menu.</param>
-        public void Tick(Transform controller, OVRInput.RawButton trigger, bool isActive, double nowSeconds)
+        /// <param name="tiltDegrees">The laser's tilt down (positive) from the controller's forward axis, the laser tilt Setting.</param>
+        public void Tick(Transform controller, OVRInput.RawButton trigger, bool isActive, float tiltDegrees, double nowSeconds)
         {
             if (!isActive || controller == null)
             {
@@ -74,7 +75,8 @@ namespace VrFencing.UI
             }
 
             var origin = controller.position;
-            var direction = controller.forward;
+            // A positive turn about the controller's own x axis tips its forward down, the same for either hand.
+            var direction = controller.rotation * Quaternion.Euler(tiltDegrees, 0.0f, 0.0f) * Vector3.forward;
             var hitButton = FindTarget(origin, direction, out var end);
             SetHovered(hitButton != null && hitButton.IsInteractable ? hitButton : null);
 

@@ -57,23 +57,79 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void ATouchBowsTheBladeAndTheGuardStaysPut()
+        public void ASpringBackStartsFromTheHeldBendAndSettles()
         {
             var flex = new BladeFlex();
             var blade = AlongZAt(0.0f);
-            flex.Step(blade, FrameSeconds);
 
-            flex.Kick(blade, Vector3.UnitY);
-            var maxBend = 0.0f;
-            for (var frame = 0; frame < 10; frame++)
-            {
-                flex.Step(blade, FrameSeconds);
-                maxBend = System.Math.Max(maxBend, flex.Bend.Y);
-            }
+            flex.SpringBackFrom(blade, new Vector3(0.0f, 0.05f, 0.03f));
 
-            Assert.That(maxBend, Is.InRange(0.03f, BladeFlex.MaxBendMeters));
+            Assert.That(flex.Bend.Y, Is.EqualTo(0.05f).Within(1e-6f));
+            Assert.That(flex.Bend.Z, Is.EqualTo(0.0f).Within(1e-6f), "Only the part across the blade is kept.");
             Assert.That(flex.GetCenterlinePoint(blade, 0.0f), Is.EqualTo(blade.GuardPosition));
             Assert.That(Vector3.Distance(flex.GetCenterlinePoint(blade, 1.0f), blade.TipPosition + flex.Bend), Is.LessThan(1e-6f));
+
+            var crossedStraight = false;
+            for (var frame = 0; frame < 72; frame++)
+            {
+                flex.Step(blade, FrameSeconds);
+                crossedStraight |= flex.Bend.Y < 0.0f;
+            }
+
+            Assert.That(crossedStraight, Is.True, "A released blade springs past straight once.");
+            Assert.That(flex.Bend.Length(), Is.LessThan(0.002f));
+        }
+
+        [Test]
+        public void ASpringBackNeverBendsMoreThanTheMaximum()
+        {
+            var flex = new BladeFlex();
+
+            flex.SpringBackFrom(AlongZAt(0.0f), new Vector3(0.3f, 0.0f, 0.0f));
+
+            Assert.That(flex.Bend.Length(), Is.EqualTo(BladeFlex.MaxBendMeters).Within(1e-6f));
+        }
+
+        [Test]
+        public void AStillHandWithTrackingJitterKeepsThePointStill()
+        {
+            // About 7 mm of tip jitter (PER-48): every frame the tracked blade is off by up to 3.5 mm on each axis, plus
+            // an 8 Hz hand tremor of 3.5 mm. The old lightly damped spring bent about as much as the jitter.
+            var flex = new BladeFlex();
+            var random = new System.Random(48);
+            var maxBend = 0.0f;
+            for (var frame = 0; frame < 5 * 72; frame++)
+            {
+                var tremor = 0.0035f * (float)System.Math.Sin(2.0 * System.Math.PI * 8.0 * frame / 72.0);
+                var jitter = new Vector3(NextJitter(random), NextJitter(random), NextJitter(random)) + new Vector3(tremor, tremor, 0.0f);
+                var blade = new BladeSegment(new Vector3(0.0f, 1.0f, 0.0f) + (jitter * 0.3f), new Vector3(0.0f, 1.0f, 0.9f) + jitter);
+                flex.Step(blade, FrameSeconds);
+                maxBend = System.Math.Max(maxBend, flex.Bend.Length());
+            }
+
+            Assert.That(maxBend, Is.LessThan(0.0005f));
+        }
+
+        [Test]
+        public void SlowAimingDoesNotBendTheBlade()
+        {
+            // Moving the point 10 cm at 0.2 m/s and stopping: aiming, not a fast move.
+            var flex = new BladeFlex();
+            var maxBend = 0.0f;
+            var x = 0.0f;
+            for (var frame = 0; frame < 72; frame++)
+            {
+                flex.Step(AlongZAt(System.Math.Min(x, 0.1f)), FrameSeconds);
+                maxBend = System.Math.Max(maxBend, flex.Bend.Length());
+                x += 0.2f * FrameSeconds;
+            }
+
+            Assert.That(maxBend, Is.LessThan(0.0005f));
+        }
+
+        private static float NextJitter(System.Random random)
+        {
+            return (float)((random.NextDouble() * 2.0) - 1.0) * 0.0035f;
         }
 
         private static BladeSegment AlongZAt(float x)

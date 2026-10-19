@@ -100,6 +100,19 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>
+        /// Every capsule of the Dummy, Target Zones and the rest of the silhouette, in the Strip frame as in
+        /// <see cref="GetZonesOnStrip"/>: the whole body the Blade's drawn point stops against (PER-48).
+        /// </summary>
+        public IReadOnlyList<Capsule> GetBodyOnStrip(float distanceMeters)
+        {
+            return _zones
+                .Select(zone => zone.Shape)
+                .Concat(_silhouetteParts)
+                .Select(part => DummyToStrip(part, distanceMeters))
+                .ToArray();
+        }
+
+        /// <summary>
         /// Moves a point from the Dummy frame to the Strip frame: the Dummy stands <paramref name="distanceMeters"/>
         /// along the Strip, turned half a turn about the vertical to face the Fencer.
         /// </summary>

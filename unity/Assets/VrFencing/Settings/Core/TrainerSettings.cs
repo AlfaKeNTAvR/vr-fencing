@@ -32,6 +32,13 @@ namespace VrFencing.Settings
         /// <summary>The Blade: Touch rule, how it sits in the hand, and its haptics (PER-22 feel tests, PER-33).</summary>
         public BladeSettings Blade { get; set; } = new BladeSettings();
 
+        /// <summary>
+        /// Tilts the menu laser down (positive) or up from the off-hand controller's forward axis (PER-48). Meta's SDK
+        /// gives no separate aim pose for controllers under OpenXR; its controller rotation already follows the aim
+        /// pose's, which Nikita found close but pointing a little high, so the default tilts it down.
+        /// </summary>
+        public float LaserTiltDegrees { get; set; } = 15.0f;
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -67,6 +74,7 @@ namespace VrFencing.Settings
                     HapticFloor = Blade.HapticFloor,
                     HapticFullStrengthSpeedMetersPerSecond = Blade.HapticFullStrengthSpeedMetersPerSecond,
                 },
+                LaserTiltDegrees = LaserTiltDegrees,
             };
         }
     }

@@ -12,7 +12,8 @@ namespace VrFencing.Blade
     /// the straight blade in the Strip frame, and feeds the Core <see cref="TouchDetector"/> with the Dummy's Target
     /// Zones. Touches and flat contacts go to the Drill runner (<see cref="DrillRunner.ReportContact"/>); glances are
     /// felt and seen but never reported, since only the point scores. Every event plays its haptic pattern, Touches
-    /// flash the Dummy's zone and bow the drawn blade. All rules and math are in the Blade Core; this only reads the
+    /// flash the Dummy's zone. The drawn point stops against any part of the Dummy and the drawn blade bows as the hand
+    /// pushes on (<see cref="DrawnBlade"/>, PER-48). All rules and math are in the Blade Core; this only reads the
     /// controller, draws and forwards.
     ///
     /// The blade uses no buttons, so it never competes with the off-hand menu laser or the Strip buttons.
@@ -39,7 +40,7 @@ namespace VrFencing.Blade
         private StripBehaviour _strip;
 
         private readonly TouchDetector _detector = new TouchDetector();
-        private readonly BladeFlex _flex = new BladeFlex();
+        private readonly DrawnBlade _drawnBlade = new DrawnBlade();
 
         private TrainerSettings _settings;
         private TouchRules _rules;
@@ -51,6 +52,7 @@ namespace VrFencing.Blade
         private TrackedPose? _lastEnGardeLine;
         private float? _lastDummyDistanceMeters;
         private float _lastFlatHapticAt = float.NegativeInfinity;
+        private float _lastPressHapticAt = float.NegativeInfinity;
         // The blade starts drawn; the first untracked frame hides it.
         private bool _isTracked = true;
 
@@ -112,48 +114,84 @@ namespace VrFencing.Blade
             }
 
             var now = Time.timeAsDouble;
-            var worldBlade = new BladeSegment(_mount.position.ToNumerics(), _mount.TransformPoint(0.0f, 0.0f, BladePose.BladeLengthMeters).ToNumerics());
-            _flex.Step(worldBlade, Time.deltaTime);
-            DetectContacts(now, worldBlade);
-            _visual.Draw(worldBlade, _flex, (float)now);
+            var hasDummy = _dummy != null && _strip != null && _strip.EnGardeLine != null;
+
+            // Everything runs in the Strip frame, where the Dummy's capsules are. Without a Strip the room frame stands in.
+            var stripInRoom = hasDummy
+                ? new TrackedPose(_strip.EnGardeLine.position.ToNumerics(), _strip.EnGardeLine.rotation.ToNumerics())
+                : new TrackedPose(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+            var controllerAnchor = _mount.parent;
+            var controllerInRoom = new TrackedPose(controllerAnchor.position.ToNumerics(), controllerAnchor.rotation.ToNumerics());
+            var bladeInStrip = BladePose.GetBlade(StripFrame.ToStripFrame(stripInRoom, controllerInRoom), _mountInController);
+
+            if (hasDummy)
+            {
+                RestartOnJump(stripInRoom);
+                DetectContacts(now, bladeInStrip);
+            }
+
+            // A pressed épée bows up from the grip: the drawn blade bows toward the mount's up.
+            var bowDirection = System.Numerics.Vector3.Transform(_mount.up.ToNumerics(), System.Numerics.Quaternion.Inverse(stripInRoom.Rotation));
+            IReadOnlyList<Capsule> bodies = hasDummy ? _dummy.GetBodyOnStrip() : System.Array.Empty<Capsule>();
+            var wasDecoupled = _drawnBlade.IsDecoupled;
+            var release = _drawnBlade.Step(bladeInStrip, bodies, bowDirection, Time.deltaTime);
+            if (release != PinRelease.None)
+            {
+                Debug.Log($"[Blade] Point released: {release}");
+            }
+
+            if (_drawnBlade.IsDecoupled != wasDecoupled)
+            {
+                Debug.Log(_drawnBlade.IsDecoupled
+                    ? $"[Blade] Pushed past {BladeContactBend.MaxPushMeters * 100.0f:0} cm: the drawn blade holds and lags the hand"
+                    : "[Blade] Hand back within the bow: the drawn blade follows it again");
+            }
+
+            PlayPressHaptic((float)now);
+            _visual.Draw(_drawnBlade, stripInRoom, (float)now);
         }
 
-        private void DetectContacts(double now, BladeSegment worldBlade)
+        /// <summary>While the point is pinned, a buzz that grows with the push, full once the hand is past the most bow.</summary>
+        private void PlayPressHaptic(float now)
         {
-            if (_dummy == null || _strip == null || _strip.EnGardeLine == null)
+            if (!_drawnBlade.Contact.IsPinned || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
             {
                 return;
             }
 
-            var enGardeLine = new TrackedPose(_strip.EnGardeLine.position.ToNumerics(), _strip.EnGardeLine.rotation.ToNumerics());
+            _lastPressHapticAt = now;
+            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, _drawnBlade.IsDecoupled), _settings.Hand);
+        }
+
+        /// <summary>A Strip re-placed or the Dummy stood at another distance moves every zone at once: a jump, not motion.</summary>
+        private void RestartOnJump(TrackedPose enGardeLine)
+        {
             if (_lastEnGardeLine.HasValue && IsJump(_lastEnGardeLine.Value, enGardeLine))
             {
-                _detector.Reset();
+                RestartMotion();
             }
 
             _lastEnGardeLine = enGardeLine;
 
-            // A Drill standing the Dummy at its distance moves every zone at once: also a jump, not motion.
             var dummyDistanceMeters = _dummy.DistanceMeters;
             if (_lastDummyDistanceMeters.HasValue && Mathf.Abs(dummyDistanceMeters - _lastDummyDistanceMeters.Value) > JumpMeters)
             {
-                _detector.Reset();
+                RestartMotion();
             }
 
             _lastDummyDistanceMeters = dummyDistanceMeters;
-            var controllerAnchor = _mount.parent;
-            var controllerInRoom = new TrackedPose(controllerAnchor.position.ToNumerics(), controllerAnchor.rotation.ToNumerics());
-            var controllerInStrip = StripFrame.ToStripFrame(enGardeLine, controllerInRoom);
-            var bladeInStrip = BladePose.GetBlade(controllerInStrip, _mountInController);
+        }
 
+        private void DetectContacts(double now, BladeSegment bladeInStrip)
+        {
             IReadOnlyList<ZoneCapsule> zones = _dummy.GetZonesOnStrip();
             foreach (var bladeEvent in _detector.Step(new BladeSample(now, bladeInStrip), zones, _rules))
             {
-                HandleContact(bladeEvent, worldBlade, (float)now);
+                HandleContact(bladeEvent, (float)now);
             }
         }
 
-        private void HandleContact(BladeEvent bladeEvent, BladeSegment worldBlade, float now)
+        private void HandleContact(BladeEvent bladeEvent, float now)
         {
             Debug.Log($"[Blade] {bladeEvent.Type} {bladeEvent.Zone} tip {bladeEvent.TipSpeedMetersPerSecond:0.00} m/s " +
                 $"approach {bladeEvent.ApproachAngleDegrees:0} deg blade {bladeEvent.BladeAxisAngleDegrees:0} deg " +
@@ -164,8 +202,6 @@ namespace VrFencing.Blade
                 case BladeEventType.Touch:
                     Report(bladeEvent, ContactKind.PointFirst);
                     _dummy.FlashZone(bladeEvent.Zone);
-                    // A pressed épée bows up from the grip: the drawn point bows toward the mount's up.
-                    _flex.Kick(worldBlade, _mount.up.ToNumerics());
                     PlayHaptic(bladeEvent);
                     break;
                 case BladeEventType.FlatContact:
@@ -209,7 +245,7 @@ namespace VrFencing.Blade
         private void RestartMotion()
         {
             _detector.Reset();
-            _flex.Reset();
+            _drawnBlade.Reset();
         }
 
         private static bool IsJump(TrackedPose before, TrackedPose after)

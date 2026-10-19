@@ -125,6 +125,16 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheLaserTiltsDownByDefaultAndStepsByFiveDegrees()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.LaserTilt), Is.EqualTo("+15 deg"));
+            Assert.That(SettingsPage.Change(settings, SettingId.LaserTilt, -1).LaserTiltDegrees, Is.EqualTo(10.0f));
+            Assert.That(SettingsPage.GetImpact(SettingId.LaserTilt), Is.EqualTo(SettingImpact.None), "The menu reads it every frame.");
+        }
+
+        [Test]
         public void BladeSettingsGoToTheBladeAndTheHandMovesItToo()
         {
             Assert.That(SettingsPage.GetImpact(SettingId.TouchHaptic), Is.EqualTo(SettingImpact.Blade));

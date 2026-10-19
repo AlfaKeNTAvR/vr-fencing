@@ -24,6 +24,20 @@ namespace VrFencing.Tests.Dummy
         }
 
         [Test]
+        public void TheBodyOnTheStripIsEveryZoneAndSilhouettePartAtTheDistance()
+        {
+            var layout = DummyLayout.Create(DefaultHeight, Hand.Right);
+
+            var body = layout.GetBodyOnStrip(2.0f);
+
+            Assert.That(body.Count, Is.EqualTo(layout.Zones.Count + layout.SilhouetteParts.Count));
+            var head = layout.SilhouetteParts[0];
+            Assert.That(body.Any(part => Vector3.Distance(part.Start, DummyLayout.DummyToStrip(head.Start, 2.0f)) < Tolerance), Is.True, "The head is in the body.");
+            var zonesOnStrip = layout.GetZonesOnStrip(2.0f);
+            Assert.That(body.Take(zonesOnStrip.Count).Select(part => part.Start), Is.EqualTo(zonesOnStrip.Select(zone => zone.Shape.Start)));
+        }
+
+        [Test]
         public void ZonePositionsAndSizesScaleWithHeight()
         {
             var shorter = DummyLayout.Create(1.5f, Hand.Right);
