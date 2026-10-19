@@ -66,8 +66,13 @@ namespace VrFencing.UI
             {
                 $"Success: {results.SuccessCount} of {results.RepCount} Reps ({FormatPercent(results.SuccessPercent)})",
                 $"Average reaction time: {FormatOrNoTouches(results.AverageReactionSeconds, "0.00", "s")}",
-                $"Average tip speed: {FormatOrNoTouches(results.AverageTipSpeedMetersPerSecond, "0.0", "m/s")}",
             };
+
+            // Footwork calls use no blade, so they have no tip speed to show.
+            if (results.ZoneHits.Count > 0)
+            {
+                lines.Add($"Average tip speed: {FormatOrNoTouches(results.AverageTipSpeedMetersPerSecond, "0.0", "m/s")}");
+            }
 
             if (wasCancelled)
             {
@@ -82,7 +87,10 @@ namespace VrFencing.UI
             return lines;
         }
 
-        /// <summary>The hit map, one line per Target Zone that was cued, in Target Zone order.</summary>
+        /// <summary>
+        /// The hit map, one line per Target Zone that was cued, in Target Zone order; for footwork calls, one line per
+        /// called action ("Advance: Done 2 of 3").
+        /// </summary>
         public static IReadOnlyList<HitMapLine> FormatHitMap(DrillResults results)
         {
             if (results == null)
@@ -90,12 +98,17 @@ namespace VrFencing.UI
                 throw new ArgumentNullException(nameof(results));
             }
 
-            return results.ZoneHits
+            var zoneLines = results.ZoneHits
                 .Select(hits => new HitMapLine(
                     TargetZoneNames.Get(hits.Zone),
                     $"Touched {hits.Touches} of {hits.Attempts}",
-                    hits.Attempts == 0 ? 0.0f : (float)hits.Touches / hits.Attempts))
-                .ToArray();
+                    hits.Attempts == 0 ? 0.0f : (float)hits.Touches / hits.Attempts));
+            var footworkLines = results.FootworkHits
+                .Select(hits => new HitMapLine(
+                    FootworkNames.Get(hits.Call),
+                    $"Done {hits.Successes} of {hits.Attempts}",
+                    hits.Attempts == 0 ? 0.0f : (float)hits.Successes / hits.Attempts));
+            return zoneLines.Concat(footworkLines).ToArray();
         }
 
         /// <summary>One bar per session in <paramref name="trend"/>, oldest first, dated in <paramref name="localOffset"/>.</summary>

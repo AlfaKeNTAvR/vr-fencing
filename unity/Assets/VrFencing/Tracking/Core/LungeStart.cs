@@ -79,9 +79,10 @@ namespace VrFencing.Tracking
 
         /// <summary>
         /// Forward speed at each sample over the span back to the latest sample at least
-        /// <see cref="SpeedWindowSeconds"/> earlier; null where no sample is that far back.
+        /// <see cref="SpeedWindowSeconds"/> earlier; null where no sample is that far back. Shared with the
+        /// <see cref="FootworkClassifier"/>, so both read head speed the same way.
         /// </summary>
-        private static float?[] MeasureForwardSpeeds(IReadOnlyList<ForwardPosition> track)
+        public static float?[] MeasureForwardSpeeds(IReadOnlyList<ForwardPosition> track)
         {
             var speeds = new float?[track.Count];
             var spanStart = -1;

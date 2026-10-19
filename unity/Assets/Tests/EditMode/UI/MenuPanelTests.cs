@@ -116,12 +116,12 @@ namespace VrFencing.Tests.UI
 
             var label = dummyObject.GetComponentsInChildren<TextMeshPro>(includeInactive: true).Single();
             Assert.That(label.gameObject.activeSelf, Is.True);
-            Assert.That(label.text, Is.EqualTo(TargetZoneNames.Get(runner.CurrentTargetZone)));
+            Assert.That(label.text, Is.EqualTo(TargetZoneNames.Get(runner.CurrentTargetZone.Value)));
             Assert.That(label.transform.position.y, Is.GreaterThan(1.65f), "The label sits above the head, clear of every zone.");
             Assert.That(Vector3.Dot(label.transform.forward, Vector3.forward), Is.EqualTo(1.0f).Within(1e-4f),
                 "TextMeshPro reads from its -z side, so the label must face away from the Fencer (+z along the Strip).");
 
-            runner.ReportContact(new BladeContact(runner.CurrentTargetZone, ContactKind.PointFirst, 1.0f, 0.0f));
+            runner.ReportContact(new BladeContact(runner.CurrentTargetZone.Value, ContactKind.PointFirst, 1.0f, 0.0f));
 
             Assert.That(label.gameObject.activeSelf, Is.False);
         }

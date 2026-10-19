@@ -46,21 +46,9 @@ namespace VrFencing.Tests.Drills
             var withTests = DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(settings).Select(drill => drill.Id).ToArray();
             var withoutTests = DrillCatalog.CreateDefault(includeTestDrills: false).BuildAll(settings).Select(drill => drill.Id).ToArray();
 
-            Assert.That(withTests, Does.Contain(DrillCatalog.TimingTestDrillId).And.Contain(DrillCatalog.FullPisteTestDrillId));
-            Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.TimingTestDrillId).And.Not.Contain(DrillCatalog.FullPisteTestDrillId));
-        }
-
-        [Test]
-        public void TestDrillsTakeRepsRestAndWindowFromTheSettings()
-        {
-            var settings = new TrainerSettings { RepsPerDrill = 4, RestBetweenRepsSeconds = 3.5f };
-            settings.TimeWindows.ReactionSeconds = 2.2f;
-
-            var drill = DrillCatalog.CreateTimingTestDrill(settings);
-
-            Assert.That(drill.RepCount, Is.EqualTo(4));
-            Assert.That(drill.RestSeconds, Is.EqualTo(3.5f));
-            Assert.That(drill.WindowSeconds, Is.EqualTo(2.2f));
+            Assert.That(withTests, Does.Contain(DrillCatalog.FullPisteTestDrillId));
+            Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.FullPisteTestDrillId));
+            Assert.That(withTests.Length, Is.EqualTo(withoutTests.Length + 1), "Only the full-piste test Drill is dev-only.");
         }
 
         [Test]
@@ -69,7 +57,7 @@ namespace VrFencing.Tests.Drills
             var drill = DrillCatalog.CreateFullPisteTestDrill(new TrainerSettings());
 
             Assert.That(DrillAvailability.Check(drill, 5.0f, shrinkDrillsToFit: true).IsAvailable, Is.False);
-            Assert.That(DrillAvailability.Check(DrillCatalog.CreateTimingTestDrill(new TrainerSettings()), 2.5f, false).IsAvailable, Is.True);
+            Assert.That(DrillAvailability.Check(drill, 14.0f, shrinkDrillsToFit: false).IsAvailable, Is.True);
         }
     }
 }

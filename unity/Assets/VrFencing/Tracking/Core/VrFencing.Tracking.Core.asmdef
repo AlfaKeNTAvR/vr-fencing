@@ -2,6 +2,7 @@
     "name": "VrFencing.Tracking.Core",
     "rootNamespace": "VrFencing.Tracking",
     "references": [
+        "VrFencing.Drills.Core",
         "VrFencing.Session.Core",
         "VrFencing.Strip.Core",
         "VrFencing.Settings.Core"

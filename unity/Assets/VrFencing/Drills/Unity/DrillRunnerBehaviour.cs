@@ -9,7 +9,8 @@ namespace VrFencing.Drills
     /// Other components subscribe to <see cref="Runner"/>'s events and forward their inputs to it
     /// (the Blade's contacts, the Strip's off-strip and back-on signals, the UI's start and cancel).
     /// When a run starts it stands the Dummy at the Drill's Dummy Distance (the shortened variant's when the run is
-    /// shrunk); when the run ends it stands the Dummy back where the scene had it.
+    /// shrunk), and in a Drill with a Dummy Distance per Rep (distance choice) moves it on every cue; when the run ends
+    /// it stands the Dummy back where the scene had it.
     /// All rules live in the Core; this only supplies time and applies the Drill's data.
     /// </summary>
     public sealed class DrillRunnerBehaviour : MonoBehaviour
@@ -46,6 +47,7 @@ namespace VrFencing.Drills
         private void OnEnable()
         {
             Runner.Started += OnRunStarted;
+            Runner.RepCued += OnRepCued;
             Runner.Finished += OnRunFinished;
             if (_strip == null)
             {
@@ -81,6 +83,7 @@ namespace VrFencing.Drills
             // Cancel first, so the cancelled run still stands the Dummy back.
             Runner.Cancel();
             Runner.Started -= OnRunStarted;
+            Runner.RepCued -= OnRepCued;
             Runner.Finished -= OnRunFinished;
         }
 
@@ -96,6 +99,19 @@ namespace VrFencing.Drills
             _dummy.SetDistance(distance);
             var variant = Runner.IsShrunk ? " (shortened)" : string.Empty;
             Debug.Log($"[Drills] {Runner.Drill.Name}{variant} started: Dummy at {distance} distance, {_dummy.DistanceMeters:0.00} m.");
+        }
+
+        // Distance choice: the Dummy appearing at the Rep's distance is the cue. Rest separates it from the last Touch,
+        // so it does not jump under a lunge in progress; the Blade restarts its sweep when the Dummy moves.
+        private void OnRepCued(RepCue cue)
+        {
+            if (_dummy == null || Runner.Drill.RepDummyDistances == null)
+            {
+                return;
+            }
+
+            _dummy.SetDistance(cue.DummyDistance);
+            Debug.Log($"[Drills] Rep {cue.RepIndex + 1}: Dummy at {cue.DummyDistance} distance, {_dummy.DistanceMeters:0.00} m.");
         }
 
         private void OnRunFinished(DrillRunSummary summary)

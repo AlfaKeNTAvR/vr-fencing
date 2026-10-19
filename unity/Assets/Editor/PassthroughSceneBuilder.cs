@@ -1,6 +1,6 @@
 // Builds the passthrough scene: Meta camera rig with passthrough as the
 // background, the Strip, the Dummy standing on it under the En Garde Line, and the
-// Practice object (Drill runner, session recorder, arm tracking), the Blade on the sword hand, and the Menu
+// Practice object (Drill runner, session recorder, arm and footwork tracking), the Blade on the sword hand, and the Menu
 // (panels and off-hand pointer).
 using System.Linq;
 using UnityEditor;
@@ -189,8 +189,9 @@ namespace VrFencing.EditorTools
         }
 
         /// <summary>
-        /// The Practice object hosts the Drill runner, the session recorder that writes the rep log, and the arm
-        /// tracking that adds the IOBT arm pose to each logged Rep. Nothing starts a Drill until the UI does; the runner
+        /// The Practice object hosts the Drill runner, the session recorder that writes the rep log, the arm
+        /// tracking that adds the IOBT arm pose to each logged Rep, and the footwork tracking that reads footwork from
+        /// the head for the Drills that judge it. Nothing starts a Drill until the UI does; the runner
         /// stands the Dummy at each Drill's Dummy Distance while it runs.
         /// </summary>
         private static GameObject FindOrCreatePractice(Scene scene, StripBehaviour strip, DummyBehaviour dummy)
@@ -205,6 +206,7 @@ namespace VrFencing.EditorTools
             var drillRunner = GetOrAddComponent<DrillRunnerBehaviour>(practice);
             var sessionRecorder = GetOrAddComponent<SessionRecorderBehaviour>(practice);
             var armTracking = GetOrAddComponent<ArmTrackingBehaviour>(practice);
+            var footworkTracking = GetOrAddComponent<FootworkTrackingBehaviour>(practice);
 
             SetReference(drillRunner, "_strip", strip);
             SetReference(drillRunner, "_dummy", dummy);
@@ -212,6 +214,8 @@ namespace VrFencing.EditorTools
             SetReference(armTracking, "_sessionRecorder", sessionRecorder);
             SetReference(armTracking, "_drillRunner", drillRunner);
             SetReference(armTracking, "_strip", strip);
+            SetReference(footworkTracking, "_drillRunner", drillRunner);
+            SetReference(footworkTracking, "_strip", strip);
             return practice;
         }
 

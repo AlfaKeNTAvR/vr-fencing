@@ -67,6 +67,22 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void FootworkTrackingReportsToThePracticeRunnerInTheStripFrame()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var footworkTracking = Object.FindFirstObjectByType<VrFencing.Tracking.FootworkTrackingBehaviour>();
+            var runner = Object.FindFirstObjectByType<VrFencing.Drills.DrillRunnerBehaviour>();
+            var strip = Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>();
+
+            Assert.That(footworkTracking, Is.Not.Null, "No footwork tracking in the passthrough scene.");
+            Assert.That(footworkTracking.gameObject, Is.SameAs(runner.gameObject), "It lives on the Practice object.");
+            var serialized = new SerializedObject(footworkTracking);
+            Assert.That(serialized.FindProperty("_drillRunner").objectReferenceValue, Is.SameAs(runner));
+            Assert.That(serialized.FindProperty("_strip").objectReferenceValue, Is.SameAs(strip));
+        }
+
+        [Test]
         public void DrillRunnerMovesTheScenesDummy()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);

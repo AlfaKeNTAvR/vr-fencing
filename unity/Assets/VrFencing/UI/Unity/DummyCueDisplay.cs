@@ -9,7 +9,9 @@ namespace VrFencing.UI
     /// <summary>
     /// Shows each Rep's cue on the Dummy, where the Fencer is looking. A lit-zone cue lights the Target Zone; a
     /// named-zone cue shows the zone's name above the Dummy's head (the Running panel, low on the off-hand side, says
-    /// it too). Both go away when the Rep is judged, the run pauses or ends; a successful Touch flashes the zone.
+    /// it too). A compound lights its first zone with both names above the head, then, on the first Touch, flashes it
+    /// and lights the second; a footwork call shows the action above the head. All go away when the Rep is judged,
+    /// the run pauses or ends; a successful Touch flashes the zone.
     /// What the label says is decided in the UI Core (<see cref="RunStatusText.FormatDummyLabel"/>).
     /// </summary>
     internal sealed class DummyCueDisplay : IDisposable
@@ -34,6 +36,7 @@ namespace VrFencing.UI
             _dummy = dummy;
             _label = CreateLabel(dummy.transform);
             _runner.RepCued += OnRepCued;
+            _runner.SecondZoneCued += OnSecondZoneCued;
             _runner.RepJudged += OnRepJudged;
             _runner.StateChanged += OnStateChanged;
             _runner.Paused += HideCue;
@@ -42,6 +45,7 @@ namespace VrFencing.UI
         public void Dispose()
         {
             _runner.RepCued -= OnRepCued;
+            _runner.SecondZoneCued -= OnSecondZoneCued;
             _runner.RepJudged -= OnRepJudged;
             _runner.StateChanged -= OnStateChanged;
             _runner.Paused -= HideCue;
@@ -54,19 +58,34 @@ namespace VrFencing.UI
         private void OnRepCued(RepCue cue)
         {
             _dummy.DimAllZones();
-            if (cue.CueType == CueType.LitTargetZone)
+            if (cue.CueType == CueType.LitTargetZone && cue.TargetZone.HasValue)
             {
-                _dummy.LightZone(cue.TargetZone);
+                _dummy.LightZone(cue.TargetZone.Value);
             }
 
             ShowLabel(RunStatusText.FormatDummyLabel(cue));
         }
 
+        // A compound's first Touch landed: flash it, light the second zone, and leave only the second's name up.
+        private void OnSecondZoneCued(TargetZone secondZone)
+        {
+            var firstZone = _runner.CurrentCue.TargetZone;
+            _dummy.DimAllZones();
+            if (firstZone.HasValue)
+            {
+                _dummy.FlashZone(firstZone.Value);
+            }
+
+            _dummy.LightZone(secondZone);
+            ShowLabel(TargetZoneNames.Get(secondZone));
+        }
+
         private void OnRepJudged(RepResult result)
         {
-            if (result.IsSuccess)
+            var touchedZone = result.RequestedSecondZone ?? result.RequestedZone;
+            if (result.IsSuccess && touchedZone.HasValue)
             {
-                _dummy.FlashZone(result.RequestedZone);
+                _dummy.FlashZone(touchedZone.Value);
             }
         }
 

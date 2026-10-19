@@ -252,7 +252,7 @@ namespace VrFencing.Tests.Drills
 
             for (var rep = 0; rep < 20; rep++)
             {
-                _runner.ReportContact(TestDrills.PointOn(_runner.CurrentTargetZone));
+                _runner.ReportContact(TestDrills.PointOn(_runner.CurrentTargetZone.Value));
             }
 
             Assert.That(_recorder.Cues.Select(cue => cue.TargetZone).Distinct(), Is.SubsetOf(zones));

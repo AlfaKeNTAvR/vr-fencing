@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using VrFencing.Dummy;
 
 namespace VrFencing.Drills
@@ -17,6 +18,11 @@ namespace VrFencing.Drills
     /// The run resumes once the Fencer is on the Strip and has not paused it. Resuming during Rest continues the rest
     /// where it stopped. Resuming during Cue or Window restarts the interrupted Rep with a fresh cue, because the
     /// Fencer has moved and the old window would no longer be fair; the interrupted Rep is not judged.
+    ///
+    /// Rules (<see cref="SuccessRule"/>): a Touch on the cued zone; the same plus footwork that suits the Rep's Dummy
+    /// Distance (distance choice); two Touches in order, the second within its own window of the first (compound); or,
+    /// with no blade, the footwork read in the window answering the call (footwork calls, judged when the window ends).
+    /// Footwork comes in through <see cref="ReportFootwork"/>.
     /// </summary>
     public sealed class DrillRunner
     {
@@ -32,6 +38,12 @@ namespace VrFencing.Drills
 
         // On the active clock: seconds since the run started, paused time excluded.
         private double _stateStartedAtActiveSeconds;
+
+        // Compound Reps: when the first Touch landed (active clock), null until it has.
+        private double? _firstTouchAtActiveSeconds;
+
+        // The latest footwork reading reported since the current cue, for Drills that judge footwork.
+        private FootworkReading? _latestFootwork;
 
         /// <param name="clock">Source of time; the runner never reads Unity's time itself.</param>
         /// <param name="random">Picks each Rep's Target Zone. Pass a seeded one for reproducible runs.</param>
@@ -52,6 +64,9 @@ namespace VrFencing.Drills
 
         /// <summary>Raised when a Rep is cued, and again when an interrupted Rep restarts after a pause.</summary>
         public event Action<RepCue> RepCued;
+
+        /// <summary>Compound Reps: the first Touch landed, so the second zone is now the one to Touch.</summary>
+        public event Action<TargetZone> SecondZoneCued;
 
         /// <summary>Raised once per judged Rep. This is the record for the rep log.</summary>
         public event Action<RepResult> RepJudged;
@@ -83,8 +98,14 @@ namespace VrFencing.Drills
         /// <summary>Zero-based index of the Rep being cued or judged.</summary>
         public int CurrentRepIndex { get; private set; }
 
-        /// <summary>The Target Zone cued for the current Rep.</summary>
-        public TargetZone CurrentTargetZone { get; private set; }
+        /// <summary>The current Rep's cue.</summary>
+        public RepCue CurrentCue { get; private set; }
+
+        /// <summary>The Target Zone to Touch now: the cued zone, or a compound's second zone once its first Touch landed; null for a footwork call.</summary>
+        public TargetZone? CurrentTargetZone => IsAwaitingSecondTouch ? CurrentCue.SecondTargetZone : CurrentCue.TargetZone;
+
+        /// <summary>A compound Rep's first Touch landed and its second is awaited.</summary>
+        public bool IsAwaitingSecondTouch => _firstTouchAtActiveSeconds.HasValue && State == DrillState.Window;
 
         /// <summary>Reps judged so far in the current or last run.</summary>
         public IReadOnlyList<RepResult> Results => _results;
@@ -143,12 +164,13 @@ namespace VrFencing.Drills
         }
 
         /// <summary>
-        /// The blade met the Dummy. Only the first contact inside an open window counts; contacts during the cue,
-        /// the rest or a pause are ignored. A contact that arrives after the window ran out is a timeout.
+        /// The blade met the Dummy. Only the first contact inside an open window counts (in a compound, the first after
+        /// the first Touch too); contacts during the cue, the rest or a pause are ignored, and so is every contact in a
+        /// footwork-call Drill. A contact that arrives after the window ran out is a timeout.
         /// </summary>
         public void ReportContact(BladeContact contact)
         {
-            if (!IsRunning || IsPaused)
+            if (!IsRunning || IsPaused || Drill.SuccessRule == SuccessRule.FootworkCall)
             {
                 return;
             }
@@ -162,19 +184,37 @@ namespace VrFencing.Drills
 
             var contactAtActiveSeconds = ActiveSeconds();
             var outcome = JudgeContact(contact);
-            var result = new RepResult(
-                Drill.Id,
-                CurrentRepIndex,
-                CurrentTargetZone,
+            if (Drill.SuccessRule == SuccessRule.TwoTouchesInOrder && !_firstTouchAtActiveSeconds.HasValue && outcome == RepOutcome.Success)
+            {
+                // The first Touch of a compound: the Rep goes on, with the second zone to Touch in its own window.
+                _firstTouchAtActiveSeconds = contactAtActiveSeconds;
+                SecondZoneCued?.Invoke(CurrentCue.SecondTargetZone.Value);
+                AdvanceDueTransitions();
+                return;
+            }
+
+            var result = CreateResult(
                 outcome,
-                contact.Zone,
-                reactionSeconds: contactAtActiveSeconds - _stateStartedAtActiveSeconds,
-                contact.TipSpeedMetersPerSecond,
-                contact.DistanceFromZoneCenterMeters,
-                IsShrunk);
+                contact,
+                reactionSeconds: (_firstTouchAtActiveSeconds ?? contactAtActiveSeconds) - _stateStartedAtActiveSeconds,
+                secondTouchSeconds: contactAtActiveSeconds - _firstTouchAtActiveSeconds);
 
             FinishRep(result, contactAtActiveSeconds);
             AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// The Fencer's footwork since the current cue, read from the head (Tracking module). Kept while a Rep of a
+        /// Drill that judges footwork is cued or open; the latest one counts when the Rep is judged. Ignored otherwise.
+        /// </summary>
+        public void ReportFootwork(FootworkReading reading)
+        {
+            if (!IsRunning || IsPaused || !Drill.UsesFootwork || (State != DrillState.Cue && State != DrillState.Window))
+            {
+                return;
+            }
+
+            _latestFootwork = reading;
         }
 
         /// <summary>The Fencer's head passed a Strip end or side. Pauses a running Drill.</summary>
@@ -261,7 +301,52 @@ namespace VrFencing.Drills
                 return RepOutcome.FlatContact;
             }
 
-            return contact.Zone == CurrentTargetZone ? RepOutcome.Success : RepOutcome.WrongZone;
+            if (contact.Zone != CurrentTargetZone)
+            {
+                return RepOutcome.WrongZone;
+            }
+
+            // With no footwork reported (no head tracking), the Touch alone decides.
+            var isWrongFootwork = Drill.SuccessRule == SuccessRule.TouchWithFootworkForDistance
+                && _latestFootwork.HasValue
+                && !FootworkJudging.SuitsDistance(CurrentCue.DummyDistance, _latestFootwork.Value.Action);
+            return isWrongFootwork ? RepOutcome.WrongFootwork : RepOutcome.Success;
+        }
+
+        /// <summary>A footwork call when its window ends: the latest reading must answer the call; no movement is a timeout.</summary>
+        private RepResult JudgeFootworkCall()
+        {
+            var footwork = _latestFootwork;
+            RepOutcome outcome;
+            if (!footwork.HasValue || footwork.Value.Action == FootworkAction.None)
+            {
+                outcome = RepOutcome.Timeout;
+            }
+            else
+            {
+                outcome = FootworkJudging.AnswersCall(CurrentCue.FootworkCall.Value, footwork.Value.Action) ? RepOutcome.Success : RepOutcome.WrongFootwork;
+            }
+
+            return CreateResult(outcome, contact: null, reactionSeconds: footwork?.OnsetSecondsAfterCue, secondTouchSeconds: null);
+        }
+
+        private RepResult CreateResult(RepOutcome outcome, BladeContact? contact, double? reactionSeconds, double? secondTouchSeconds)
+        {
+            return new RepResult(
+                Drill.Id,
+                CurrentRepIndex,
+                CurrentCue.TargetZone,
+                outcome,
+                contact?.Zone,
+                reactionSeconds,
+                contact?.TipSpeedMetersPerSecond,
+                contact?.DistanceFromZoneCenterMeters,
+                IsShrunk,
+                CurrentCue.SecondTargetZone,
+                secondTouchSeconds,
+                CurrentCue.FootworkCall,
+                Drill.UsesFootwork ? _latestFootwork : null,
+                CurrentCue.DummyDistance);
         }
 
         private void AdvanceDueTransitions()
@@ -283,13 +368,15 @@ namespace VrFencing.Drills
                         break;
 
                     case DrillState.Window:
-                        var windowClosesAt = _stateStartedAtActiveSeconds + Drill.WindowSeconds;
+                        var windowClosesAt = _firstTouchAtActiveSeconds.HasValue
+                            ? _firstTouchAtActiveSeconds.Value + Drill.SecondTouchWindowSeconds
+                            : _stateStartedAtActiveSeconds + Drill.WindowSeconds;
                         if (now < windowClosesAt)
                         {
                             return;
                         }
 
-                        FinishRep(TimeoutResult(), windowClosesAt);
+                        FinishRep(Drill.SuccessRule == SuccessRule.FootworkCall ? JudgeFootworkCall() : TimeoutResult(), windowClosesAt);
                         break;
 
                     case DrillState.Rest:
@@ -308,18 +395,14 @@ namespace VrFencing.Drills
             }
         }
 
+        /// <summary>No (further) contact in time. A compound whose first Touch landed keeps that Touch's reaction time.</summary>
         private RepResult TimeoutResult()
         {
-            return new RepResult(
-                Drill.Id,
-                CurrentRepIndex,
-                CurrentTargetZone,
+            return CreateResult(
                 RepOutcome.Timeout,
-                contactZone: null,
-                reactionSeconds: null,
-                tipSpeedMetersPerSecond: null,
-                distanceFromZoneCenterMeters: null,
-                IsShrunk);
+                contact: null,
+                reactionSeconds: _firstTouchAtActiveSeconds - _stateStartedAtActiveSeconds,
+                secondTouchSeconds: null);
         }
 
         private void FinishRep(RepResult result, double atActiveSeconds)
@@ -353,9 +436,33 @@ namespace VrFencing.Drills
         private void EnterCue(double atActiveSeconds)
         {
             CurrentRepIndex = _results.Count;
-            CurrentTargetZone = Drill.TargetZones[_random.Next(Drill.TargetZones.Count)];
+            _firstTouchAtActiveSeconds = null;
+            _latestFootwork = null;
+            CurrentCue = PickCue();
             EnterState(DrillState.Cue, atActiveSeconds);
-            RepCued?.Invoke(new RepCue(CurrentRepIndex, CurrentTargetZone, Drill.CueType));
+            RepCued?.Invoke(CurrentCue);
+        }
+
+        /// <summary>The next Rep's cue, picked at random from what the Drill offers (see <see cref="DrillDefinition"/>).</summary>
+        private RepCue PickCue()
+        {
+            var distance = Drill.RepDummyDistances != null
+                ? Drill.RepDummyDistances[_random.Next(Drill.RepDummyDistances.Count)]
+                : Drill.GetDummyDistance(IsShrunk);
+
+            switch (Drill.SuccessRule)
+            {
+                case SuccessRule.FootworkCall:
+                    var calls = FootworkJudging.FilterCallsByDrift(Drill.FootworkCalls, _results.Select(result => result.Footwork?.Action));
+                    return new RepCue(CurrentRepIndex, targetZone: null, Drill.CueType, distance, footworkCall: calls[_random.Next(calls.Count)]);
+
+                case SuccessRule.TwoTouchesInOrder:
+                    var pair = Drill.ZonePairs[_random.Next(Drill.ZonePairs.Count)];
+                    return new RepCue(CurrentRepIndex, pair.First, Drill.CueType, distance, secondTargetZone: pair.Second);
+
+                default:
+                    return new RepCue(CurrentRepIndex, Drill.TargetZones[_random.Next(Drill.TargetZones.Count)], Drill.CueType, distance);
+            }
         }
 
         private void EnterState(DrillState state, double atActiveSeconds)

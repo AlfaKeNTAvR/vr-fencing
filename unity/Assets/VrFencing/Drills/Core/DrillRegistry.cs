@@ -66,8 +66,8 @@ namespace VrFencing.Drills
     }
 
     /// <summary>
-    /// The app's Drills (PER-21), easy to hard. Drills 1 to 3 (PER-38) are here; Drills 4 to 6 (PER-39) register in
-    /// <see cref="CreateDefault"/> the same way. Development builds also list two test Drills after the real ones.
+    /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38) and 4 to 6 (PER-39). Development builds also
+    /// list a test Drill after the real ones that never fits, to show a greyed-out row.
     ///
     /// Strip lengths are end to end, rear run-back included, as <c>StripGeometry.LengthMeters</c> measures them.
     /// The shortest Strip that can be placed is about 2 m end to end, so a 1 m requirement always fits.
@@ -77,8 +77,65 @@ namespace VrFencing.Drills
         public const string PointControlDrillId = "point-control";
         public const string LungeToTargetDrillId = "lunge-to-target";
         public const string ReactionDrillId = "reaction-lit-target";
-        public const string TimingTestDrillId = "test-timing";
+        public const string DistanceChoiceDrillId = "distance-choice";
+        public const string CompoundDrillId = "compound-sequence";
+        public const string FootworkCallsDrillId = "footwork-calls";
         public const string FullPisteTestDrillId = "test-full-piste";
+
+        /// <summary>
+        /// Drill 4 at step-lunge distance: an advance (0.2 of the height) and a lunge (0.6) forward of the En Garde Line
+        /// plus the run-back behind it (PER-21: about 3.5 m).
+        /// </summary>
+        public const float DistanceChoiceStripLengthMeters = 3.5f;
+
+        /// <summary>Drills 5 and 6 (PER-21: about 3 m): a lunge, or footwork kept within two steps of the En Garde Line.</summary>
+        public const float CompoundStripLengthMeters = 3.0f;
+
+        /// <inheritdoc cref="CompoundStripLengthMeters"/>
+        public const float FootworkCallsStripLengthMeters = 3.0f;
+
+        /// <summary>Drill 5's shortened variant stands the Dummy at extension distance, so it needs no lunge room.</summary>
+        public const float CompoundShrunkStripLengthMeters = 1.0f;
+
+        /// <summary>
+        /// Time from a compound's cue to its first Touch. PER-21 sets only the second Touch's window; this gives as long
+        /// as a named zone, since the Fencer reads two zones before starting.
+        /// </summary>
+        public const float CompoundFirstTouchWindowSeconds = NamedZoneWindowSeconds;
+
+        /// <summary>The Dummy Distances distance choice picks from, one at random per Rep.</summary>
+        public static readonly IReadOnlyList<DummyDistance> DistanceChoiceDistances = new[]
+        {
+            DummyDistance.Extension, DummyDistance.Lunge, DummyDistance.StepLunge,
+        };
+
+        /// <summary>
+        /// Distance choice cues the body only: the presets are measured so the point just reaches the body, so the
+        /// distance names the action only for the body; nearer zones (the hand) take less.
+        /// </summary>
+        public static readonly IReadOnlyList<TargetZone> DistanceChoiceZones = new[] { TargetZone.Body };
+
+        /// <summary>
+        /// Compound pairs (PER-21: "hand then thigh, foot then arm, and so on"): each moves the point between the high
+        /// and the low line or between the arm and the body, so the second Touch needs a real change of line.
+        /// </summary>
+        public static readonly IReadOnlyList<ZonePair> CompoundZonePairs = new[]
+        {
+            new ZonePair(TargetZone.Hand, TargetZone.Thigh),
+            new ZonePair(TargetZone.Foot, TargetZone.UpperArm),
+            new ZonePair(TargetZone.Wrist, TargetZone.Body),
+            new ZonePair(TargetZone.Forearm, TargetZone.Foot),
+            new ZonePair(TargetZone.Thigh, TargetZone.Hand),
+            new ZonePair(TargetZone.UpperArm, TargetZone.Thigh),
+            new ZonePair(TargetZone.Hand, TargetZone.Body),
+            new ZonePair(TargetZone.Foot, TargetZone.Wrist),
+        };
+
+        /// <summary>The calls of Drill 6 (PER-21).</summary>
+        public static readonly IReadOnlyList<FootworkAction> FootworkCalls = new[]
+        {
+            FootworkAction.Advance, FootworkAction.Retreat, FootworkAction.Lunge, FootworkAction.Check,
+        };
 
         /// <summary>
         /// Time to Touch a named Target Zone, from the cue. There is no Setting for it (PER-21 sets windows only for
@@ -114,21 +171,18 @@ namespace VrFencing.Drills
         /// <summary>Cue time of the test Drills: long enough to see the cue before the window opens.</summary>
         private const float TestCueSeconds = 1.0f;
 
-        /// <summary>Fits a Strip placed about 1 m long: the rear run-back adds about 1 m end to end.</summary>
-        private const float TimingTestStripLengthMeters = 2.0f;
-
-        /// <param name="includeTestDrills">Adds the test Drills; pass true only in development builds.</param>
+        /// <param name="includeTestDrills">Adds the test Drill; pass true only in development builds.</param>
         public static DrillRegistry CreateDefault(bool includeTestDrills)
         {
             var registry = new DrillRegistry();
             registry.Register(PointControlDrillId, CreatePointControlDrill);
             registry.Register(LungeToTargetDrillId, CreateLungeToTargetDrill);
             registry.Register(ReactionDrillId, CreateReactionDrill);
-
-            // PER-39 registers Drills 4 to 6 here, with Order 4 to 6.
+            registry.Register(DistanceChoiceDrillId, CreateDistanceChoiceDrill);
+            registry.Register(CompoundDrillId, CreateCompoundDrill);
+            registry.Register(FootworkCallsDrillId, CreateFootworkCallsDrill);
             if (includeTestDrills)
             {
-                registry.Register(TimingTestDrillId, CreateTimingTestDrill);
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
             }
 
@@ -204,24 +258,78 @@ namespace VrFencing.Drills
         }
 
         /// <summary>
-        /// Runs the Rep timing with the Fencer's Reps, rest and reaction window, lighting the body or the hand.
-        /// A Touch on the lit zone succeeds; another zone or a flat contact fails the Rep; no contact times out.
+        /// Drill 4, distance choice: on each cue the Dummy stands at extension, lunge or step-lunge distance (at random)
+        /// and its body lights; the Fencer picks the action and Touches the body within the distance-choice window (a
+        /// Setting, 2.0 s). The footwork read from the head up to the Touch must suit the distance
+        /// (<see cref="FootworkJudging.SuitsDistance"/>), else the Rep fails as wrong footwork.
         /// </summary>
-        public static DrillDefinition CreateTimingTestDrill(TrainerSettings settings)
+        public static DrillDefinition CreateDistanceChoiceDrill(TrainerSettings settings)
         {
             return new DrillDefinition(
-                TimingTestDrillId,
-                "Test: Rep timing",
-                TestDrillOrder,
-                requiredStripLengthMeters: TimingTestStripLengthMeters,
+                DistanceChoiceDrillId,
+                "Distance choice",
+                order: 4,
+                requiredStripLengthMeters: DistanceChoiceStripLengthMeters,
                 shrunkStripLengthMeters: null,
                 repCount: settings.RepsPerDrill,
-                cueSeconds: TestCueSeconds,
-                windowSeconds: settings.TimeWindows.ReactionSeconds,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: settings.TimeWindows.DistanceChoiceSeconds,
                 restSeconds: settings.RestBetweenRepsSeconds,
                 CueType.LitTargetZone,
-                SuccessRule.PointFirstTouchOnTargetZone,
-                new[] { TargetZone.Body, TargetZone.Hand });
+                SuccessRule.TouchWithFootworkForDistance,
+                DistanceChoiceZones,
+                DummyDistance.Lunge,
+                repDummyDistances: DistanceChoiceDistances);
+        }
+
+        /// <summary>
+        /// Drill 5, compound sequence: the first zone of a pair lights (the label above the Dummy names both, in order);
+        /// once it is Touched the second lights, and the second Touch must land within the compound window (a Setting,
+        /// 1.0 s) of the first. The Dummy stands at lunge distance; the shortened variant stands it at extension distance.
+        /// </summary>
+        public static DrillDefinition CreateCompoundDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                CompoundDrillId,
+                "Compound sequence",
+                order: 5,
+                requiredStripLengthMeters: CompoundStripLengthMeters,
+                shrunkStripLengthMeters: CompoundShrunkStripLengthMeters,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: CompoundFirstTouchWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.LitTargetZone,
+                SuccessRule.TwoTouchesInOrder,
+                targetZones: null,
+                DummyDistance.Lunge,
+                shrunkDummyDistance: DummyDistance.Extension,
+                zonePairs: CompoundZonePairs,
+                secondTouchWindowSeconds: settings.TimeWindows.CompoundSecondTouchSeconds);
+        }
+
+        /// <summary>
+        /// Drill 6, footwork calls: the app calls advance, retreat, lunge or check above the Dummy, and the footwork read
+        /// from the head in the footwork-call window (a Setting, 2.0 s) must answer it. No blade. The Dummy stands at
+        /// step-lunge distance, out of the way of two advances and a lunge.
+        /// </summary>
+        public static DrillDefinition CreateFootworkCallsDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                FootworkCallsDrillId,
+                "Footwork calls",
+                order: 6,
+                requiredStripLengthMeters: FootworkCallsStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: settings.TimeWindows.FootworkCallSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.FootworkCall,
+                SuccessRule.FootworkCall,
+                targetZones: null,
+                DummyDistance.StepLunge,
+                footworkCalls: FootworkCalls);
         }
 
         /// <summary>Needs a full 14 m piste, so the picker shows a greyed-out Drill with its required length.</summary>
@@ -230,7 +338,7 @@ namespace VrFencing.Drills
             return new DrillDefinition(
                 FullPisteTestDrillId,
                 "Test: needs a full piste",
-                TestDrillOrder + 1,
+                TestDrillOrder,
                 requiredStripLengthMeters: 14.0f,
                 shrunkStripLengthMeters: null,
                 repCount: settings.RepsPerDrill,

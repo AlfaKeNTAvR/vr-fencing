@@ -11,15 +11,55 @@ namespace VrFencing.Drills
         /// <summary>The app names the Target Zone (point control, lunge to target).</summary>
         NamedTargetZone,
 
-        /// <summary>The Target Zone lights up and goes dark when the window closes (reaction).</summary>
+        /// <summary>The Target Zone lights up and goes dark when the window closes (reaction, distance choice, compound).</summary>
         LitTargetZone,
+
+        /// <summary>The app calls a footwork action ("Advance") above the Dummy; no zone is cued (footwork calls).</summary>
+        FootworkCall,
     }
 
-    /// <summary>How a Rep is judged. Later Drills (compound sequence, footwork calls) add their own rules here.</summary>
+    /// <summary>How a Rep is judged.</summary>
     public enum SuccessRule
     {
         /// <summary>A point-first Touch on the cued Target Zone within the window. A wrong zone, a flat contact or a timeout fails.</summary>
         PointFirstTouchOnTargetZone,
+
+        /// <summary>
+        /// As <see cref="PointFirstTouchOnTargetZone"/>, and the footwork read up to the Touch must suit the Rep's Dummy
+        /// Distance (<see cref="FootworkJudging.SuitsDistance"/>), else the Rep fails as wrong footwork (distance choice).
+        /// </summary>
+        TouchWithFootworkForDistance,
+
+        /// <summary>
+        /// Two point-first Touches in order: the Rep's first zone within the window, then its second zone within
+        /// <see cref="DrillDefinition.SecondTouchWindowSeconds"/> of the first Touch (compound sequence).
+        /// </summary>
+        TwoTouchesInOrder,
+
+        /// <summary>
+        /// No blade: when the window ends, the footwork read since the cue must answer the called action
+        /// (<see cref="FootworkJudging.AnswersCall"/>). Blade contacts are ignored (footwork calls).
+        /// </summary>
+        FootworkCall,
+    }
+
+    /// <summary>Two Target Zones a compound Rep cues in order.</summary>
+    public readonly struct ZonePair
+    {
+        public ZonePair(TargetZone first, TargetZone second)
+        {
+            if (first == second)
+            {
+                throw new ArgumentException("A compound needs two different Target Zones.", nameof(second));
+            }
+
+            First = first;
+            Second = second;
+        }
+
+        public TargetZone First { get; }
+
+        public TargetZone Second { get; }
     }
 
     /// <summary>
@@ -43,7 +83,11 @@ namespace VrFencing.Drills
             SuccessRule successRule,
             IReadOnlyList<TargetZone> targetZones,
             DummyDistance dummyDistance = DummyDistance.Lunge,
-            DummyDistance? shrunkDummyDistance = null)
+            DummyDistance? shrunkDummyDistance = null,
+            IReadOnlyList<DummyDistance> repDummyDistances = null,
+            IReadOnlyList<ZonePair> zonePairs = null,
+            float secondTouchWindowSeconds = 0.0f,
+            IReadOnlyList<FootworkAction> footworkCalls = null)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -87,15 +131,51 @@ namespace VrFencing.Drills
                 throw new ArgumentOutOfRangeException(nameof(restSeconds), restSeconds, "Must not be negative.");
             }
 
-            if (targetZones == null || targetZones.Count == 0)
+            if (successRule == SuccessRule.FootworkCall)
+            {
+                if (footworkCalls == null || footworkCalls.Count == 0)
+                {
+                    throw new ArgumentException("A footwork-call Drill needs at least one call.", nameof(footworkCalls));
+                }
+
+                if (cueType != CueType.FootworkCall)
+                {
+                    throw new ArgumentException("A footwork-call Drill cues footwork calls.", nameof(cueType));
+                }
+            }
+            else if (successRule == SuccessRule.TwoTouchesInOrder)
+            {
+                if (zonePairs == null || zonePairs.Count == 0)
+                {
+                    throw new ArgumentException("A compound Drill needs at least one pair of Target Zones.", nameof(zonePairs));
+                }
+
+                if (!(secondTouchWindowSeconds > 0.0f))
+                {
+                    throw new ArgumentOutOfRangeException(nameof(secondTouchWindowSeconds), secondTouchWindowSeconds, "Must be positive.");
+                }
+            }
+            else if (targetZones == null || targetZones.Count == 0)
             {
                 throw new ArgumentException("A Drill needs at least one Target Zone to cue.", nameof(targetZones));
+            }
+
+            if (cueType == CueType.FootworkCall && successRule != SuccessRule.FootworkCall)
+            {
+                throw new ArgumentException("Footwork calls are judged by the footwork-call rule.", nameof(successRule));
             }
 
             if (shrunkDummyDistance.HasValue && !shrunkStripLengthMeters.HasValue)
             {
                 throw new ArgumentException(
                     "Only a Drill with a shortened variant can set the shortened variant's Dummy Distance.", nameof(shrunkDummyDistance));
+            }
+
+            if (repDummyDistances != null && (repDummyDistances.Count == 0 || shrunkStripLengthMeters.HasValue))
+            {
+                throw new ArgumentException(
+                    "Per-Rep Dummy Distances need at least one distance, and a Drill that has them has no shortened variant.",
+                    nameof(repDummyDistances));
             }
 
             Id = id;
@@ -109,9 +189,13 @@ namespace VrFencing.Drills
             RestSeconds = restSeconds;
             CueType = cueType;
             SuccessRule = successRule;
-            TargetZones = targetZones.ToArray();
+            TargetZones = targetZones?.ToArray() ?? Array.Empty<TargetZone>();
             DummyDistance = dummyDistance;
             ShrunkDummyDistance = shrunkDummyDistance ?? dummyDistance;
+            RepDummyDistances = repDummyDistances?.ToArray();
+            ZonePairs = zonePairs?.ToArray() ?? Array.Empty<ZonePair>();
+            SecondTouchWindowSeconds = secondTouchWindowSeconds;
+            FootworkCalls = footworkCalls?.ToArray() ?? Array.Empty<FootworkAction>();
         }
 
         /// <summary>Stable key for the rep log.</summary>
@@ -147,8 +231,26 @@ namespace VrFencing.Drills
 
         public SuccessRule SuccessRule { get; }
 
-        /// <summary>The Target Zones a Rep may cue; each Rep picks one at random.</summary>
+        /// <summary>The Target Zones a Rep may cue; each Rep picks one at random. Empty for footwork calls and compounds.</summary>
         public IReadOnlyList<TargetZone> TargetZones { get; }
+
+        /// <summary>The ordered zone pairs a compound Rep may cue; each Rep picks one at random. Empty for other Drills.</summary>
+        public IReadOnlyList<ZonePair> ZonePairs { get; }
+
+        /// <summary>Compound only: time from the first Touch for the second to land.</summary>
+        public float SecondTouchWindowSeconds { get; }
+
+        /// <summary>The actions a footwork-call Rep may call. Empty for other Drills.</summary>
+        public IReadOnlyList<FootworkAction> FootworkCalls { get; }
+
+        /// <summary>
+        /// When set, each Rep stands the Dummy at one of these, picked at random (distance choice); the Unity layer moves
+        /// the Dummy on each cue. Null when the Dummy stays at <see cref="DummyDistance"/> for the whole run.
+        /// </summary>
+        public IReadOnlyList<DummyDistance> RepDummyDistances { get; }
+
+        /// <summary>The Rep's footwork is read from the head and reported to the runner (distance choice, footwork calls).</summary>
+        public bool UsesFootwork => SuccessRule == SuccessRule.TouchWithFootworkForDistance || SuccessRule == SuccessRule.FootworkCall;
 
         /// <summary>Where the Dummy stands for the full Drill. The Unity layer moves the Dummy there when a run starts.</summary>
         public DummyDistance DummyDistance { get; }
