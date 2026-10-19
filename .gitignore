@@ -27,3 +27,6 @@ sysinfo.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Claude Code worktrees
+.claude/worktrees/
