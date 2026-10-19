@@ -132,6 +132,60 @@ namespace VrFencing.Tests.Dummy
         }
 
         [Test]
+        public void ZonesAreDrawnThinnerThanTheyAreJudgedAndTheLookRedrawsWithoutRebuilding()
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, Hand.Right);
+            dummy.SetDistanceMeters(2.0f);
+            var judgedRadius = FindZoneOnStrip(dummy, TargetZone.Body).Shape.RadiusMeters;
+            var bodyPart = FindPart($"Zone {TargetZone.Body}");
+
+            Assert.That(bodyPart.lossyScale.x, Is.EqualTo(2.0f * judgedRadius * new DummyLookSettings().ZoneThicknessFraction).Within(Tolerance));
+
+            dummy.SetLook(new DummyLookSettings { ZoneThicknessFraction = 1.0f });
+
+            Assert.That(FindPart($"Zone {TargetZone.Body}"), Is.SameAs(bodyPart), "The zone was rebuilt.");
+            Assert.That(bodyPart.lossyScale.x, Is.EqualTo(2.0f * judgedRadius).Within(Tolerance));
+            Assert.That(FindZoneOnStrip(dummy, TargetZone.Body).Shape.RadiusMeters, Is.EqualTo(judgedRadius), "The judged zone changed.");
+            AssertRenderedZonesMatchCore(dummy);
+        }
+
+        [Test]
+        public void HiddenZonesStillShowWhenLitOrFlashed()
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, Hand.Right);
+
+            dummy.SetLook(new DummyLookSettings { ShowTargetZones = false });
+            dummy.LightZone(TargetZone.Wrist);
+            dummy.FlashZone(TargetZone.Thigh);
+            dummy.SetLook(new DummyLookSettings { ShowTargetZones = false });
+
+            Assert.That(FindPart($"Zone {TargetZone.Body}").GetComponent<Renderer>().enabled, Is.False, "A dim zone is hidden.");
+            Assert.That(FindPart($"Zone {TargetZone.Wrist}").GetComponent<Renderer>().enabled, Is.True, "A lit zone shows.");
+            Assert.That(FindPart($"Zone {TargetZone.Thigh}").GetComponent<Renderer>().enabled, Is.True, "A flashing zone shows.");
+
+            dummy.SetLook(new DummyLookSettings());
+
+            Assert.That(FindPart($"Zone {TargetZone.Body}").GetComponent<Renderer>().enabled, Is.True);
+        }
+
+        [Test]
+        public void TheLookSetsTheBodyAndDimZoneOpacityAndZonesDrawOverTheBody()
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, Hand.Right);
+
+            dummy.SetLook(new DummyLookSettings { BodyOpacity = 0.8f, ZoneOpacity = 0.4f });
+
+            var zoneRenderer = FindPart($"Zone {TargetZone.Body}").GetComponent<Renderer>();
+            var bodyRenderer = FindPart("Silhouette").GetComponent<Renderer>();
+            Assert.That(GetColor(bodyRenderer).a, Is.EqualTo(0.8f).Within(Tolerance));
+            Assert.That(GetColor(zoneRenderer).a, Is.EqualTo(0.4f).Within(Tolerance));
+            Assert.That(zoneRenderer.sortingOrder, Is.GreaterThan(bodyRenderer.sortingOrder));
+        }
+
+        [Test]
         public void RejectsANegativeDistance()
         {
             var dummy = CreateDummy();
@@ -147,6 +201,26 @@ namespace VrFencing.Tests.Dummy
                 Assert.That(part, Is.Not.Null, zone.Zone.ToString());
                 Assert.That(Vector3.Distance(part.position, zone.Shape.Center.ToUnity()), Is.LessThan(Tolerance), zone.Zone.ToString());
             }
+        }
+
+        private static ZoneCapsule FindZoneOnStrip(DummyBehaviour dummy, TargetZone zone)
+        {
+            foreach (var zoneCapsule in dummy.GetZonesOnStrip())
+            {
+                if (zoneCapsule.Zone == zone)
+                {
+                    return zoneCapsule;
+                }
+            }
+
+            throw new System.ArgumentOutOfRangeException(nameof(zone), zone, "No such zone on the Dummy.");
+        }
+
+        private static Color GetColor(Renderer partRenderer)
+        {
+            var block = new MaterialPropertyBlock();
+            partRenderer.GetPropertyBlock(block);
+            return block.GetColor("_BaseColor");
         }
 
         private Transform FindPart(string partName)

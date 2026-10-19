@@ -302,7 +302,7 @@ The Settings groups, in order (`SettingGroups` in the UI Core; an Edit-mode test
 | You | Sword hand, Your height, Menu laser tilt |
 | Drills | Reps per Drill, Rest between Reps, Reaction window, Compound second Touch window, Distance choice window, Footwork call window, Shrink Drills to fit the Strip |
 | Strip | Warning Zone on a full piste, Warning Zone at least, Off-strip tolerance |
-| Touch | Touch rule, Touch pressure |
+| Touch | Touch rule, Touch pressure, and the Dummy's look (PER-102): Show Target Zones, Zone opacity, Zone thickness (of scoring), Dummy body opacity. The look only changes how the Dummy is drawn, never how Touches are judged; hidden zones still show while lit or flashing |
 | Blade | Grip, Blade pitch, Blade yaw, Blade set (curve), Blade flex, and the "Calibrate grip" button (opens the grip page) |
 | Haptics | Haptic Touch, flat contact, glance, strength when slow, full strength at |
 

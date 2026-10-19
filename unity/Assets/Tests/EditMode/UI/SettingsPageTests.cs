@@ -301,6 +301,43 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheDummyLookSettingsOnlyRedrawTheDummy()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ShowTargetZones), Is.EqualTo("On"));
+            Assert.That(SettingsPage.Change(settings, SettingId.ShowTargetZones, -1).DummyLook.ShowTargetZones, Is.False);
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ZoneOpacity), Is.EqualTo("30%"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ZoneThickness), Is.EqualTo("60%"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BodyOpacity), Is.EqualTo("60%"));
+            Assert.That(SettingsPage.Change(settings, SettingId.ZoneThickness, -1).DummyLook.ZoneThicknessFraction, Is.EqualTo(0.5f).Within(1e-5f));
+            foreach (var id in new[] { SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness, SettingId.BodyOpacity })
+            {
+                Assert.That(SettingsPage.GetImpact(id), Is.EqualTo(SettingImpact.DummyLook), id.ToString());
+            }
+        }
+
+        [Test]
+        public void TheDummyLookStaysVisibleAndNeverDrawsZonesFatterThanTheyAreJudged()
+        {
+            foreach (var direction in new[] { -1, 1 })
+            {
+                var settings = new TrainerSettings();
+                for (var i = 0; i < 20; i++)
+                {
+                    foreach (var id in new[] { SettingId.ZoneOpacity, SettingId.ZoneThickness, SettingId.BodyOpacity })
+                    {
+                        settings = SettingsPage.Change(settings, id, direction);
+                    }
+                }
+
+                Assert.That(settings.DummyLook.ZoneOpacity, Is.InRange(0.1f, 1.0f));
+                Assert.That(settings.DummyLook.BodyOpacity, Is.InRange(0.1f, 1.0f));
+                Assert.That(settings.DummyLook.ZoneThicknessFraction, Is.InRange(0.2f, 1.0f));
+            }
+        }
+
+        [Test]
         public void HeightAndHandRebuildTheDummyAndTheStrip()
         {
             Assert.That(SettingsPage.GetImpact(SettingId.FencerHeight), Is.EqualTo(SettingImpact.Dummy | SettingImpact.Strip | SettingImpact.Drills));

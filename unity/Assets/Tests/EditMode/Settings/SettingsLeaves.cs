@@ -8,7 +8,8 @@ namespace VrFencing.Tests.Settings
 {
     internal static class SettingsLeaves
     {
-        public static Dictionary<string, object> Read(TrainerSettings settings)
+        /// <summary>Every leaf value of <paramref name="settings"/>: a <see cref="TrainerSettings"/> or one of its nested groups.</summary>
+        public static Dictionary<string, object> Read(object settings)
         {
             var leaves = new Dictionary<string, object>();
             Collect(settings, string.Empty, leaves);
