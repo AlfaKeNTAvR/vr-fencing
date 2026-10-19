@@ -10,8 +10,9 @@ namespace VrFencing.Prototypes.BladeFeel
     public sealed class BladeTuning
     {
         public int mountIndex;
-        public float pitchDegrees;
-        public float yawDegrees;
+        // Defaults: what Nikita chose in the first feel test (2026-10-19).
+        public float pitchDegrees = 10f;
+        public float yawDegrees = -10f;
     }
 
     public static class BladeTuningStore
