@@ -11,9 +11,12 @@
         "VrFencing.Dummy.Core",
         "VrFencing.Dummy.Unity",
         "VrFencing.Drills.Core",
+        "VrFencing.Drills.Unity",
         "VrFencing.Session.Core",
+        "VrFencing.Session.Unity",
         "VrFencing.UI.Core",
         "VrFencing.Tracking.Core",
+        "VrFencing.Tracking.Unity",
         "VrFencing.Settings.Core",
         "VrFencing.Settings.Unity"
     ],

@@ -119,6 +119,55 @@ namespace VrFencing.Tests.Session
         }
 
         [Test]
+        public void ArmPoseTrackingFieldsReadBack()
+        {
+            var armPose = new ArmPoseSnapshot(
+                shoulder: null,
+                elbow: null,
+                wrist: new TrackedPose(new Vector3(0.3f, 1.3f, 0.6f), Quaternion.Identity),
+                fidelity: BodyTrackingFidelity.Low,
+                armExtendedBeforeLunge: true,
+                elbowAngleAtLungeStartDegrees: 168.5f,
+                lungeStartSecondsBeforeJudging: 0.42);
+            var written = RepLogEntry.FromRepResult(
+                new RepResult("lunge-to-target", 0, TargetZone.Body, RepOutcome.Success, TargetZone.Body, 0.9, 2.5f, 0.02f, isShrunk: false),
+                Noon,
+                "session-c",
+                flagged: false,
+                armPose);
+
+            RepLogFile.Append(_logPath, written);
+            var line = File.ReadAllLines(_logPath)[0];
+            var read = RepLogFile.Read(_logPath).Items[0].ArmPose;
+
+            Assert.That(line, Does.Contain("\"fidelity\":\"Low\""));
+            Assert.That(line, Does.Contain("\"armExtendedBeforeLunge\":true"));
+            Assert.That(read.Fidelity, Is.EqualTo(BodyTrackingFidelity.Low));
+            Assert.That(read.ArmExtendedBeforeLunge, Is.True);
+            Assert.That(read.ElbowAngleAtLungeStartDegrees, Is.EqualTo(168.5f));
+            Assert.That(read.LungeStartSecondsBeforeJudging, Is.EqualTo(0.42));
+            Assert.That(read.Wrist.Value.Position, Is.EqualTo(new Vector3(0.3f, 1.3f, 0.6f)));
+        }
+
+        [Test]
+        public void ArmPoseWrittenBeforeTheTrackingFieldsReadsThemAsEmpty()
+        {
+            File.AppendAllText(_logPath, "{\"schema\":1,\"timestamp\":\"2026-10-19T12:00:00+00:00\",\"sessionId\":\"s\",\"drillId\":\"d\",\"repIndex\":0,"
+                                         + "\"targetZone\":\"Hand\",\"result\":\"Success\",\"isShrunk\":false,\"flagged\":false,"
+                                         + "\"armPose\":{\"shoulder\":null,\"elbow\":{\"position\":[0.1,1.2,0.3],\"rotation\":[0,0,0,1]},\"wrist\":null}}\n");
+
+            var read = RepLogFile.Read(_logPath);
+
+            Assert.That(read.SkippedLineCount, Is.EqualTo(0));
+            var armPose = read.Items[0].ArmPose;
+            Assert.That(armPose.Elbow.Value.Position, Is.EqualTo(new Vector3(0.1f, 1.2f, 0.3f)));
+            Assert.That(armPose.Fidelity, Is.Null);
+            Assert.That(armPose.ArmExtendedBeforeLunge, Is.Null);
+            Assert.That(armPose.ElbowAngleAtLungeStartDegrees, Is.Null);
+            Assert.That(armPose.LungeStartSecondsBeforeJudging, Is.Null);
+        }
+
+        [Test]
         public void MissingFileReadsAsEmpty()
         {
             var read = RepLogFile.Read(_folder.File("does-not-exist.jsonl"));

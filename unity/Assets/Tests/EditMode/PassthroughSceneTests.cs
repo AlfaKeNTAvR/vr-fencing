@@ -1,6 +1,7 @@
 // Guards camera rig settings in the passthrough scene that only show up as
 // wrong placement in the headset.
 using NUnit.Framework;
+using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
@@ -45,6 +46,35 @@ namespace VrFencing.Tests
             Assert.That(strip.EnGardeLine, Is.Not.Null, "The Strip has no En Garde Line transform.");
             Assert.That(dummy.transform.parent, Is.SameAs(strip.EnGardeLine),
                 "The Dummy places itself along its parent's +z, so it must sit under the En Garde Line.");
+        }
+
+        [Test]
+        public void ArmTrackingFeedsTheSessionRecorder()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var armTracking = Object.FindFirstObjectByType<VrFencing.Tracking.ArmTrackingBehaviour>();
+            var recorder = Object.FindFirstObjectByType<VrFencing.Session.SessionRecorderBehaviour>();
+            var runner = Object.FindFirstObjectByType<VrFencing.Drills.DrillRunnerBehaviour>();
+
+            Assert.That(armTracking, Is.Not.Null, "No arm tracking in the passthrough scene.");
+            Assert.That(recorder, Is.Not.Null, "No session recorder in the passthrough scene.");
+            Assert.That(runner, Is.Not.Null, "No Drill runner in the passthrough scene.");
+            var serializedTracking = new SerializedObject(armTracking);
+            Assert.That(serializedTracking.FindProperty("_sessionRecorder").objectReferenceValue, Is.SameAs(recorder));
+            Assert.That(serializedTracking.FindProperty("_drillRunner").objectReferenceValue, Is.SameAs(runner));
+            Assert.That(new SerializedObject(recorder).FindProperty("_drillRunner").objectReferenceValue, Is.SameAs(runner));
+        }
+
+        [Test]
+        public void CameraRigAsksForTheBodyTrackingPermission()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var manager = Object.FindFirstObjectByType<OVRManager>();
+
+            Assert.That(new SerializedObject(manager).FindProperty("requestBodyTrackingPermissionOnStartup").boolValue, Is.True,
+                "Without the permission IOBT never starts and the rep log gets no arm pose.");
         }
 
         [Test]
