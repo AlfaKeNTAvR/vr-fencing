@@ -22,7 +22,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 
 - Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log), the arm tracking (IOBT) and the footwork tracking (head); the `Menu` object (`MenuBehaviour`) builds the panels and the off-hand pointer at runtime and is what starts, pauses and cancels Drills. The camera rig's OVRManager asks for the body tracking permission at launch.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
-- Android package id: `com.alfakentavr.vrfencing`.
+- Android package id: `com.alfakentavr.vrfencing`. Entry point: the plain Activity, not GameActivity (see "Sleep/wake and the `[Life]` log").
 
 ## The scripts (repo root, bash, run from Git Bash)
 
@@ -78,7 +78,7 @@ The `armPose` object (Tracking module, IOBT upper body) holds the blade arm's `s
 
 `armPose` is null when body tracking was not running (permission not granted, not supported, or stopped). Rules and thresholds, all in `Assets/VrFencing/Tracking/Core/`: the lunge is the fastest forward burst of the head along the Strip since the Rep's cue, reaching at least 0.9 m/s; it starts at the last moment before that peak when the head was moving forward slower than 0.2 m/s (`LungeStart.cs`). The arm counts as extended with the elbow at 150 degrees or straighter and the wrist forward of the shoulder by at least 0.6 of the arm's length (`ArmExtension.cs`). Lines written before these fields existed read back with them null.
 
-On the headset, every judged Rep also prints a `[Tracking] Rep judged: ...` line to `adb logcat -s Unity`, and body tracking start, fidelity changes (as the runtime reports them) and missing permission are logged with the same tag. Body tracking runs whenever the app is active and stops while the app is paused (headset asleep), has lost input focus (system menu), or the headset is off the head; it restarts once all have cleared (`BodyTrackingLifecycle.cs`), logging `[Tracking] Body tracking stopped (<reason>).` and `[Tracking] Restarting body tracking (<reason>).` The app asks for the body tracking permission at first launch (Meta's dialog); if it was denied, grant it with `"$ADB" shell pm grant com.alfakentavr.vrfencing com.oculus.permission.BODY_TRACKING` (or in the headset's app permissions) and restart the app.
+On the headset, every judged Rep also prints a `[Tracking] Rep judged: ...` line to `adb logcat -s Unity`, and body tracking start, fidelity changes (as the runtime reports them) and missing permission are logged with the same tag. Body tracking runs whenever the app is active and stops at once while the app is paused (headset asleep), has lost focus (system menu, lock screen), or the headset is off the head. It restarts only from the frame loop, never from a pause or focus callback, once the app is resumed and the runtime has reported VR focus, input focus, the headset connected and the user wearing it continuously for 1.5 s (`BodyTrackingLifecycle.DefaultSettleSeconds`); the same settle applies to the first start after launch (PER-71: restarting inside the wake callbacks, under the lock screen, left a black frozen view). It logs `[Tracking] Body tracking stopped (<reason>).` and `[Tracking] Starting body tracking (runtime ready for 1.5 s since <last event>).`, plus `[Tracking] OVRPlugin.<call> took <n> ms (ok|failed).` around every start, fidelity request and stop. The app asks for the body tracking permission at first launch (Meta's dialog); if it was denied, grant it with `"$ADB" shell pm grant com.alfakentavr.vrfencing com.oculus.permission.BODY_TRACKING` (or in the headset's app permissions) and restart the app.
 
 The name is not `reps.jsonl` on purpose: an older throwaway prototype writes that name with a different schema. The newest Rep can lag by one rest period, since it is held back so the flag button can still mark it.
 
@@ -88,6 +88,25 @@ The name is not `reps.jsonl` on purpose: an older throwaway prototype writes tha
 ```
 
 `metavr files pull` works too, with the same device paths.
+
+## Sleep/wake and the `[Life]` log
+
+The Android entry point is the plain Activity (`UnityPlayerActivity`), not GameActivity (PER-71): Unity issue UUM-139694 is an intermittent ANR in GameActivity's pause/resume on Quest OpenXR, fixed only in Unity 6000.6. `QuestProjectSetup` sets it, rewrites the manifest's activity to match, and keeps Meta's Project Setup Tool from switching it back (its "Always specify single GameActivity application entry" task is excluded from Fix All, and the setup script fails if the entry point changed anyway). The build log and the OpenXR validation still warn about GameActivity; that is expected. Revisit when the project moves to a Unity with the fix.
+
+The `LifecycleLogBehaviour` on the camera rig writes sleep/wake diagnostics with a `[Life]` tag (`adb logcat -s Unity`):
+
+| Line | Meaning |
+|---|---|
+| `[Life] frame <n> t <s> s vrFocus 1 inputFocus 1 hmd 1 user 1` | Heartbeat, once per second of realtime while frames run. A gap means the frame loop was not running (paused, or frozen); a gap after a resume with no later heartbeat is the freeze |
+| `[Life] OnApplicationPause(true/false) at frame <n>, t <s> s.` | Unity pause/resume; also `OnApplicationFocus(...)`, `OVRManager.InputFocusLost/Acquired`, `VrFocusLost/Acquired`, `HMDUnmounted/Mounted`, `HMDLost/Acquired` |
+| `[Life] On resume: passthrough initialized, passthrough layer enabled.` | Passthrough state right after `OnApplicationPause(false)` (`pending`, `failed` or `not initialized` otherwise) |
+| `[Life] passthroughLayerResumed at frame <n>, t <s> s.` | The passthrough layer was shown again after a restart |
+
+A healthy wake reads: `OnApplicationPause(false)`, `On resume: passthrough initialized`, focus events, heartbeats with all four flags at 1, `passthroughLayerResumed`, then 1.5 s later `[Tracking] Starting body tracking (...)` and the `OVRPlugin.StartBodyTracking2 took ... ms` line.
+
+```bash
+"$ADB" logcat -s Unity | grep -e "\[Life\]" -e "\[Tracking\]"
+```
 
 ## The Strip on the headset
 

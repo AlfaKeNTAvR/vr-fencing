@@ -1,8 +1,9 @@
+using System;
 using System.Collections.Generic;
 
 namespace VrFencing.Tracking
 {
-    /// <summary>An app or headset lifecycle change that decides whether body tracking may run.</summary>
+    /// <summary>An app or headset lifecycle change, reported by a Unity or OVRManager callback.</summary>
     public enum LifecycleEvent
     {
         AppPaused,
@@ -13,7 +14,7 @@ namespace VrFencing.Tracking
         HeadsetPutOn,
     }
 
-    /// <summary>What the scene should do to body tracking after a <see cref="LifecycleEvent"/>.</summary>
+    /// <summary>What the scene should do to body tracking now.</summary>
     public enum BodyTrackingAction
     {
         None,
@@ -36,65 +37,130 @@ namespace VrFencing.Tracking
     }
 
     /// <summary>
-    /// Decides when Inside-Out Body Tracking runs (PER-43). It runs all the time the app is active, and stops while the
-    /// app is paused (the headset sleeping, the app in the background), while it has lost input focus (the system menu
-    /// or another overlay is up), or while the headset is off the head. Each condition is tracked on its own, so tracking
-    /// restarts only once all three have cleared. Repeated or out-of-order events are harmless: the decision only
-    /// compares what should run with what is running.
+    /// The XR runtime's state, read once per frame (OVRManager / OVRPlugin): the app has VR focus (its frames are shown),
+    /// input focus (no system menu or overlay on top), the headset is connected, and the user is wearing it.
+    /// </summary>
+    public readonly struct RuntimeReadiness
+    {
+        public RuntimeReadiness(bool hasVrFocus, bool hasInputFocus, bool isHmdPresent, bool isUserPresent)
+        {
+            HasVrFocus = hasVrFocus;
+            HasInputFocus = hasInputFocus;
+            IsHmdPresent = isHmdPresent;
+            IsUserPresent = isUserPresent;
+        }
+
+        public bool HasVrFocus { get; }
+
+        public bool HasInputFocus { get; }
+
+        public bool IsHmdPresent { get; }
+
+        public bool IsUserPresent { get; }
+
+        public bool IsReady => HasVrFocus && HasInputFocus && IsHmdPresent && IsUserPresent;
+    }
+
+    /// <summary>
+    /// Decides when Inside-Out Body Tracking runs (PER-43, PER-71). It runs while the app is active, and stops at once when
+    /// the app is paused (headset asleep), loses focus (system menu, lock screen), or the headset comes off the head.
+    /// <para>
+    /// Restarting is deferred (PER-71): starting body tracking from inside the pause and focus callbacks, while the lock
+    /// screen and its interstitial were still up, left a black frozen view after a sleep/wake. So lifecycle events only
+    /// stop tracking and restart the settle window; tracking starts from the frame loop (<see cref="Tick"/>) once the app
+    /// is not paused and the runtime has reported itself ready (<see cref="RuntimeReadiness"/>) continuously for the
+    /// settle time since the last lifecycle event.
+    /// </para>
+    /// <para>
+    /// Each condition has one source of truth: "paused" comes only from the app pause event, everything else only from
+    /// the runtime state read each frame. Focus and headset events are notifications: they stop tracking immediately and
+    /// restart the settle window, but never hold state themselves, so two callbacks reporting the same focus change
+    /// cannot disagree.
+    /// </para>
     /// </summary>
     public sealed class BodyTrackingLifecycle
     {
-        private bool _isAppPaused;
-        private bool _hasLostFocus;
-        private bool _isHeadsetOff;
+        /// <summary>How long the runtime must stay ready, with no lifecycle event, before tracking restarts.</summary>
+        public const double DefaultSettleSeconds = 1.5;
 
-        /// <summary>True when nothing is holding body tracking off. A fresh lifecycle starts active.</summary>
-        public bool ShouldRun => !_isAppPaused && !_hasLostFocus && !_isHeadsetOff;
+        private const string LaunchReason = "launch";
+
+        private readonly double _settleSeconds;
+        private bool _isAppPaused;
+        private RuntimeReadiness _lastReadiness;
+        private bool _hasReadiness;
+        private double? _readySinceSeconds;
+        private bool _isSettled;
+        private bool _isStartIssued;
+        private string _lastEventReason = LaunchReason;
+
+        public BodyTrackingLifecycle(double settleSeconds = DefaultSettleSeconds)
+        {
+            _settleSeconds = settleSeconds;
+        }
 
         /// <summary>
-        /// Records <paramref name="lifecycleEvent"/> and returns whether to start or stop body tracking, given whether it
-        /// is running now. Start is returned whenever it should run and is not running, so a start that failed earlier
-        /// (for example no permission yet) is retried on the next event.
+        /// True once the app is not paused and the runtime has been ready for the settle time since the last lifecycle
+        /// event. A fresh lifecycle is not settled: it waits for its first ready frames like a wake does.
         /// </summary>
-        public BodyTrackingDecision Apply(LifecycleEvent lifecycleEvent, bool isRunning)
+        public bool ShouldRun => !_isAppPaused && _isSettled;
+
+        /// <summary>
+        /// Records <paramref name="lifecycleEvent"/> from a Unity or OVRManager callback. Returns Stop when the event takes
+        /// tracking away and it is running; never Start (restarts come from <see cref="Tick"/>). Any event, losing or
+        /// regaining, restarts the settle window.
+        /// </summary>
+        public BodyTrackingDecision RecordEvent(LifecycleEvent lifecycleEvent, bool isRunning)
         {
-            switch (lifecycleEvent)
+            if (lifecycleEvent == LifecycleEvent.AppPaused)
             {
-                case LifecycleEvent.AppPaused:
-                    _isAppPaused = true;
-                    break;
-                case LifecycleEvent.AppResumed:
-                    _isAppPaused = false;
-                    break;
-                case LifecycleEvent.FocusLost:
-                    _hasLostFocus = true;
-                    break;
-                case LifecycleEvent.FocusRegained:
-                    _hasLostFocus = false;
-                    break;
-                case LifecycleEvent.HeadsetRemoved:
-                    _isHeadsetOff = true;
-                    break;
-                case LifecycleEvent.HeadsetPutOn:
-                    _isHeadsetOff = false;
-                    break;
+                _isAppPaused = true;
+            }
+            else if (lifecycleEvent == LifecycleEvent.AppResumed)
+            {
+                _isAppPaused = false;
             }
 
             var reason = DescribeEvent(lifecycleEvent);
-            if (ShouldRun && !isRunning)
-            {
-                return new BodyTrackingDecision(BodyTrackingAction.Start, reason);
-            }
-
-            if (!ShouldRun && isRunning)
-            {
-                return new BodyTrackingDecision(BodyTrackingAction.Stop, reason);
-            }
-
-            return new BodyTrackingDecision(BodyTrackingAction.None, reason);
+            _lastEventReason = reason;
+            ResetSettleWindow();
+            return IsLossEvent(lifecycleEvent) && isRunning
+                ? new BodyTrackingDecision(BodyTrackingAction.Stop, reason)
+                : new BodyTrackingDecision(BodyTrackingAction.None, reason);
         }
 
-        /// <summary>The conditions holding body tracking off, for the device log ("none" when it should run).</summary>
+        /// <summary>
+        /// Called once per frame with the runtime's state and the frame time in seconds. Returns Stop when tracking runs
+        /// but the app is paused or the runtime is not ready, and Start once per settle window when the runtime has been
+        /// ready for the settle time and tracking is not running. A start that fails (for example no permission yet) is
+        /// not retried every frame: the next window, after the next lifecycle event or readiness drop, retries it.
+        /// </summary>
+        public BodyTrackingDecision Tick(double nowSeconds, RuntimeReadiness readiness, bool isRunning)
+        {
+            _lastReadiness = readiness;
+            _hasReadiness = true;
+            if (_isAppPaused || !readiness.IsReady)
+            {
+                ResetSettleWindow();
+                return isRunning
+                    ? new BodyTrackingDecision(BodyTrackingAction.Stop, $"not ready: {DescribeHolds()}")
+                    : new BodyTrackingDecision(BodyTrackingAction.None, DescribeHolds());
+            }
+
+            _readySinceSeconds ??= nowSeconds;
+            _isSettled = nowSeconds - _readySinceSeconds.Value >= _settleSeconds;
+            if (!_isSettled || isRunning || _isStartIssued)
+            {
+                return new BodyTrackingDecision(BodyTrackingAction.None, _lastEventReason);
+            }
+
+            _isStartIssued = true;
+            return new BodyTrackingDecision(
+                BodyTrackingAction.Start,
+                FormattableString.Invariant($"runtime ready for {_settleSeconds:0.0} s since {_lastEventReason}"));
+        }
+
+        /// <summary>The conditions holding body tracking off, for the device log ("none" when nothing does).</summary>
         public string DescribeHolds()
         {
             var holds = new List<string>();
@@ -103,17 +169,46 @@ namespace VrFencing.Tracking
                 holds.Add("app paused");
             }
 
-            if (_hasLostFocus)
+            if (!_hasReadiness)
             {
-                holds.Add("input focus lost");
+                holds.Add("runtime state not read yet");
+            }
+            else
+            {
+                AddHoldIfFalse(holds, _lastReadiness.HasVrFocus, "no vr focus");
+                AddHoldIfFalse(holds, _lastReadiness.HasInputFocus, "no input focus");
+                AddHoldIfFalse(holds, _lastReadiness.IsHmdPresent, "no hmd");
+                AddHoldIfFalse(holds, _lastReadiness.IsUserPresent, "headset off");
             }
 
-            if (_isHeadsetOff)
+            if (holds.Count == 0 && !_isSettled)
             {
-                holds.Add("headset off");
+                holds.Add(FormattableString.Invariant($"settling ({_settleSeconds:0.0} s)"));
             }
 
             return holds.Count == 0 ? "none" : string.Join(", ", holds);
+        }
+
+        private void ResetSettleWindow()
+        {
+            _readySinceSeconds = null;
+            _isSettled = false;
+            _isStartIssued = false;
+        }
+
+        private static void AddHoldIfFalse(List<string> holds, bool condition, string hold)
+        {
+            if (!condition)
+            {
+                holds.Add(hold);
+            }
+        }
+
+        private static bool IsLossEvent(LifecycleEvent lifecycleEvent)
+        {
+            return lifecycleEvent == LifecycleEvent.AppPaused
+                || lifecycleEvent == LifecycleEvent.FocusLost
+                || lifecycleEvent == LifecycleEvent.HeadsetRemoved;
         }
 
         private static string DescribeEvent(LifecycleEvent lifecycleEvent)
@@ -125,9 +220,9 @@ namespace VrFencing.Tracking
                 case LifecycleEvent.AppResumed:
                     return "app resumed";
                 case LifecycleEvent.FocusLost:
-                    return "input focus lost";
+                    return "focus lost";
                 case LifecycleEvent.FocusRegained:
-                    return "input focus regained";
+                    return "focus regained";
                 case LifecycleEvent.HeadsetRemoved:
                     return "headset removed";
                 case LifecycleEvent.HeadsetPutOn:
