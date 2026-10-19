@@ -39,6 +39,7 @@ namespace VrFencing.Strip
         private string _placementPrompt;
         private PlacedStrip? _placedStrip;
         private bool _isBusy;
+        private int _placementStartedFrame = -1;
 
         /// <summary>The Fencer's head passed an end or a side by more than the off-strip tolerance, or the Strip is being re-placed. Drills pause.</summary>
         public event Action LeftStrip;
@@ -52,6 +53,9 @@ namespace VrFencing.Strip
         /// <summary>A Strip is in place, placed now or restored from its anchor. Carries its geometry (for the Drill picker).</summary>
         public event Action<StripGeometry> Placed;
 
+        /// <summary>The Strip changed and saved a Setting itself (the off-strip tolerance button). Carries the saved settings.</summary>
+        public event Action<TrainerSettings> SettingsChanged;
+
         /// <summary>The Strip frame; parent of the Dummy.</summary>
         public Transform EnGardeLine => _enGardeLine;
 
@@ -60,6 +64,12 @@ namespace VrFencing.Strip
 
         /// <summary>A Strip is in place and not being re-placed.</summary>
         public bool IsPlaced => _monitor != null && _placement == null;
+
+        /// <summary>Two-point placement is running: the off-hand trigger belongs to it.</summary>
+        public bool IsPlacing => _placement != null;
+
+        /// <summary>The off-strip tolerance in use.</summary>
+        public float OffStripToleranceMeters => _settings?.WarningZone.OffStripToleranceMeters ?? 0.0f;
 
         /// <summary>False between <see cref="LeftStrip"/> and <see cref="BackOnStrip"/>.</summary>
         public bool IsFencerOnStrip { get; private set; } = true;
@@ -77,6 +87,9 @@ namespace VrFencing.Strip
 
             var buttons = OffHandButtons.For(_settings.Hand);
             _placement = new StripPlacement();
+
+            // A UI button may start placement with the same trigger press; that press must not set the En Garde Line.
+            _placementStartedFrame = Time.frameCount;
             _placementPrompt =
                 $"{reason}\nStand en garde with about 1 m free behind you.\n" +
                 $"Hold the {buttons.SideName} controller over your front foot and pull its trigger." +
@@ -103,6 +116,26 @@ namespace VrFencing.Strip
             {
                 Debug.LogError($"[Strip] Off-strip tolerance set to {tolerance:0.0} m, but saving Settings failed: {error.Message}");
                 _status.ShowShortMessage($"Off-strip tolerance: {tolerance:0.0} m (not saved)", Time.timeAsDouble, ShortMessageSeconds);
+            }
+
+            SettingsChanged?.Invoke(settings.Clone());
+        }
+
+        /// <summary>
+        /// Uses changed Settings (from the settings screen): sword hand for the off-hand buttons, and height, Warning
+        /// Zone and tolerance for the geometry and warnings, rebuilt around the same placed En Garde Line and far end.
+        /// </summary>
+        public void ApplySettings(TrainerSettings settings)
+        {
+            if (settings == null)
+            {
+                throw new ArgumentNullException(nameof(settings));
+            }
+
+            _settings = settings.Clone();
+            if (_placement == null && _placedStrip.HasValue && _markings != null)
+            {
+                UseStrip(_placedStrip.Value);
             }
         }
 
@@ -238,7 +271,7 @@ namespace VrFencing.Strip
                 _markings.SetVisible(false);
             }
 
-            if (!OVRInput.GetDown(buttons.PlaceButton, OVRInput.Controller.Touch))
+            if (Time.frameCount == _placementStartedFrame || !OVRInput.GetDown(buttons.PlaceButton, OVRInput.Controller.Touch))
             {
                 return;
             }

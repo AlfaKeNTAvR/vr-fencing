@@ -13,9 +13,10 @@ namespace VrFencing.Drills
     /// paused. Transitions are scheduled from when the previous state was due, not from when <see cref="Tick"/> noticed,
     /// so frame jitter never stretches a window.
     ///
-    /// Pausing: leaving the Strip pauses the run. Coming back during Rest continues the rest where it stopped.
-    /// Coming back during Cue or Window restarts the interrupted Rep with a fresh cue, because the Fencer has moved
-    /// and the old window would no longer be fair; the interrupted Rep is not judged.
+    /// Pausing: leaving the Strip pauses the run, and so does the Fencer's pause button (<see cref="PauseByFencer"/>).
+    /// The run resumes once the Fencer is on the Strip and has not paused it. Resuming during Rest continues the rest
+    /// where it stopped. Resuming during Cue or Window restarts the interrupted Rep with a fresh cue, because the
+    /// Fencer has moved and the old window would no longer be fair; the interrupted Rep is not judged.
     /// </summary>
     public sealed class DrillRunner
     {
@@ -24,6 +25,7 @@ namespace VrFencing.Drills
         private readonly List<RepResult> _results = new List<RepResult>();
 
         private bool _isFencerOnStrip = true;
+        private bool _isPausedByFencer;
         private double _runStartedAtSeconds;
         private double _pausedTotalSeconds;
         private double _pauseStartedAtSeconds;
@@ -60,6 +62,9 @@ namespace VrFencing.Drills
         public DrillState State { get; private set; } = DrillState.Idle;
 
         public bool IsPaused { get; private set; }
+
+        /// <summary>The Fencer pressed pause; the run stays paused until <see cref="ResumeByFencer"/>, even back on the Strip.</summary>
+        public bool IsPausedByFencer => _isPausedByFencer;
 
         public bool IsRunning => State != DrillState.Idle && State != DrillState.Done;
 
@@ -107,6 +112,7 @@ namespace VrFencing.Drills
             _runStartedAtSeconds = _clock.NowSeconds;
             _pausedTotalSeconds = 0.0;
             IsPaused = false;
+            _isPausedByFencer = false;
 
             EnterCue(atActiveSeconds: 0.0);
             if (!_isFencerOnStrip)
@@ -174,11 +180,57 @@ namespace VrFencing.Drills
             }
         }
 
-        /// <summary>The Fencer is back on the Strip. Resumes a paused Drill (see the class summary for what resumes how).</summary>
+        /// <summary>The Fencer is back on the Strip. Resumes a paused Drill unless the Fencer paused it (see the class summary for what resumes how).</summary>
         public void ReportBackOnStrip()
         {
             _isFencerOnStrip = true;
-            if (!IsRunning || !IsPaused)
+            ResumeIfClear();
+        }
+
+        /// <summary>The Fencer's pause button. Pauses a running Drill until <see cref="ResumeByFencer"/>.</summary>
+        public void PauseByFencer()
+        {
+            if (!IsRunning || _isPausedByFencer)
+            {
+                return;
+            }
+
+            _isPausedByFencer = true;
+            if (!IsPaused)
+            {
+                Pause();
+            }
+        }
+
+        /// <summary>The Fencer's resume button. The run resumes now if the Fencer is on the Strip, otherwise on return.</summary>
+        public void ResumeByFencer()
+        {
+            if (!_isPausedByFencer)
+            {
+                return;
+            }
+
+            _isPausedByFencer = false;
+            ResumeIfClear();
+        }
+
+        /// <summary>Stops the run. Reps judged so far are kept in the summary; the Rep in progress is dropped.</summary>
+        public void Cancel()
+        {
+            if (!IsRunning)
+            {
+                return;
+            }
+
+            IsPaused = false;
+            _isPausedByFencer = false;
+            FinishRun(wasCancelled: true, atActiveSeconds: ActiveSeconds());
+        }
+
+        /// <summary>Resumes a paused run once nothing holds it: the Fencer is on the Strip and has not paused it.</summary>
+        private void ResumeIfClear()
+        {
+            if (!IsRunning || !IsPaused || !_isFencerOnStrip || _isPausedByFencer)
             {
                 return;
             }
@@ -193,18 +245,6 @@ namespace VrFencing.Drills
             }
 
             AdvanceDueTransitions();
-        }
-
-        /// <summary>Stops the run. Reps judged so far are kept in the summary; the Rep in progress is dropped.</summary>
-        public void Cancel()
-        {
-            if (!IsRunning)
-            {
-                return;
-            }
-
-            IsPaused = false;
-            FinishRun(wasCancelled: true, atActiveSeconds: ActiveSeconds());
         }
 
         private RepOutcome JudgeContact(BladeContact contact)

@@ -67,6 +67,24 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void MenuDrivesThePracticeRunnerTheStripAndTheDummy()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var menu = Object.FindFirstObjectByType<VrFencing.UI.MenuBehaviour>();
+            var runners = Object.FindObjectsByType<VrFencing.Drills.DrillRunnerBehaviour>(FindObjectsSortMode.None);
+
+            Assert.That(menu, Is.Not.Null, "No Menu in the passthrough scene.");
+            Assert.That(runners, Has.Length.EqualTo(1), "There must be exactly one Drill runner.");
+            var serializedMenu = new SerializedObject(menu);
+            Assert.That(serializedMenu.FindProperty("_drillRunner").objectReferenceValue, Is.SameAs(runners[0]));
+            Assert.That(serializedMenu.FindProperty("_sessionRecorder").objectReferenceValue,
+                Is.SameAs(Object.FindFirstObjectByType<VrFencing.Session.SessionRecorderBehaviour>()));
+            Assert.That(serializedMenu.FindProperty("_strip").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>()));
+            Assert.That(serializedMenu.FindProperty("_dummy").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>()));
+        }
+
+        [Test]
         public void CameraRigAsksForTheBodyTrackingPermission()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
