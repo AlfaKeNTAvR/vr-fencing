@@ -19,6 +19,12 @@ namespace VrFencing.Dummy
     /// The sword arm is a hierarchy of joint transforms (Shoulder, Elbow, Wrist) carrying the arm Target Zones, so
     /// <see cref="SetArmPose"/> moves the zones by turning the joints, without rebuilding. A blade for a later armed
     /// Dummy goes under <see cref="GetJointTransform"/>(<see cref="ArmJoint.Wrist"/>).
+    ///
+    /// Body (PER-78): with a Humanoid body model set (the scene's is Movement SDK's <c>Armature.fbx</c>), the rest of
+    /// the silhouette is that rigged body, posed on the same en garde joints and drawn in the translucent silhouette
+    /// color; the Target Zones stay capsules on top of it, so they light and flash as before. Without a model, or if
+    /// the model is not a usable Humanoid, the capsule silhouette is drawn. Touches are judged on the Core capsules
+    /// either way, never on the mesh.
     /// </summary>
     public sealed class DummyBehaviour : MonoBehaviour
     {
@@ -36,6 +42,10 @@ namespace VrFencing.Dummy
         [Tooltip("Distance used until a Drill sets one.")]
         private DummyDistance _distancePreset = DummyDistance.Lunge;
 
+        [SerializeField]
+        [Tooltip("Humanoid model drawn as the Dummy's body. Empty: the capsule silhouette.")]
+        private GameObject _bodyModel;
+
         private readonly TargetZoneLights _lights = new TargetZoneLights();
         private readonly Dictionary<TargetZone, Renderer> _zoneRenderers = new Dictionary<TargetZone, Renderer>();
         private readonly Dictionary<TargetZone, ZoneLight> _shownLights = new Dictionary<TargetZone, ZoneLight>();
@@ -46,6 +56,7 @@ namespace VrFencing.Dummy
         private float? _customDistanceMeters;
         private MaterialPropertyBlock _propertyBlock;
         private Transform _partsRoot;
+        private DummyBodyRig _bodyRig;
 
         /// <summary>The Dummy's shape, in its own frame. Null until configured.</summary>
         public DummyLayout Layout { get; private set; }
@@ -230,6 +241,17 @@ namespace VrFencing.Dummy
                 _shownLights[zone.Zone] = ZoneLight.Dim;
             }
 
+            _bodyRig = _bodyModel != null ? DummyBodyRig.TryCreate(_bodyModel, _partsRoot, material, Layout) : null;
+            if (_bodyRig != null)
+            {
+                foreach (var bodyRenderer in _bodyRig.Renderers)
+                {
+                    SetColor(bodyRenderer, SilhouetteColor);
+                }
+
+                return;
+            }
+
             foreach (var part in Layout.SilhouetteParts)
             {
                 SetColor(CreateCapsuleRenderer("Silhouette", part, _partsRoot, material), SilhouetteColor);
@@ -258,6 +280,8 @@ namespace VrFencing.Dummy
                 var localPose = Layout.Arm.GetLocalPose(jointTransform.Key);
                 jointTransform.Value.SetLocalPositionAndRotation(localPose.Position.ToUnity(), localPose.Rotation.ToUnity());
             }
+
+            _bodyRig?.Pose(Layout);
         }
 
         private void DestroyRenderers()
@@ -265,6 +289,7 @@ namespace VrFencing.Dummy
             _zoneRenderers.Clear();
             _shownLights.Clear();
             _jointTransforms.Clear();
+            _bodyRig = null;
             if (_partsRoot != null)
             {
                 DestroyPart(_partsRoot.gameObject);

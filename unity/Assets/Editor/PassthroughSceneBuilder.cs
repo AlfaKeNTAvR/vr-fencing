@@ -20,6 +20,8 @@ namespace VrFencing.EditorTools
     public static class PassthroughSceneBuilder
     {
         private const string CameraRigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
+        // Movement SDK's bundled Humanoid rig (imported as Humanoid in the package), the Dummy's body (PER-78).
+        private const string DummyBodyModelPath = "Packages/com.meta.xr.sdk.movement/Shared/ThirdParty/Unity/Armature.fbx";
         private const string CameraRigName = "OVRCameraRig";
         // The first scenes had a grey test cube; the Strip and the Dummy are the visual references now.
         private const string ObsoleteReferenceCubeName = "ReferenceCube";
@@ -179,7 +181,8 @@ namespace VrFencing.EditorTools
 
         /// <summary>
         /// The Dummy stands under the En Garde Line, so it follows the Strip; it builds its silhouette from the
-        /// settings when the app starts. An older scene's Dummy at the root is moved there.
+        /// settings when the app starts. An older scene's Dummy at the root is moved there. Its body is the
+        /// Movement SDK's Humanoid rig, referenced from the package so the build includes it.
         /// </summary>
         private static DummyBehaviour PlaceDummyOnStrip(Scene scene, Transform enGardeLine)
         {
@@ -193,6 +196,11 @@ namespace VrFencing.EditorTools
 
             dummy.transform.SetParent(enGardeLine, false);
             dummy.transform.SetLocalPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
+
+            var bodyModel = AssetDatabase.LoadAssetAtPath<GameObject>(DummyBodyModelPath);
+            if (bodyModel == null)
+                throw new System.InvalidOperationException($"Dummy body model not found at {DummyBodyModelPath}.");
+            SetReference(dummy, "_bodyModel", bodyModel);
             return dummy;
         }
 
