@@ -33,6 +33,13 @@ namespace VrFencing.EditorTools
         private const AndroidSdkVersions MinAndroidSdk = AndroidSdkVersions.AndroidApiLevel32;
         private const int QuestMsaaSamples = 4;
 
+        // The Unity Cloud project the multiplayer services (Authentication, Relay, Lobby) run under (PER-60, PER-80).
+        // Linked here rather than by hand in Project Settings > Services, so a re-run keeps it.
+        private const string CloudProjectId = "fc12ae47-8dcf-4350-9d81-f13c0d13dc3c";
+        private const string CloudOrganizationId = "2474804760271";
+        private const string CloudProjectName = "VR Fencing Trainer";
+        private const string PlayerSettingsAssetPath = "ProjectSettings/ProjectSettings.asset";
+
         private const string UrpAssetPath = "Assets/Settings/URP-Quest.asset";
         private const string UrpRendererPath = "Assets/Settings/URP-Quest-Renderer.asset";
         private const string XrSettingsFolder = "Assets/XR";
@@ -136,6 +143,36 @@ namespace VrFencing.EditorTools
             // the default logcat buffer in about 20 s. Errors, asserts and exceptions keep theirs.
             PlayerSettings.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
             PlayerSettings.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
+            LinkUnityCloudProject();
+        }
+
+        /// <summary>
+        /// Links the Unity Cloud project (PER-80). The IDs have no public setter, so they are written through the
+        /// Player Settings asset's serialized fields; only fields that differ are touched.
+        /// </summary>
+        private static void LinkUnityCloudProject()
+        {
+            var playerSettings = AssetDatabase.LoadAllAssetsAtPath(PlayerSettingsAssetPath).FirstOrDefault();
+            if (playerSettings == null)
+            {
+                throw new InvalidOperationException($"Player Settings not found at {PlayerSettingsAssetPath}.");
+            }
+
+            var serialized = new SerializedObject(playerSettings);
+            SetStringIfDifferent(serialized, "cloudProjectId", CloudProjectId);
+            SetStringIfDifferent(serialized, "organizationId", CloudOrganizationId);
+            SetStringIfDifferent(serialized, "projectName", CloudProjectName);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetStringIfDifferent(SerializedObject serialized, string propertyName, string value)
+        {
+            var property = serialized.FindProperty(propertyName)
+                ?? throw new InvalidOperationException($"Player Settings has no '{propertyName}' field.");
+            if (property.stringValue != value)
+            {
+                property.stringValue = value;
+            }
         }
 
         /// <summary>
