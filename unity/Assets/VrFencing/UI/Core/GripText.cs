@@ -6,7 +6,8 @@ namespace VrFencing.UI
 {
     /// <summary>
     /// What the grip screen and the thrust calibration say (PER-52): the chosen grip's computed angles, the Fencer's saved
-    /// ones, the old feel-test angles to compare, and the calibration's prompts and result.
+    /// ones, the old feel-test angles to compare, the reach Calibrate grip measured (PER-92), and the calibration's
+    /// prompts and result.
     /// </summary>
     public static class GripText
     {
@@ -32,6 +33,7 @@ namespace VrFencing.UI
                     : "Yours: none yet (the computed angles are in use)",
                 $"Feel test (old default): {FormatAngles(GripGeometry.FeelTestAngles)}",
                 $"In use: {FormatAngles(GripGeometry.GetActiveAngles(blade))}",
+                FormatReach(saved.ReachMeters),
             };
             return lines;
         }
@@ -50,13 +52,28 @@ namespace VrFencing.UI
             return $"{header}\nHold still... {percent}%";
         }
 
-        /// <summary>The message once the thrusts are fitted and the angles saved.</summary>
-        public static string FormatResult(GripAngles angles, float spreadDegrees)
+        /// <summary>The message once the thrusts are fitted and the angles (and the reach, when measured) saved.</summary>
+        /// <param name="savedReachMeters">The reach saved with the angles, or null when none was measured.</param>
+        public static string FormatResult(GripAngles angles, float spreadDegrees, float? savedReachMeters = null)
         {
             var spread = spreadDegrees.ToString("0", CultureInfo.InvariantCulture);
+            var saved = savedReachMeters.HasValue ? $"{FormatAngles(angles)}, reach {FormatMeters(savedReachMeters.Value)}" : FormatAngles(angles);
             return spreadDegrees > InconsistentSpreadDegrees
-                ? $"Saved {FormatAngles(angles)}, but the thrusts disagree by {spread} deg: try again"
-                : $"Saved {FormatAngles(angles)} (thrusts agree within {spread} deg)";
+                ? $"Saved {saved}, but the thrusts disagree by {spread} deg: try again"
+                : $"Saved {saved} (thrusts agree within {spread} deg)";
+        }
+
+        /// <summary>The grip page's reach line: the measured reach, or that the Dummy's distance comes from height until then.</summary>
+        public static string FormatReach(float? reachMeters)
+        {
+            return reachMeters.HasValue
+                ? $"Reach: {FormatMeters(reachMeters.Value)} (sets the Dummy's distance)"
+                : "Reach: not measured yet (the Dummy's distance uses your height)";
+        }
+
+        private static string FormatMeters(float meters)
+        {
+            return meters.ToString("0.00", CultureInfo.InvariantCulture) + " m";
         }
 
         private static string FormatSaved(GripAngleOverride saved)

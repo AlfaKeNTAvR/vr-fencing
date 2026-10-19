@@ -32,9 +32,14 @@ namespace VrFencing.UI
             [SettingGroup.Drills] = new[]
             {
                 SettingId.RepsPerDrill, SettingId.RestBetweenReps, SettingId.ReactionWindow, SettingId.CompoundSecondTouchWindow,
-                SettingId.DistanceChoiceWindow, SettingId.FootworkCallWindow, SettingId.ShrinkDrillsToFit,
+                SettingId.DistanceChoiceWindow, SettingId.FootworkCallWindow, SettingId.LightNamedZones,
             },
-            [SettingGroup.Strip] = new[] { SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance },
+
+            // "Shrink Drills to fit" moved here from Drills (PER-92) to make room for "Light named zones": it is about the Strip's length.
+            [SettingGroup.Strip] = new[]
+            {
+                SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
+            },
             [SettingGroup.Touch] = new[] { SettingId.TouchRule, SettingId.TouchPressure },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]

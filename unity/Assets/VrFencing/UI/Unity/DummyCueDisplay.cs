@@ -9,11 +9,13 @@ namespace VrFencing.UI
     /// <summary>
     /// Shows each Rep's cue on the Dummy, where the Fencer is looking. A lit-zone cue lights the Target Zone; a
     /// named-zone cue shows the zone's name above the Dummy's head (the Running panel, low on the off-hand side, says
-    /// it too). A compound lights its first zone with both names above the head, then, on the first Touch, flashes it
-    /// and lights the second; a footwork call shows the action above the head. All go away when the Rep is judged,
+    /// it too), and lights the zone as well when the Drill does (<see cref="DrillDefinition.LightsCuedZone"/>). A
+    /// compound lights its first zone with both names above the head, then, on the first Touch, flashes it and lights
+    /// the second; a footwork call shows the action above the head. All go away when the Rep is judged,
     /// the run pauses or ends; a successful Touch flashes the zone. After a Rep that read footwork, the label says what was
     /// read ("read: step-lunge, 1.2 m") until the next cue, with "Back to the line" under it while the run waits for the
-    /// Fencer at the Start Mark (PER-88, PER-89).
+    /// Fencer at the Start Mark (PER-88, PER-89). Before the first Rep the label holds the Drill's task line
+    /// (<see cref="ShowTaskLine"/>, PER-92).
     /// What the label says is decided in the UI Core (<see cref="RunStatusText.FormatDummyLabel"/>).
     /// </summary>
     internal sealed class DummyCueDisplay : IDisposable
@@ -23,6 +25,9 @@ namespace VrFencing.UI
 
         // At 2 to 3 m away, a 10 cm em reads at a glance.
         private const float LabelFontSize = 1.0f;
+
+        // A task line is a sentence, not a word: half the size, wrapped onto two lines if it must be.
+        private const float TaskLineFontSize = 0.5f;
         private static readonly Vector2 LabelSize = new Vector2(1.4f, 0.3f);
 
         // The TMP Essentials' outline preset of the default font: a black outline keeps it readable over any room.
@@ -68,7 +73,7 @@ namespace VrFencing.UI
         {
             _readLine = string.Empty;
             _dummy.DimAllZones();
-            if (cue.CueType == CueType.LitTargetZone && cue.TargetZone.HasValue)
+            if (_runner.Drill.LightsCuedZone && cue.TargetZone.HasValue)
             {
                 _dummy.LightZone(cue.TargetZone.Value);
             }
@@ -132,6 +137,18 @@ namespace VrFencing.UI
             }
         }
 
+        /// <summary>Shows a Drill's task line above the Dummy until the first cue replaces it; empty hides it.</summary>
+        public void ShowTaskLine(string taskLine)
+        {
+            _dummy.DimAllZones();
+            ShowLabel(taskLine);
+            if (_label != null)
+            {
+                _label.fontSize = TaskLineFontSize;
+                _label.textWrappingMode = TextWrappingModes.Normal;
+            }
+        }
+
         private void HideCue()
         {
             _dummy.DimAllZones();
@@ -147,6 +164,8 @@ namespace VrFencing.UI
 
             // The Dummy is rebuilt when the Fencer's height changes, so the label follows its height on every cue.
             var heightMeters = _dummy.Layout?.HeightMeters ?? 0.0f;
+            _label.fontSize = LabelFontSize;
+            _label.textWrappingMode = TextWrappingModes.NoWrap;
             _label.transform.localPosition = new Vector3(0.0f, heightMeters + LabelAboveHeadMeters, 0.0f);
             UiKit.SetText(_label, text);
             _label.gameObject.SetActive(!string.IsNullOrEmpty(text));

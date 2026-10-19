@@ -157,6 +157,28 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheTaskLineStandsAboveTheDummyUntilTheFirstCueReplacesIt()
+        {
+            var dummyObject = new GameObject("Test Dummy");
+            _created.Add(dummyObject);
+            var dummy = dummyObject.AddComponent<DummyBehaviour>();
+            dummy.Configure(1.65f, VrFencing.Settings.Hand.Right);
+            var runner = new DrillRunner(new VrFencing.Tests.Drills.FakeClock(), new System.Random(3));
+            using var display = new DummyCueDisplay(runner, dummy);
+            var drill = DrillCatalog.CreatePointControlDrill(new VrFencing.Settings.TrainerSettings());
+
+            display.ShowTaskLine(drill.TaskLine);
+
+            var label = dummyObject.GetComponentsInChildren<TextMeshPro>(includeInactive: true).Single();
+            Assert.That(label.gameObject.activeSelf, Is.True);
+            Assert.That(label.text, Is.EqualTo(drill.TaskLine));
+
+            runner.Start(drill, 4.0f, shrinkDrillsToFit: false);
+
+            Assert.That(label.text, Is.EqualTo(TargetZoneNames.Get(runner.CurrentTargetZone.Value)), "The named zone's label, as before PER-92.");
+        }
+
+        [Test]
         public void ALitZoneCueShowsNoLabel()
         {
             var dummyObject = new GameObject("Test Dummy");

@@ -5,33 +5,49 @@ using VrFencing.Settings;
 
 namespace VrFencing.Blade
 {
-    /// <summary>One held straight-arm thrust: the sword-hand controller's pose and the target it aimed at, room frame.</summary>
+    /// <summary>
+    /// One held straight-arm thrust: the sword-hand controller's pose, the target it aimed at, and the shoulder estimated
+    /// from the head at that moment, room frame.
+    /// </summary>
     public readonly struct ThrustCapture
     {
-        public ThrustCapture(TrackedPose controller, Vector3 target)
+        public ThrustCapture(TrackedPose controller, Vector3 target, Vector3? shoulder = null)
         {
             Controller = controller;
             Target = target;
+            Shoulder = shoulder;
         }
 
         public TrackedPose Controller { get; }
 
         public Vector3 Target { get; }
+
+        /// <summary>Where the shoulder was estimated during the hold; null when not known, so the thrust gives no reach.</summary>
+        public Vector3? Shoulder { get; }
     }
 
-    /// <summary>The pitch and yaw fitted from the thrusts, and how far apart the single thrusts' fits were.</summary>
+    /// <summary>
+    /// The pitch and yaw fitted from the thrusts, how far apart the single thrusts' fits were, and the Fencer's reach.
+    /// </summary>
     public readonly struct GripFit
     {
-        public GripFit(GripAngles angles, float spreadDegrees)
+        public GripFit(GripAngles angles, float spreadDegrees, float? reachMeters = null)
         {
             Angles = angles;
             SpreadDegrees = spreadDegrees;
+            ReachMeters = reachMeters;
         }
 
         public GripAngles Angles { get; }
 
         /// <summary>The largest angle between one thrust's blade direction and the fitted one: small means consistent thrusts.</summary>
         public float SpreadDegrees { get; }
+
+        /// <summary>
+        /// The mean distance from the shoulder to the real (drooped) point over the thrusts, with the fitted angles
+        /// (PER-92): the Fencer's reach at full extension. Null when no thrust carried a shoulder.
+        /// </summary>
+        public float? ReachMeters { get; }
     }
 
     /// <summary>
@@ -45,6 +61,10 @@ namespace VrFencing.Blade
     /// <see cref="MinimumReachMeters"/> from the shoulder and within <see cref="AimToleranceDegrees"/> of the shoulder's
     /// line to the target, and is taken once the controller has stayed within <see cref="SteadyMeters"/> and
     /// <see cref="SteadyDegrees"/> for <see cref="HoldSeconds"/>. Positions in the room frame (Unity world), meters.
+    ///
+    /// The same thrusts measure the Fencer's reach (PER-92): the point's distance from the shoulder at full extension.
+    /// The point is computed from the controller and the grip, not read from the drawn blade, so it holds even if the
+    /// blade is hidden during the calibration.
     /// </summary>
     public sealed class ThrustCalibration
     {
@@ -170,7 +190,7 @@ namespace VrFencing.Blade
 
             var mean = Vector4.Normalize(_rotationSum);
             var held = new TrackedPose(_positionSum / _holdSamples, new Quaternion(mean.X, mean.Y, mean.Z, mean.W));
-            _captures.Add(new ThrustCapture(held, _targets[CurrentTargetIndex]));
+            _captures.Add(new ThrustCapture(held, _targets[CurrentTargetIndex], shoulder));
             _holdStartedAt = null;
             HoldFraction = 0.0f;
             IsAimed = false;
@@ -180,7 +200,7 @@ namespace VrFencing.Blade
         /// <summary>
         /// The pitch and yaw that put the real point of the chosen grip's blade on the line from the guard to each target,
         /// averaged over the thrusts. The droop is taken off (the blade hangs a few degrees below its forte), so the fit
-        /// is the forte's angle, as the mount is set.
+        /// is the forte's angle, as the mount is set. The reach is measured with the fitted angles.
         /// </summary>
         /// <exception cref="ArgumentException">No thrusts.</exception>
         public static GripFit Fit(IReadOnlyList<ThrustCapture> captures, BladeSettings blade, Hand hand)
@@ -220,7 +240,39 @@ namespace VrFencing.Blade
                 spread = Math.Max(spread, SegmentMath.FindAngleDegrees(direction, fittedDirection));
             }
 
-            return new GripFit(angles, spread);
+            return new GripFit(angles, spread, MeasureReachMeters(captures, fitted, blade));
+        }
+
+        /// <summary>
+        /// The mean distance from the shoulder to the real (drooped) point over the thrusts that carry a shoulder, for the
+        /// grip mounted as <paramref name="mount"/>; null when none does.
+        /// </summary>
+        private static float? MeasureReachMeters(IReadOnlyList<ThrustCapture> captures, TrackedPose mount, BladeSettings blade)
+        {
+            var sum = 0.0f;
+            var count = 0;
+            foreach (var capture in captures)
+            {
+                if (!capture.Shoulder.HasValue)
+                {
+                    continue;
+                }
+
+                var point = FindRealPoint(capture.Controller, mount, blade);
+                sum += Vector3.Distance(point, capture.Shoulder.Value);
+                count++;
+            }
+
+            return count > 0 ? sum / count : (float?)null;
+        }
+
+        /// <summary>Where the real (drooped) point is, room frame, for the controller's pose and the grip's mount.</summary>
+        private static Vector3 FindRealPoint(TrackedPose controller, TrackedPose mount, BladeSettings blade)
+        {
+            var forte = BladePose.GetBlade(controller, mount);
+            var gripUp = Vector3.Transform(Vector3.UnitY, controller.Rotation * mount.Rotation);
+            var droop = BladeDroop.Create(forte.Direction, gripUp, -Vector3.UnitY, blade);
+            return droop.GetChord(forte).TipPosition;
         }
 
         /// <summary>

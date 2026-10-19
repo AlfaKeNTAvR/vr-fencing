@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using VrFencing.Dummy;
 using VrFencing.Settings;
 using VrFencing.Strip;
 
@@ -19,6 +20,7 @@ namespace VrFencing.UI
         DistanceChoiceWindow,
         FootworkCallWindow,
         ShrinkDrillsToFit,
+        LightNamedZones,
         WarningZoneLengthOnPiste,
         WarningZoneMinimumLength,
         OffStripTolerance,
@@ -120,6 +122,7 @@ namespace VrFencing.UI
                 case SettingId.DistanceChoiceWindow: return "Distance choice window";
                 case SettingId.FootworkCallWindow: return "Footwork call window";
                 case SettingId.ShrinkDrillsToFit: return "Shrink Drills to fit the Strip";
+                case SettingId.LightNamedZones: return "Light named zones (Drills 1, 2)";
                 case SettingId.WarningZoneLengthOnPiste: return "Warning Zone on a full piste";
                 case SettingId.WarningZoneMinimumLength: return "Warning Zone at least";
                 case SettingId.OffStripTolerance: return "Off-strip tolerance";
@@ -148,6 +151,8 @@ namespace VrFencing.UI
                     return settings.Hand == Hand.Left ? "Left" : "Right";
                 case SettingId.ShrinkDrillsToFit:
                     return settings.ShrinkDrillsToFit ? "On" : "Off";
+                case SettingId.LightNamedZones:
+                    return settings.LightNamedZones ? "On" : "Off";
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
@@ -185,10 +190,12 @@ namespace VrFencing.UI
                     return SettingImpact.Strip | SettingImpact.Drills;
                 case SettingId.OffStripTolerance:
                     return SettingImpact.Strip;
+                case SettingId.BladeMount:
+                    // Each grip keeps its own measured reach, which sets the Dummy's distance (PER-92).
+                    return SettingImpact.Blade | SettingImpact.Dummy;
                 case SettingId.TouchRule:
                 case SettingId.TouchPressure:
                 case SettingId.BladeFlex:
-                case SettingId.BladeMount:
                 case SettingId.BladePitch:
                 case SettingId.BladeYaw:
                 case SettingId.BladeSet:
@@ -229,6 +236,9 @@ namespace VrFencing.UI
                 case SettingId.ShrinkDrillsToFit:
                     changed.ShrinkDrillsToFit = !settings.ShrinkDrillsToFit;
                     break;
+                case SettingId.LightNamedZones:
+                    changed.LightNamedZones = !settings.LightNamedZones;
+                    break;
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);
                     break;
@@ -263,18 +273,27 @@ namespace VrFencing.UI
 
         /// <summary>
         /// The settings with the chosen grip's own pitch and yaw saved (from the thrust calibration), rounded to a whole
-        /// degree and kept within the pitch and yaw steps' range.
+        /// degree and kept within the pitch and yaw steps' range, and the reach it measured (PER-92). A reach that is
+        /// missing or implausible (<see cref="DistancePresets.IsPlausibleReach"/>) leaves the grip's saved reach as it was.
         /// </summary>
-        public static TrainerSettings SaveGripAngles(TrainerSettings settings, GripAngles angles)
+        public static TrainerSettings SaveGripAngles(TrainerSettings settings, GripAngles angles, float? reachMeters = null)
         {
             var changed = settings.Clone();
             var saved = changed.Blade.SavedAngles.For(changed.Blade.Mount);
             saved.PitchDegrees = ClampAngle(angles.PitchDegrees);
             saved.YawDegrees = ClampAngle(angles.YawDegrees);
+            if (reachMeters.HasValue && DistancePresets.IsPlausibleReach(reachMeters.Value))
+            {
+                saved.ReachMeters = (float)Math.Round(reachMeters.Value, 3);
+            }
+
             return changed;
         }
 
-        /// <summary>The settings with the chosen grip back on its computed angles (its saved ones cleared).</summary>
+        /// <summary>
+        /// The settings with the chosen grip back on its computed angles (its saved ones cleared). The measured reach is
+        /// kept: it is the Fencer's arm, not the blade's angle.
+        /// </summary>
         public static TrainerSettings ResetGripAngles(TrainerSettings settings)
         {
             var changed = settings.Clone();

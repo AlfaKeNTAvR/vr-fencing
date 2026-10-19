@@ -81,7 +81,7 @@ A named part of the Dummy that a Drill asks the Fencer to Touch: hand, wrist, fo
 _Avoid_: Hitbox, area
 
 **Dummy Distance**:
-How far the Dummy stands from the Fencer along the Strip, front foot to front foot, named by the action the Fencer needs to Touch its body: extension, lunge or step-lunge distance. Scales with the Fencer's height.
+How far the Dummy stands from the Fencer along the Strip, front foot to front foot, named by the action the Fencer needs to Touch its body: extension, lunge or step-lunge distance. Scales with the Fencer's reach as measured by Calibrate grip, or with height until it is measured.
 _Avoid_: Range, measure
 
 **Armed Dummy**:

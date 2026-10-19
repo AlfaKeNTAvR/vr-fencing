@@ -165,6 +165,33 @@ namespace VrFencing.Drills
             TargetZone.Hand, TargetZone.Wrist, TargetZone.Forearm, TargetZone.UpperArm, TargetZone.Thigh, TargetZone.Foot, TargetZone.Body,
         };
 
+        /// <summary>
+        /// Task lines (PER-92) stay this short so each fits on one line under the Drill's name in the picker.
+        /// </summary>
+        public const int MaxTaskLineLength = 52;
+
+        /// <summary>Drill 1's task line, with the named zone only named.</summary>
+        public const string PointControlTaskLine = "Extend to Touch the named zone. No step.";
+
+        /// <summary>Drill 1's task line when the named zone also lights.</summary>
+        public const string PointControlLitTaskLine = "Extend to Touch the named, lit zone. No step.";
+
+        /// <summary>Drill 2's task line, with the named zone only named.</summary>
+        public const string LungeToTargetTaskLine = "Lunge to Touch the named zone, then recover.";
+
+        /// <summary>Drill 2's task line when the named zone also lights.</summary>
+        public const string LungeToTargetLitTaskLine = "Lunge to Touch the named, lit zone, then recover.";
+
+        public const string ReactionTaskLine = "Touch the zone as it lights, before it goes dark.";
+
+        public const string DistanceChoiceTaskLine = "Extend, lunge or step-lunge to Touch the lit body.";
+
+        public const string CompoundTaskLine = "Touch both named zones in order, the second fast.";
+
+        public const string FootworkCallsTaskLine = "Do the called footwork at once. No blade.";
+
+        public const string FullPisteTestTaskLine = "Test only: shows a Drill that needs a long Strip.";
+
         /// <summary>Test Drills sort after every real Drill.</summary>
         private const int TestDrillOrder = 1000;
 
@@ -190,8 +217,8 @@ namespace VrFencing.Drills
         }
 
         /// <summary>
-        /// Drill 1, point control: the Dummy stands at extension distance and the app names a Target Zone; the Fencer
-        /// extends and Touches it from en garde, with no footwork.
+        /// Drill 1, point control: the Dummy stands at extension distance and the app names a Target Zone (and, with
+        /// "Light named zones" on, lights it); the Fencer extends and Touches it from en garde, with no footwork.
         /// </summary>
         public static DrillDefinition CreatePointControlDrill(TrainerSettings settings)
         {
@@ -208,12 +235,14 @@ namespace VrFencing.Drills
                 CueType.NamedTargetZone,
                 SuccessRule.PointFirstTouchOnTargetZone,
                 AllTargetZones,
-                DummyDistance.Extension);
+                DummyDistance.Extension,
+                taskLine: settings.LightNamedZones ? PointControlLitTaskLine : PointControlTaskLine,
+                lightsNamedZone: settings.LightNamedZones);
         }
 
         /// <summary>
-        /// Drill 2, lunge to target: the Dummy stands at lunge distance and the app names a Target Zone; the Fencer
-        /// extends, lunges, Touches it, and recovers during the rest.
+        /// Drill 2, lunge to target: the Dummy stands at lunge distance and the app names a Target Zone (and, with
+        /// "Light named zones" on, lights it); the Fencer extends, lunges, Touches it, and recovers during the rest.
         /// </summary>
         public static DrillDefinition CreateLungeToTargetDrill(TrainerSettings settings)
         {
@@ -230,7 +259,9 @@ namespace VrFencing.Drills
                 CueType.NamedTargetZone,
                 SuccessRule.PointFirstTouchOnTargetZone,
                 AllTargetZones,
-                DummyDistance.Lunge);
+                DummyDistance.Lunge,
+                taskLine: settings.LightNamedZones ? LungeToTargetLitTaskLine : LungeToTargetTaskLine,
+                lightsNamedZone: settings.LightNamedZones);
         }
 
         /// <summary>
@@ -254,7 +285,8 @@ namespace VrFencing.Drills
                 SuccessRule.PointFirstTouchOnTargetZone,
                 AllTargetZones,
                 DummyDistance.Lunge,
-                shrunkDummyDistance: DummyDistance.Extension);
+                shrunkDummyDistance: DummyDistance.Extension,
+                taskLine: ReactionTaskLine);
         }
 
         /// <summary>
@@ -279,7 +311,8 @@ namespace VrFencing.Drills
                 SuccessRule.TouchWithFootworkForDistance,
                 DistanceChoiceZones,
                 DummyDistance.Lunge,
-                repDummyDistances: DistanceChoiceDistances);
+                repDummyDistances: DistanceChoiceDistances,
+                taskLine: DistanceChoiceTaskLine);
         }
 
         /// <summary>
@@ -305,7 +338,8 @@ namespace VrFencing.Drills
                 DummyDistance.Lunge,
                 shrunkDummyDistance: DummyDistance.Extension,
                 zonePairs: CompoundZonePairs,
-                secondTouchWindowSeconds: settings.TimeWindows.CompoundSecondTouchSeconds);
+                secondTouchWindowSeconds: settings.TimeWindows.CompoundSecondTouchSeconds,
+                taskLine: CompoundTaskLine);
         }
 
         /// <summary>
@@ -329,7 +363,8 @@ namespace VrFencing.Drills
                 SuccessRule.FootworkCall,
                 targetZones: null,
                 DummyDistance.StepLunge,
-                footworkCalls: FootworkCalls);
+                footworkCalls: FootworkCalls,
+                taskLine: FootworkCallsTaskLine);
         }
 
         /// <summary>Needs a full 14 m piste, so the picker shows a greyed-out Drill with its required length.</summary>
@@ -347,7 +382,8 @@ namespace VrFencing.Drills
                 restSeconds: settings.RestBetweenRepsSeconds,
                 CueType.NamedTargetZone,
                 SuccessRule.PointFirstTouchOnTargetZone,
-                new[] { TargetZone.Body });
+                new[] { TargetZone.Body },
+                taskLine: FullPisteTestTaskLine);
         }
     }
 }

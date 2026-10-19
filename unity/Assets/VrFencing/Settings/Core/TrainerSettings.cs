@@ -27,6 +27,12 @@ namespace VrFencing.Settings
         /// <summary>Run shorter versions of Drills that need a longer Strip than the room allows. Those Reps are tagged in the rep log.</summary>
         public bool ShrinkDrillsToFit { get; set; } = false;
 
+        /// <summary>
+        /// Drills 1 and 2 (point control, lunge to target) also light the named Target Zone, so the Fencer learns where
+        /// each name is on the Dummy (PER-92). On by default; a file from before PER-92 loads it on.
+        /// </summary>
+        public bool LightNamedZones { get; set; } = true;
+
         public WarningZoneSettings WarningZone { get; set; } = new WarningZoneSettings();
 
         /// <summary>The Blade: Touch rule, how it sits in the hand, and its haptics (PER-22 feel tests, PER-33).</summary>
@@ -56,6 +62,7 @@ namespace VrFencing.Settings
                     FootworkCallSeconds = TimeWindows.FootworkCallSeconds,
                 },
                 ShrinkDrillsToFit = ShrinkDrillsToFit,
+                LightNamedZones = LightNamedZones,
                 WarningZone = new WarningZoneSettings
                 {
                     LengthOnPisteMeters = WarningZone.LengthOnPisteMeters,
