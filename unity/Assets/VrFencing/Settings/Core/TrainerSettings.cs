@@ -28,6 +28,32 @@ namespace VrFencing.Settings
         public bool ShrinkDrillsToFit { get; set; } = false;
 
         public WarningZoneSettings WarningZone { get; set; } = new WarningZoneSettings();
+
+        /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
+        public TrainerSettings Clone()
+        {
+            return new TrainerSettings
+            {
+                Hand = Hand,
+                FencerHeightMeters = FencerHeightMeters,
+                RepsPerDrill = RepsPerDrill,
+                RestBetweenRepsSeconds = RestBetweenRepsSeconds,
+                TimeWindows = new TimeWindowSettings
+                {
+                    ReactionSeconds = TimeWindows.ReactionSeconds,
+                    CompoundSecondTouchSeconds = TimeWindows.CompoundSecondTouchSeconds,
+                    DistanceChoiceSeconds = TimeWindows.DistanceChoiceSeconds,
+                    FootworkCallSeconds = TimeWindows.FootworkCallSeconds,
+                },
+                ShrinkDrillsToFit = ShrinkDrillsToFit,
+                WarningZone = new WarningZoneSettings
+                {
+                    LengthOnPisteMeters = WarningZone.LengthOnPisteMeters,
+                    MinimumLengthMeters = WarningZone.MinimumLengthMeters,
+                    OffStripToleranceMeters = WarningZone.OffStripToleranceMeters,
+                },
+            };
+        }
     }
 
     /// <summary>How long the Fencer has to complete a Rep after its cue, per Drill type.</summary>
