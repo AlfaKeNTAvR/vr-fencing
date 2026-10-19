@@ -38,6 +38,14 @@ namespace VrFencing.Strip
             return Vector3.Transform(pointInRoom - enGardeLine.Position, Quaternion.Inverse(enGardeLine.Rotation));
         }
 
+        /// <summary>A room pose (position and rotation) in the Strip frame of a Strip whose En Garde Line is at <paramref name="enGardeLine"/>.</summary>
+        public static TrackedPose ToStripFrame(TrackedPose enGardeLine, TrackedPose poseInRoom)
+        {
+            return new TrackedPose(
+                ToStripFrame(enGardeLine, poseInRoom.Position),
+                Quaternion.Normalize(Quaternion.Inverse(enGardeLine.Rotation) * poseInRoom.Rotation));
+        }
+
         /// <summary>A Strip-frame point in the room.</summary>
         public static Vector3 ToRoom(TrackedPose enGardeLine, Vector3 pointInStrip)
         {
