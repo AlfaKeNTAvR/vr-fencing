@@ -1,5 +1,5 @@
-// Strip geometry (PER-31): Warning Zone scaling, the Strip's extent around the En Garde Line,
-// and which part of the Strip a head position is over.
+// Strip geometry (PER-31, PER-90): Warning Zone scaling, the Strip's extent around the two En Garde Lines, old
+// far-end Strips converted to keep their footprint, and which part of the Strip a head position is over.
 using System;
 using System.Numerics;
 using NUnit.Framework;
@@ -47,16 +47,18 @@ namespace VrFencing.Tests.Strip
         }
 
         [Test]
-        public void StripRunsFromBehindTheStanceToTheFarEnd()
+        public void StripRunsOnBehindBothEnGardeLines()
         {
             var geometry = StripGeometry.Create(4.0f, FencerHeightMeters, DefaultZones);
 
             var stance = StripGeometry.StanceAllowancePerHeight * FencerHeightMeters;
-            Assert.That(geometry.FarEndZ, Is.EqualTo(4.0f).Within(Tolerance));
+            var runBack = stance + geometry.WarningZoneLengthMeters;
+            Assert.That(geometry.DummyEnGardeLineZ, Is.EqualTo(4.0f).Within(Tolerance));
             Assert.That(geometry.WarningZoneLengthMeters, Is.EqualTo(0.5714f).Within(Tolerance));
-            Assert.That(geometry.RearEndZ, Is.EqualTo(-(stance + geometry.WarningZoneLengthMeters)).Within(Tolerance));
+            Assert.That(geometry.RearEndZ, Is.EqualTo(-runBack).Within(Tolerance));
+            Assert.That(geometry.FarEndZ, Is.EqualTo(4.0f + runBack).Within(Tolerance));
             Assert.That(geometry.LengthMeters, Is.EqualTo(geometry.FarEndZ - geometry.RearEndZ).Within(Tolerance));
-            Assert.That(geometry.CenterLineZ, Is.EqualTo((geometry.FarEndZ + geometry.RearEndZ) / 2.0f).Within(Tolerance));
+            Assert.That(geometry.CenterLineZ, Is.EqualTo(2.0f).Within(Tolerance), "The center line is midway between the En Garde Lines.");
         }
 
         [Test]
@@ -64,10 +66,44 @@ namespace VrFencing.Tests.Strip
         {
             var geometry = StripGeometry.Create(StripGeometry.MinimumPlacedLengthMeters, FencerHeightMeters, DefaultZones);
 
-            Assert.That(geometry.LengthMeters, Is.EqualTo(1.0f + 0.495f + 0.5f).Within(Tolerance));
+            Assert.That(geometry.LengthMeters, Is.EqualTo(0.2f + (2.0f * (0.495f + 0.5f))).Within(Tolerance));
         }
 
-        [TestCase(0.99f)]
+        [Test]
+        public void DummyEnGardeOnItsLineIsOnTheStripAndOutsideBothZones()
+        {
+            var geometry = StripGeometry.Create(2.5f, FencerHeightMeters, DefaultZones);
+
+            // Mirror of the Fencer: the Dummy's head over its stance, behind its front foot on its line.
+            var head = new Vector3(0.0f, 1.5f, geometry.DummyEnGardeLineZ + (0.16f * FencerHeightMeters));
+
+            Assert.That(geometry.Contains(head, 0.0f), Is.True);
+            Assert.That(geometry.GetWarningZone(head), Is.Null);
+        }
+
+        [TestCase(4.45f)]
+        [TestCase(3.0f)]
+        [TestCase(8.0f)]
+        [TestCase(20.0f)]
+        public void AStripSavedWithItsFarEndKeepsThatFarEnd(float farEndLengthMeters)
+        {
+            var gap = StripGeometry.ConvertFarEndLengthToGap(farEndLengthMeters, FencerHeightMeters, DefaultZones);
+
+            var geometry = StripGeometry.Create(gap, FencerHeightMeters, DefaultZones);
+
+            Assert.That(geometry.FarEndZ, Is.EqualTo(farEndLengthMeters).Within(1e-3f));
+        }
+
+        [Test]
+        public void AShortOldStripGetsTheShortestGap()
+        {
+            // The old minimum: 1 m from the En Garde Line to the far end, shorter than one run-back.
+            var gap = StripGeometry.ConvertFarEndLengthToGap(1.0f, FencerHeightMeters, DefaultZones);
+
+            Assert.That(gap, Is.EqualTo(StripGeometry.MinimumPlacedLengthMeters));
+        }
+
+        [TestCase(0.19f)]
         [TestCase(0.0f)]
         [TestCase(float.NaN)]
         [TestCase(float.PositiveInfinity)]
@@ -127,7 +163,8 @@ namespace VrFencing.Tests.Strip
         [TestCase(0.0f, 5.41f, 0.4f, false)]
         public void HeadPastASideOrAnEndByMoreThanTheToleranceIsOffTheStrip(float x, float z, float toleranceMeters, bool expectedOnStrip)
         {
-            var geometry = StripGeometry.Create(5.0f, FencerHeightMeters, DefaultZones);
+            // The far end at 5 m.
+            var geometry = StripGeometry.Create(StripGeometry.ConvertFarEndLengthToGap(5.0f, FencerHeightMeters, DefaultZones), FencerHeightMeters, DefaultZones);
 
             Assert.That(geometry.Contains(new Vector3(x, 1.7f, z), toleranceMeters), Is.EqualTo(expectedOnStrip));
         }

@@ -14,6 +14,12 @@ namespace VrFencing.UI
 
         /// <summary>The grip's angles and the thrust calibration (PER-52), opened from Settings.</summary>
         Grip,
+
+        /// <summary>
+        /// "New Strip here?" (PER-91): asked at launch in a room with no saved Strip while another room's Strip was
+        /// found. Shown over every page until answered, even with the panels folded away.
+        /// </summary>
+        NewStripPrompt,
     }
 
     /// <summary>
@@ -115,26 +121,41 @@ namespace VrFencing.UI
             }
         }
 
-        public MenuScreen GetVisibleScreen(bool isPlacingStrip, bool isDrillRunning)
+        /// <param name="isAskingForNewStrip">The Strip waits for an answer to "New Strip here?" (<see cref="MenuScreen.NewStripPrompt"/>).</param>
+        public MenuScreen GetVisibleScreen(bool isPlacingStrip, bool isDrillRunning, bool isAskingForNewStrip = false)
         {
             if (isPlacingStrip)
             {
                 return MenuScreen.Hidden;
             }
 
+            if (isAskingForNewStrip)
+            {
+                return MenuScreen.NewStripPrompt;
+            }
+
             return isDrillRunning ? MenuScreen.Running : Page;
         }
 
-        /// <summary>The screen whose panel is on view: <see cref="GetVisibleScreen"/>, or Hidden while collapsed or calibrating.</summary>
-        public MenuScreen GetShownPanel(bool isPlacingStrip, bool isDrillRunning)
+        /// <summary>
+        /// The screen whose panel is on view: <see cref="GetVisibleScreen"/>, or Hidden while collapsed or calibrating.
+        /// "New Strip here?" stays on view while collapsed, since it waits for an answer.
+        /// </summary>
+        public MenuScreen GetShownPanel(bool isPlacingStrip, bool isDrillRunning, bool isAskingForNewStrip = false)
         {
-            return IsCollapsed || IsCalibrating ? MenuScreen.Hidden : GetVisibleScreen(isPlacingStrip, isDrillRunning);
+            var visible = GetVisibleScreen(isPlacingStrip, isDrillRunning, isAskingForNewStrip);
+            if (visible == MenuScreen.NewStripPrompt)
+            {
+                return visible;
+            }
+
+            return IsCollapsed || IsCalibrating ? MenuScreen.Hidden : visible;
         }
 
         /// <summary>The menu laser is out while a panel is on view: none to point at while folded or placing the Strip.</summary>
-        public bool IsPointerShown(bool isPlacingStrip, bool isDrillRunning)
+        public bool IsPointerShown(bool isPlacingStrip, bool isDrillRunning, bool isAskingForNewStrip = false)
         {
-            return GetShownPanel(isPlacingStrip, isDrillRunning) != MenuScreen.Hidden;
+            return GetShownPanel(isPlacingStrip, isDrillRunning, isAskingForNewStrip) != MenuScreen.Hidden;
         }
     }
 

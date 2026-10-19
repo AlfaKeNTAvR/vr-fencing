@@ -6,10 +6,15 @@ using VrFencing.Settings;
 namespace VrFencing.Strip
 {
     /// <summary>
-    /// The Strip in the room: two-point placement with the off-hand controller, the per-room spatial anchor, the
-    /// markings, and the warnings (Warning Zone buzz and glow, off-strip signal). Rules and geometry are Core
-    /// (<see cref="StripPlacement"/>, <see cref="StripGeometry"/>, <see cref="StripMonitor"/>); this reads the
-    /// controllers and head, renders, and raises events for Drills and the UI.
+    /// The Strip in the room: two-point placement with the off-hand controller (the Fencer's En Garde Line, then the
+    /// Dummy's), the per-room spatial anchor, the markings, and the warnings (Warning Zone buzz and glow, off-strip
+    /// signal). Rules and geometry are Core (<see cref="StripPlacement"/>, <see cref="StripGeometry"/>,
+    /// <see cref="StripMonitor"/>, <see cref="SavedStrips"/>); this reads the controllers and head, renders, and raises
+    /// events for Drills and the UI.
+    ///
+    /// At launch the Strip saved for this room comes back by itself. In a room with no saved Strip, when another room's
+    /// Strip was found, it asks "New Strip here?" (<see cref="IsAskingForNewStrip"/>, answered on the menu with
+    /// <see cref="PlaceNewStrip"/> or <see cref="KeepLastStrip"/>); when no Strip was found at all, placement starts.
     ///
     /// <see cref="EnGardeLine"/> is the Strip frame (origin at the Fencer's En Garde Line on the centerline,
     /// +x the Fencer's right, +z toward the Dummy). The Dummy and the markings sit under it, so they move with it.
@@ -39,6 +44,7 @@ namespace VrFencing.Strip
         private string _placementPrompt;
         private PlacedStrip? _placedStrip;
         private bool _isBusy;
+        private SavedStrip _lastStripElsewhere;
         private int _placementStartedFrame = -1;
 
         /// <summary>The Fencer's head passed an end or a side by more than the off-strip tolerance, or the Strip is being re-placed. Drills pause.</summary>
@@ -68,6 +74,17 @@ namespace VrFencing.Strip
         /// <summary>Two-point placement is running: the off-hand trigger belongs to it.</summary>
         public bool IsPlacing => _placement != null;
 
+        /// <summary>
+        /// "New Strip here?" waits for an answer (PER-91): no saved Strip is in this room, but another room's Strip was
+        /// found. The menu shows the question; <see cref="PlaceNewStrip"/> or <see cref="KeepLastStrip"/> answers it.
+        /// </summary>
+        public bool IsAskingForNewStrip => _lastStripElsewhere != null;
+
+        /// <summary>What the "New Strip here?" question tells the Fencer about the choice.</summary>
+        public string NewStripQuestionDetails =>
+            "No Strip is saved for this room yet.\n" +
+            "Place a new one for this room (your other rooms keep theirs),\nor keep using the last Strip where it is.";
+
         /// <summary>The off-strip tolerance in use.</summary>
         public float OffStripToleranceMeters => _settings?.WarningZone.OffStripToleranceMeters ?? 0.0f;
 
@@ -87,16 +104,52 @@ namespace VrFencing.Strip
 
             var buttons = OffHandButtons.For(_settings.Hand);
             _placement = new StripPlacement();
+            _lastStripElsewhere = null;
 
             // A UI button may start placement with the same trigger press; that press must not set the En Garde Line.
             _placementStartedFrame = Time.frameCount;
             _placementPrompt =
-                $"{reason}\nStand en garde with about 1 m free behind you.\n" +
+                $"{reason}\nStand en garde on your En Garde Line.\n" +
                 $"Hold the {buttons.SideName} controller over your front foot and pull its trigger." +
                 (_placedStrip.HasValue ? $"\n({buttons.ReplaceButtonName}: keep the old Strip)" : string.Empty);
             _markings.SetVisible(false);
             SetFencerOnStrip(false);
             Debug.Log($"[Strip] Placement started: {reason}");
+        }
+
+        /// <summary>Answers "New Strip here?" with a new Strip: placement starts, and the Strip is saved as this room's.</summary>
+        public void PlaceNewStrip()
+        {
+            if (!IsAskingForNewStrip)
+            {
+                return;
+            }
+
+            Debug.Log("[Strip] New Strip here: placing one for this room.");
+            BeginPlacement("New room: let's place its Strip.");
+        }
+
+        /// <summary>
+        /// Answers "New Strip here?" by keeping the last Strip, found in another room, where it is. It stays that room's
+        /// Strip; the question comes back at the next launch here.
+        /// </summary>
+        public void KeepLastStrip()
+        {
+            var kept = _lastStripElsewhere;
+            if (kept == null)
+            {
+                return;
+            }
+
+            _lastStripElsewhere = null;
+            if (!_anchors.BindLastStrip())
+            {
+                BeginPlacement("The last Strip is gone. Let's place one here.");
+                return;
+            }
+
+            Debug.Log("[Strip] New Strip here: keeping the last Strip.");
+            UseSavedStrip(kept, "Kept the last Strip");
         }
 
         /// <summary>Moves the off-strip tolerance to its next step (0, 0.2, 0.4 m) and saves it to Settings.</summary>
@@ -123,7 +176,7 @@ namespace VrFencing.Strip
 
         /// <summary>
         /// Uses changed Settings (from the settings screen): sword hand for the off-hand buttons, and height, Warning
-        /// Zone and tolerance for the geometry and warnings, rebuilt around the same placed En Garde Line and far end.
+        /// Zone and tolerance for the geometry and warnings, rebuilt around the same two En Garde Lines.
         /// </summary>
         public void ApplySettings(TrainerSettings settings)
         {
@@ -217,10 +270,10 @@ namespace VrFencing.Strip
         private async void RestoreOnLaunch()
         {
             _isBusy = true;
-            SavedStrip restored = null;
+            var choice = new StripRoomChoice(StripRoomMatch.NotFound, null);
             try
             {
-                restored = await _anchors.RestoreAsync();
+                choice = await _anchors.RestoreAsync(GetFencerOnFloor);
             }
             catch (Exception error)
             {
@@ -236,18 +289,39 @@ namespace VrFencing.Strip
                 return;
             }
 
-            if (restored == null)
+            switch (choice.Match)
             {
-                BeginPlacement("No Strip found in this room. Let's place it.");
-                return;
-            }
+                case StripRoomMatch.ThisRoom:
+                    UseSavedStrip(choice.Strip, "Strip restored");
+                    break;
 
+                case StripRoomMatch.OtherRoom:
+                    _lastStripElsewhere = choice.Strip;
+                    break;
+
+                default:
+                    BeginPlacement("No Strip found in this room. Let's place it.");
+                    break;
+            }
+        }
+
+        /// <summary>Uses a saved Strip whose anchor is bound: the Strip frame follows the anchor, the gap comes from the saved Strip.</summary>
+        private void UseSavedStrip(SavedStrip saved, string message)
+        {
             var anchor = _anchors.AnchorTransform;
             _enGardeLine.SetPositionAndRotation(anchor.position, anchor.rotation);
-            if (UseStrip(new PlacedStrip(GetEnGardeLinePose(), restored.PlacedLengthMeters)))
+            var gap = saved.GetEnGardeGapMeters(_settings.FencerHeightMeters, _settings.WarningZone);
+            if (UseStrip(new PlacedStrip(GetEnGardeLinePose(), gap)))
             {
-                _status.ShowShortMessage($"Strip restored: {Geometry.LengthMeters:0.0} m", Time.timeAsDouble, ShortMessageSeconds);
+                _status.ShowShortMessage($"{message}: {Geometry.LengthMeters:0.0} m", Time.timeAsDouble, ShortMessageSeconds);
             }
+        }
+
+        /// <summary>The head dropped to the floor (floor-level tracking: y = 0), read once the saved anchors are found.</summary>
+        private Vector3 GetFencerOnFloor()
+        {
+            var head = _cameraRig != null ? _cameraRig.centerEyeAnchor : null;
+            return head != null ? new Vector3(head.position.x, 0.0f, head.position.z) : Vector3.zero;
         }
 
         private void UpdatePlacement(OffHandButtons buttons)
@@ -280,14 +354,14 @@ namespace VrFencing.Strip
             {
                 case PlacementPressOutcome.EnGardeLineSet:
                     _placementPrompt =
-                        $"En Garde Line set.\nWalk to the far end of your space, hold the {buttons.SideName} controller over it " +
-                        "and pull the trigger.";
+                        "Your En Garde Line is set.\nNow the Dummy's: walk to where its front foot goes, " +
+                        $"hold the {buttons.SideName} controller over that spot and pull the trigger.";
                     Debug.Log($"[Strip] En Garde Line point set at {_placement.EnGardePointOnFloor}.");
                     break;
 
-                case PlacementPressOutcome.TooShort:
+                case PlacementPressOutcome.TooClose:
                     _status.ShowShortMessage(
-                        $"Too short: the far end must be at least {StripGeometry.MinimumPlacedLengthMeters:0.0} m from the En Garde Line.",
+                        $"Too close: the Dummy's En Garde Line must be at least {StripGeometry.MinimumPlacedLengthMeters:0.0} m from yours.",
                         Time.timeAsDouble,
                         ShortMessageSeconds);
                     break;
@@ -307,7 +381,7 @@ namespace VrFencing.Strip
                 return;
             }
 
-            Debug.Log($"[Strip] Placed: {placed.PlacedLengthMeters:0.00} m from the En Garde Line, {Geometry.LengthMeters:0.00} m end to end.");
+            Debug.Log($"[Strip] Placed: En Garde Lines {placed.PlacedLengthMeters:0.00} m apart, {Geometry.LengthMeters:0.00} m end to end.");
             _status.ShowShortMessage($"Strip placed: {Geometry.LengthMeters:0.0} m. Saving...", Time.timeAsDouble, ShortMessageSeconds);
             SaveAnchor(placed);
         }
@@ -425,6 +499,11 @@ namespace VrFencing.Strip
             if (_isBusy && _monitor == null)
             {
                 return "Looking for your Strip...";
+            }
+
+            if (IsAskingForNewStrip)
+            {
+                return "New Strip here? Answer on the menu.";
             }
 
             return IsPlaced && !IsFencerOnStrip ? OffStripMessage : string.Empty;

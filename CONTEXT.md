@@ -23,11 +23,11 @@ The deliberate slight curve of an épée blade toward the palm side (under 1 cm)
 _Avoid_: Bend (reserved for the blade bowing under pressure)
 
 **Strip**:
-The rectangular practice lane the Fencer advances and retreats along, laid out in the real room with a configurable length.
+The rectangular practice lane the Fencer advances and retreats along, laid out in the real room around the two En Garde Lines. Behind each line it runs on for an en garde stance and a Warning Zone, which may reach past a wall. One Strip is saved per room; a room without one offers a new Strip.
 _Avoid_: Piste (reserve for the regulation 14 m competition lane), track, lane
 
 **En Garde Line**:
-The Fencer's starting line on the Strip, set by the first point when placing it.
+A starting line on the Strip. The Fencer's is set by the first point when placing the Strip, the Dummy's (the opponent's side) by the second. Unqualified, it means the Fencer's.
 _Avoid_: Start line, spawn point
 
 **Warning Zone**:
@@ -69,7 +69,7 @@ A virtual object the Fencer aims Touches at.
 _Avoid_: goal
 
 **Dummy**:
-A static, translucent body silhouette standing at the opponent's en garde line, carrying the Target Zones. It never moves or attacks; the Armed Dummy does.
+A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never moves or attacks; the Armed Dummy does.
 _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 
 **Target Zone**:

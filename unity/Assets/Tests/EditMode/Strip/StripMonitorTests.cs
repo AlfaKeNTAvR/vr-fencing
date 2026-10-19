@@ -19,8 +19,9 @@ namespace VrFencing.Tests.Strip
         [SetUp]
         public void CreateMonitor()
         {
-            // 5 m placed: Warning Zones 0.71 m, Strip from about -1.21 m to 5 m.
-            _geometry = StripGeometry.Create(5.0f, 1.65f, new WarningZoneSettings());
+            // En Garde Lines about 3.75 m apart: Warning Zones about 0.54 m, Strip from about -1.03 m to 5 m.
+            var zones = new WarningZoneSettings();
+            _geometry = StripGeometry.Create(StripGeometry.ConvertFarEndLengthToGap(5.0f, 1.65f, zones), 1.65f, zones);
             _monitor = new StripMonitor(_geometry);
             _events = new List<string>();
             _monitor.EnteredWarningZone += end => _events.Add($"zone {end}");

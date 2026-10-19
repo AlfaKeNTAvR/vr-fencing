@@ -5,7 +5,7 @@ namespace VrFencing.Strip
 {
     /// <summary>
     /// Draws the Strip's piste-like floor markings from a Core <see cref="StripGeometry"/>, under a parent transform
-    /// that is the Strip frame (the En Garde Line): side and end lines, the center line, the En Garde Line, and a
+    /// that is the Strip frame (the En Garde Line): side and end lines, the center line, both En Garde Lines, and a
     /// translucent Warning Zone at each end that glows while the Fencer is in it. Lines are thin flat boxes just above
     /// the floor, solid (opaque material) and lying fully above the Warning Zones, so the pulsing zones never show
     /// through or fight with them. All dimensions come from the Core; this only builds and colors renderers.
@@ -91,6 +91,7 @@ namespace VrFencing.Strip
             LayOutCrossLine("Far End Line", geometry.FarEndZ, LineHeightMeters, LineColor);
             LayOutCrossLine("Center Line", geometry.CenterLineZ, LineHeightMeters, LineColor);
             LayOutCrossLine("En Garde Line", 0.0f, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
+            LayOutCrossLine("Dummy En Garde Line", geometry.DummyEnGardeLineZ, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
 
             _glowingZone = null;
         }
