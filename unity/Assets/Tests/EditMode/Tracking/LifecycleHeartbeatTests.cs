@@ -30,11 +30,36 @@ namespace VrFencing.Tests.Tracking
         }
 
         [Test]
-        public void FormatsFrameTimeAndRuntimeState()
+        public void FormatsFrameTimeRuntimeStateAndEyeBuffer()
         {
-            var line = LifecycleHeartbeat.Format(1234, 56.789, new RuntimeReadiness(true, false, true, false));
+            var eyeBuffer = new EyeBufferState(2064, 2208, 1f, 0.75f, 1f, 4);
 
-            Assert.That(line, Is.EqualTo("[Life] frame 1234 t 56.79 s vrFocus 1 inputFocus 0 hmd 1 user 0"));
+            var line = LifecycleHeartbeat.Format(1234, 56.789, new RuntimeReadiness(true, false, true, false), eyeBuffer);
+
+            Assert.That(line, Is.EqualTo(
+                "[Life] frame 1234 t 56.79 s vrFocus 1 inputFocus 0 hmd 1 user 0"
+                + " eye 2064x2208 scale 1.00 viewport 0.75 urp 1.00 msaa 4"));
+        }
+
+        [Test]
+        public void ShowsAScaledUpEyeBuffer()
+        {
+            // PER-93: Dynamic Resolution at its Quest 3 maximum makes the eye textures 1.6x per side.
+            var eyeBuffer = new EyeBufferState(3302, 3533, 1.6f, 1f, 1.6f, 4);
+
+            var line = LifecycleHeartbeat.Format(1, 0, new RuntimeReadiness(true, true, true, true), eyeBuffer);
+
+            Assert.That(line, Does.EndWith(" eye 3302x3533 scale 1.60 viewport 1.00 urp 1.60 msaa 4"));
+        }
+
+        [Test]
+        public void SaysUrpNoneWhenNoUrpAssetIsActive()
+        {
+            var eyeBuffer = new EyeBufferState(0, 0, 1f, 1f, null, null);
+
+            var line = LifecycleHeartbeat.Format(1, 0, new RuntimeReadiness(false, false, false, false), eyeBuffer);
+
+            Assert.That(line, Does.EndWith(" eye 0x0 scale 1.00 viewport 1.00 urp none"));
         }
     }
 }

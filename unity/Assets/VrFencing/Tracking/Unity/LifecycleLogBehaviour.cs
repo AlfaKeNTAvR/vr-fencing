@@ -1,12 +1,15 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.XR;
 
 namespace VrFencing.Tracking
 {
     /// <summary>
     /// Device-log diagnostics for headset sleep/wake (PER-71), all tagged <c>[Life]</c> (<c>adb logcat -s Unity</c>):
-    /// a once-per-second heartbeat with the frame count and the runtime's focus and headset state (a gap means the frame
-    /// loop stalled), every Unity and OVRManager lifecycle callback with its frame and time, and on resume the passthrough
-    /// initialization state plus the passthrough layer's "resumed" event. Logging only; nothing depends on it.
+    /// a once-per-second heartbeat with the frame count, the runtime's focus and headset state (a gap means the frame
+    /// loop stalled) and the eye buffer size (PER-93), every Unity and OVRManager lifecycle callback with its frame and
+    /// time, and on resume the passthrough initialization state plus the passthrough layer's "resumed" event. Logging only; nothing depends on it.
     /// Sits on the camera rig next to the passthrough layer.
     /// </summary>
     public sealed class LifecycleLogBehaviour : MonoBehaviour
@@ -55,7 +58,8 @@ namespace VrFencing.Tracking
             var realtimeSeconds = Time.realtimeSinceStartupAsDouble;
             if (_heartbeat.TryBeat(realtimeSeconds))
             {
-                Debug.Log(LifecycleHeartbeat.Format(Time.frameCount, realtimeSeconds, RuntimeReadinessReader.Read()));
+                Debug.Log(LifecycleHeartbeat.Format(
+                    Time.frameCount, realtimeSeconds, RuntimeReadinessReader.Read(), ReadEyeBuffer()));
             }
         }
 
@@ -107,6 +111,22 @@ namespace VrFencing.Tracking
         private static void LogEvent(string eventName)
         {
             Debug.Log($"[Life] {eventName} at frame {Time.frameCount}, t {Time.realtimeSinceStartupAsDouble:0.00} s.");
+        }
+
+        /// <summary>
+        /// The eye texture size and scales as Unity's XR settings report them, plus the active URP asset's render scale
+        /// and MSAA (PER-93). OVRManager's Dynamic Resolution, when on, raises both scales to its maximum at startup.
+        /// </summary>
+        private static EyeBufferState ReadEyeBuffer()
+        {
+            var urpAsset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            return new EyeBufferState(
+                XRSettings.eyeTextureWidth,
+                XRSettings.eyeTextureHeight,
+                XRSettings.eyeTextureResolutionScale,
+                XRSettings.renderViewportScale,
+                urpAsset != null ? urpAsset.renderScale : (float?)null,
+                urpAsset != null ? urpAsset.msaaSampleCount : (int?)null);
         }
 
         private void LogPassthroughState()

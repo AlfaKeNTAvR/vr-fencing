@@ -56,6 +56,9 @@ namespace VrFencing.EditorTools
             // see ConfigurePlayerSettings). This task is missing from the JSON report, so its uid is computed the way
             // Meta's OVRConfigurationTask does: a Hash128 of the task message.
             ComputeSetupTaskUid("Always specify single \"GameActivity\" application entry on Unity 2023.2+"),
+            // "Using Dynamic Resolution can help improve quality ...": would turn OVRManager Dynamic Resolution back on
+            // at a 1.6x maximum on Quest 3, which PassthroughSceneBuilder turns off on purpose (PER-93, eye buffer memory).
+            "740be0d3e1147ce69a1863fa64086e3b",
         };
 
         private static string ComputeSetupTaskUid(string taskMessage)
@@ -129,6 +132,10 @@ namespace VrFencing.EditorTools
             // Project Setup Tool and the OpenXR Meta Quest validation both ask for GameActivity; their fix is excluded
             // below and their warning is expected. Revisit when the project moves to a Unity with the fix.
             PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;
+            // No stack traces on Log and Warning (PER-93): the once-per-second [Life] heartbeat with a stack trace filled
+            // the default logcat buffer in about 20 s. Errors, asserts and exceptions keep theirs.
+            PlayerSettings.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            PlayerSettings.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
         }
 
         /// <summary>
