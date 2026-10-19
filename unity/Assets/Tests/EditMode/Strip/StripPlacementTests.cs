@@ -3,6 +3,7 @@
 using System;
 using System.Numerics;
 using NUnit.Framework;
+using VrFencing.Settings;
 using VrFencing.Strip;
 
 namespace VrFencing.Tests.Strip
@@ -54,6 +55,20 @@ namespace VrFencing.Tests.Strip
             var pointInRoom = new Vector3(0.3f, 1.6f, 0.7f);
 
             AssertVector(StripFrame.ToRoom(enGardeLine, StripFrame.ToStripFrame(enGardeLine, pointInRoom)), pointInRoom);
+        }
+
+        [Test]
+        public void RoomPoseFacingDownTheStripFacesPlusZInTheStripFrame()
+        {
+            // The Strip runs toward -x in the room; a pose facing -x faces down the Strip.
+            var (enGardeLine, _) = StripFrame.FromPlacementPoints(new Vector3(1.0f, 0.0f, 0.0f), new Vector3(-3.0f, 0.0f, 0.0f));
+            var facingMinusX = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -MathF.PI / 2.0f);
+            var poseInRoom = new TrackedPose(new Vector3(0.0f, 1.2f, 0.0f), facingMinusX);
+
+            var poseInStrip = StripFrame.ToStripFrame(enGardeLine, poseInRoom);
+
+            AssertVector(poseInStrip.Position, new Vector3(0.0f, 1.2f, 1.0f));
+            AssertVector(Vector3.Transform(Vector3.UnitZ, poseInStrip.Rotation), Vector3.UnitZ);
         }
 
         [Test]

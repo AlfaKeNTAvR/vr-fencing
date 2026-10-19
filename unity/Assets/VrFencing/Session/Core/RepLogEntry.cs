@@ -156,21 +156,57 @@ namespace VrFencing.Session
     /// <summary>
     /// The blade arm's joints from IOBT body tracking, in the Strip frame (+x the Fencer's right, +y up, +z forward).
     /// Any joint the tracker did not report is null. Filled by the Tracking module; logged only, never used for judging.
+    /// <para>
+    /// The lunge fields come from the Rep's samples between its cue and its judging (see the Tracking module's
+    /// <c>RepArmTracker</c>). They are null when no lunge was found or the arm was not tracked when it started.
+    /// Lines written before these fields existed read back with them null.
+    /// </para>
     /// </summary>
     public sealed class ArmPoseSnapshot
     {
         [JsonConstructor]
-        public ArmPoseSnapshot(TrackedPose? shoulder, TrackedPose? elbow, TrackedPose? wrist)
+        public ArmPoseSnapshot(
+            TrackedPose? shoulder,
+            TrackedPose? elbow,
+            TrackedPose? wrist,
+            BodyTrackingFidelity? fidelity = null,
+            bool? armExtendedBeforeLunge = null,
+            float? elbowAngleAtLungeStartDegrees = null,
+            double? lungeStartSecondsBeforeJudging = null)
         {
             Shoulder = shoulder;
             Elbow = elbow;
             Wrist = wrist;
+            Fidelity = fidelity;
+            ArmExtendedBeforeLunge = armExtendedBeforeLunge;
+            ElbowAngleAtLungeStartDegrees = elbowAngleAtLungeStartDegrees;
+            LungeStartSecondsBeforeJudging = lungeStartSecondsBeforeJudging;
         }
 
+        /// <summary>Shoulder joint (top of the upper arm) at judging time.</summary>
         public TrackedPose? Shoulder { get; }
 
         public TrackedPose? Elbow { get; }
 
         public TrackedPose? Wrist { get; }
+
+        /// <summary>What the body tracker delivered at judging time: High is IOBT, Low the fallback from head and controllers only.</summary>
+        public BodyTrackingFidelity? Fidelity { get; }
+
+        /// <summary>The blade arm was extended (straight and reaching forward) when the lunge started.</summary>
+        public bool? ArmExtendedBeforeLunge { get; }
+
+        /// <summary>Elbow angle when the lunge started: 180 is a straight arm.</summary>
+        public float? ElbowAngleAtLungeStartDegrees { get; }
+
+        /// <summary>How long before the Rep was judged the lunge started.</summary>
+        public double? LungeStartSecondsBeforeJudging { get; }
+    }
+
+    /// <summary>Body tracking quality as the headset reports it. Low is the quiet fallback when IOBT is not available.</summary>
+    public enum BodyTrackingFidelity
+    {
+        Low,
+        High,
     }
 }

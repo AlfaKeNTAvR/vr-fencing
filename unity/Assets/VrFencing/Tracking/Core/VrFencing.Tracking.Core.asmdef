@@ -1,7 +1,11 @@
 {
     "name": "VrFencing.Tracking.Core",
     "rootNamespace": "VrFencing.Tracking",
-    "references": [],
+    "references": [
+        "VrFencing.Session.Core",
+        "VrFencing.Strip.Core",
+        "VrFencing.Settings.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

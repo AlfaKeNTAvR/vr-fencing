@@ -20,7 +20,7 @@ How the Unity project in `unity/` gets built, tested and put on the Quest 3, by 
 | Newtonsoft Json `com.unity.nuget.newtonsoft-json` | 3.2.2 | Unity registry (JSON for the Core assemblies; already a dependency of MR Utility Kit and MCP for Unity, now pinned directly) |
 | MCP for Unity `com.coplaydev.unity-mcp` | 10.3.0 | git tag `v10.3.0` of `CoplayDev/unity-mcp` |
 
-- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin.
+- Scene: `Assets/Scenes/Passthrough.unity`, the only build scene, kept up to date by `PassthroughSceneBuilder` (menu "VR Fencing > Update passthrough scene", or batchmode `-executeMethod VrFencing.EditorTools.PassthroughSceneBuilder.UpdatePassthroughScene`). Meta's camera rig with passthrough as the background, and the Strip with its En Garde Line transform (the Strip frame). The Dummy sits under the En Garde Line at lunge distance, so it moves with the Strip; it reads the Fencer's height and hand from the settings file at start. Until a Strip is placed or restored, the En Garde Line is at the scene origin. A `Practice` object holds the Drill runner, the session recorder (rep log) and the arm tracking (IOBT); nothing starts a Drill until the UI does. The camera rig's OVRManager asks for the body tracking permission at launch.
 - Code: one folder per module from ADR 0002 under `Assets/VrFencing/<Module>/`, each with a `Core` assembly (`VrFencing.<Module>.Core`, plain C# with `noEngineReferences`, Edit-mode tested) and a `Unity` assembly (`VrFencing.<Module>.Unity`, thin MonoBehaviours). Core code uses `System.Numerics` vectors; `VrFencing.Settings.PoseConversions` converts to and from Unity types. Edit-mode tests live in `Assets/Tests/EditMode/` and reference every Core assembly.
 - Android package id: `com.alfakentavr.vrfencing`.
 
@@ -66,6 +66,19 @@ The Session module writes two JSON Lines files (one JSON object per line) to `Ap
 
 - `session-reps.jsonl`: one line per judged Rep (timestamp, session, Drill, Rep index, Target Zone, result, reaction time, tip speed, distance from the zone center, shrink tag, flag button, IOBT arm pose or null).
 - `session-history.jsonl`: one line per finished Drill run with its results (success %, averages, hit map per Target Zone), used for the last-10-sessions trend.
+
+The `armPose` object (Tracking module, IOBT upper body) holds the blade arm's `shoulder`, `elbow` and `wrist` poses at judging time in the Strip frame (metres; +x the Fencer's right, +y up, +z toward the Dummy; any joint not tracked is null), plus:
+
+| Field | Meaning |
+|---|---|
+| `fidelity` | `High` (IOBT) or `Low` (the headset's quiet fallback from head and controllers only) |
+| `armExtendedBeforeLunge` | `true`/`false`: was the arm extended when the lunge started; null if no lunge was found or the arm was not tracked then |
+| `elbowAngleAtLungeStartDegrees` | elbow angle at the lunge start, 180 = straight |
+| `lungeStartSecondsBeforeJudging` | how long before the Rep was judged the lunge started |
+
+`armPose` is null when body tracking was not running (permission not granted, not supported, or stopped). Rules and thresholds, all in `Assets/VrFencing/Tracking/Core/`: the lunge is the fastest forward burst of the head along the Strip since the Rep's cue, reaching at least 0.9 m/s; it starts at the last moment before that peak when the head was moving forward slower than 0.2 m/s (`LungeStart.cs`). The arm counts as extended with the elbow at 150 degrees or straighter and the wrist forward of the shoulder by at least 0.6 of the arm's length (`ArmExtension.cs`). Lines written before these fields existed read back with them null.
+
+On the headset, every judged Rep also prints a `[Tracking] Rep judged: ...` line to `adb logcat -s Unity`, and body tracking start, fidelity changes and missing permission are logged with the same tag. The app asks for the body tracking permission at first launch (Meta's dialog); if it was denied, grant it with `"$ADB" shell pm grant com.alfakentavr.vrfencing com.oculus.permission.BODY_TRACKING` (or in the headset's app permissions) and restart the app.
 
 The name is not `reps.jsonl` on purpose: an older throwaway prototype writes that name with a different schema. The newest Rep can lag by one rest period, since it is held back so the flag button can still mark it.
 

@@ -25,6 +25,12 @@ namespace VrFencing.Session
 
         public SessionRecorder Recorder { get; private set; }
 
+        /// <summary>
+        /// Samples the IOBT arm pose when a Rep is judged. Set by the Tracking module when it starts; while unset
+        /// (or returning null) the rep log gets no arm pose. Read at judging time, so it can be set after Awake.
+        /// </summary>
+        public Func<ArmPoseSnapshot> ArmPoseSource { get; set; }
+
         /// <summary>A Drill run finished: its results, for the results panel.</summary>
         public event Action<DrillRunRecord> DrillRunRecorded;
 
@@ -56,7 +62,7 @@ namespace VrFencing.Session
 
         private void Awake()
         {
-            Recorder = new SessionRecorder(Application.persistentDataPath, Guid.NewGuid().ToString("N"), new SystemWallClock());
+            Recorder = new SessionRecorder(Application.persistentDataPath, Guid.NewGuid().ToString("N"), new SystemWallClock(), () => ArmPoseSource?.Invoke());
             Recorder.WriteFailed += error => Debug.LogWarning($"[Session] Could not write the session files: {error.Message}");
             Recorder.DrillRunRecorded += record => DrillRunRecorded?.Invoke(record);
         }
