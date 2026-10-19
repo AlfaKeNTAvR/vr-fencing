@@ -30,3 +30,11 @@ desktop.ini
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Unity project in unity/ (folders above already cover Library, Temp, Logs, UserSettings, Builds)
+# Meta Immersive Debugger dev-agent settings: generated per machine, holds this PC's IP and an access token
+unity/Assets/Resources/DevAgentSettings.asset
+unity/Assets/Resources/DevAgentSettings.asset.meta
+# Gradle export and IDE caches
+unity/[Ee]xported[Oo]bj/
+unity/.utmp/
