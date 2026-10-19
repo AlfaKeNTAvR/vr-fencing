@@ -4,7 +4,8 @@ using VrFencing.Dummy;
 namespace VrFencing.Drills
 {
     /// <summary>
-    /// Where a Drill run is. One Rep goes Cue, Window, Judge, then Rest (or Done after the last Rep).
+    /// Where a Drill run is. One Rep goes Cue, Window, Judge, then Rest (or Done after the last Rep). In a Drill where
+    /// the Fencer moves, Return comes between Judge and Rest until the Fencer is back at the Start Mark.
     /// Pausing is a flag on the runner, not a state: the state is kept so the run knows what to resume.
     /// </summary>
     public enum DrillState
@@ -19,6 +20,12 @@ namespace VrFencing.Drills
 
         /// <summary>The Rep is being judged. Passed through in one step, so it is only seen in <see cref="DrillRunner.StateChanged"/>.</summary>
         Judge,
+
+        /// <summary>
+        /// Waiting, with no time limit, for the Fencer to be back at the Start Mark and still before the rest starts.
+        /// Skipped when the Fencer is already there at the judgement.
+        /// </summary>
+        Return,
 
         Rest,
 

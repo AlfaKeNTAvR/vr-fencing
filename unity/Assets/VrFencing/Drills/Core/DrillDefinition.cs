@@ -258,6 +258,17 @@ namespace VrFencing.Drills
         /// <summary>Where the Dummy stands for the shortened variant; the same as <see cref="DummyDistance"/> unless the variant moves it nearer.</summary>
         public DummyDistance ShrunkDummyDistance { get; }
 
+        /// <summary>
+        /// Whether the Fencer moves along the Strip in a run of the full Drill or, with <paramref name="isShrunk"/>, its
+        /// shortened variant: the Dummy stands beyond extension distance, or the Drill reads footwork. The runner then waits
+        /// for the Fencer back at the Start Mark between Reps (PER-89: Drills 2 to 6). A run at extension distance with no
+        /// footwork (Drill 1, a shortened variant) needs no wait.
+        /// </summary>
+        public bool WaitsAtStartMark(bool isShrunk)
+        {
+            return UsesFootwork || RepDummyDistances != null || GetDummyDistance(isShrunk) != DummyDistance.Extension;
+        }
+
         /// <summary>The Dummy Distance for a run of the full Drill or, with <paramref name="isShrunk"/>, its shortened variant.</summary>
         public DummyDistance GetDummyDistance(bool isShrunk)
         {

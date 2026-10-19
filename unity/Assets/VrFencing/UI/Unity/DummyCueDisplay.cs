@@ -11,7 +11,9 @@ namespace VrFencing.UI
     /// named-zone cue shows the zone's name above the Dummy's head (the Running panel, low on the off-hand side, says
     /// it too). A compound lights its first zone with both names above the head, then, on the first Touch, flashes it
     /// and lights the second; a footwork call shows the action above the head. All go away when the Rep is judged,
-    /// the run pauses or ends; a successful Touch flashes the zone.
+    /// the run pauses or ends; a successful Touch flashes the zone. After a Rep that read footwork, the label says what was
+    /// read ("read: step-lunge, 1.2 m") until the next cue, with "Back to the line" under it while the run waits for the
+    /// Fencer at the Start Mark (PER-88, PER-89).
     /// What the label says is decided in the UI Core (<see cref="RunStatusText.FormatDummyLabel"/>).
     /// </summary>
     internal sealed class DummyCueDisplay : IDisposable
@@ -30,6 +32,9 @@ namespace VrFencing.UI
         private readonly DummyBehaviour _dummy;
         private readonly TextMeshPro _label;
 
+        // What the last judged Rep's footwork read as; empty when it read none.
+        private string _readLine = string.Empty;
+
         public DummyCueDisplay(DrillRunner runner, DummyBehaviour dummy)
         {
             _runner = runner;
@@ -40,6 +45,8 @@ namespace VrFencing.UI
             _runner.RepJudged += OnRepJudged;
             _runner.StateChanged += OnStateChanged;
             _runner.Paused += HideCue;
+            _runner.ReturnPrompted += OnReturnPrompted;
+            _runner.Resumed += OnResumed;
         }
 
         public void Dispose()
@@ -49,6 +56,8 @@ namespace VrFencing.UI
             _runner.RepJudged -= OnRepJudged;
             _runner.StateChanged -= OnStateChanged;
             _runner.Paused -= HideCue;
+            _runner.ReturnPrompted -= OnReturnPrompted;
+            _runner.Resumed -= OnResumed;
             if (_label != null)
             {
                 UiKit.DestroyObject(_label.gameObject);
@@ -57,6 +66,7 @@ namespace VrFencing.UI
 
         private void OnRepCued(RepCue cue)
         {
+            _readLine = string.Empty;
             _dummy.DimAllZones();
             if (cue.CueType == CueType.LitTargetZone && cue.TargetZone.HasValue)
             {
@@ -87,6 +97,26 @@ namespace VrFencing.UI
             {
                 _dummy.FlashZone(touchedZone.Value);
             }
+
+            if (result.Footwork.HasValue)
+            {
+                _readLine = RepReadText.Format(result.Footwork.Value);
+                ShowLabel(_readLine);
+            }
+        }
+
+        private void OnReturnPrompted()
+        {
+            ShowLabel(RepReadText.Combine(_readLine, isPromptingReturn: true));
+        }
+
+        // A pause hid the label; still waiting for the Fencer, it comes back. A Rep in progress is cued again instead.
+        private void OnResumed()
+        {
+            if (_runner.State == DrillState.Return || _runner.State == DrillState.Rest)
+            {
+                ShowLabel(RepReadText.Combine(_readLine, _runner.IsPromptingReturn));
+            }
         }
 
         private void OnStateChanged(DrillState state)
@@ -94,6 +124,11 @@ namespace VrFencing.UI
             if (state == DrillState.Judge || state == DrillState.Done)
             {
                 HideCue();
+            }
+            else if (state == DrillState.Rest)
+            {
+                // Back at the Start Mark: the prompt goes, the read stays until the next cue.
+                ShowLabel(_readLine);
             }
         }
 

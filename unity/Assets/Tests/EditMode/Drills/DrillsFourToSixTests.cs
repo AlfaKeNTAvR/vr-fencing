@@ -428,19 +428,19 @@ namespace VrFencing.Tests.Drills
         }
 
         [Test]
-        public void FootworkCallsStopCallingAdvancesTwoStepsAhead()
+        public void FootworkCallsKeepCallingAdvancesSinceTheFencerReturnsToTheStartMark()
         {
             var settings = new TrainerSettings { RepsPerDrill = 40, RestBetweenRepsSeconds = 0.0f };
             Start(DrillCatalog.FootworkCallsDrillId, settings);
 
-            // The Fencer always advances, whatever the call; after two judged advances no more are called.
+            // The Fencer always advances, whatever the call, and walks back to the Start Mark after each Rep (PER-89).
             for (var rep = 0; rep < 40; rep++)
             {
                 _runner.ReportFootwork(Footwork(FootworkAction.Advance));
                 Wait(2.0);
             }
 
-            Assert.That(_recorder.Cues.Skip(2).Select(cue => cue.FootworkCall), Has.None.EqualTo(FootworkAction.Advance));
+            Assert.That(_recorder.Cues.Skip(2).Select(cue => cue.FootworkCall), Has.Some.EqualTo(FootworkAction.Advance));
         }
 
         // ---- Drill definitions for the new rules ----

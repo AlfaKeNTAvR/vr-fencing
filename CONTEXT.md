@@ -64,6 +64,10 @@ _Avoid_: Slap, hit
 A cue that names a footwork action for the Fencer to do at once: advance, retreat, lunge or check (a short move forward that comes straight back). Judged from the head's movement alone, so only roughly.
 _Avoid_: Command, footwork cue
 
+**Start Mark**:
+The mark on the floor at the center of the En Garde Line where the Fencer's front foot goes between Reps. In Drills where the Fencer moves, the next Rep waits until the Fencer is back on it and still.
+_Avoid_: Home position, start position, spawn point
+
 **Target**:
 A virtual object the Fencer aims Touches at.
 _Avoid_: goal

@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using VrFencing.Dummy;
 
 namespace VrFencing.Drills
 {
     /// <summary>
-    /// Runs one Drill as a state machine: Idle, then per Rep Cue, Window, Judge, Rest, and Done after the last Rep.
+    /// Runs one Drill as a state machine: Idle, then per Rep Cue, Window, Judge, Return (Drills where the Fencer moves),
+    /// Rest, and Done after the last Rep.
     /// Inputs are plain calls (blade contacts, Fencer off and back on the Strip, cancel) and an injected clock,
     /// so it runs headless in tests. Outputs are C# events carrying plain data.
     ///
@@ -23,6 +23,12 @@ namespace VrFencing.Drills
     /// Distance (distance choice); two Touches in order, the second within its own window of the first (compound); or,
     /// with no blade, the footwork read in the window answering the call (footwork calls, judged when the window ends).
     /// Footwork comes in through <see cref="ReportFootwork"/>.
+    ///
+    /// Start Mark (PER-89): in a Drill where the Fencer moves (<see cref="DrillDefinition.WaitsAtStartMark"/>), the run
+    /// waits after each judged Rep, in <see cref="DrillState.Return"/>, until the Fencer is back at the Start Mark and
+    /// still (<see cref="ReportAtStartMark"/>), with no time limit; the rest starts from then. After
+    /// <see cref="ReturnPromptSeconds"/> of waiting it raises <see cref="ReturnPrompted"/> once. With no report at all
+    /// (no head tracking), the Fencer counts as back, so the run never waits.
     /// </summary>
     public sealed class DrillRunner
     {
@@ -44,6 +50,14 @@ namespace VrFencing.Drills
 
         // The latest footwork reading reported since the current cue, for Drills that judge footwork.
         private FootworkReading? _latestFootwork;
+
+        // The Fencer is back at the Start Mark and still, per the latest report, and since when (active clock; negative
+        // infinity when it was already so before the run).
+        private bool _isFencerAtStartMark = true;
+        private double _atStartMarkSinceActiveSeconds = double.NegativeInfinity;
+
+        /// <summary>How long the run waits in <see cref="DrillState.Return"/> before <see cref="ReturnPrompted"/> (PER-89: 2 s).</summary>
+        public const double ReturnPromptSeconds = 2.0;
 
         /// <param name="clock">Source of time; the runner never reads Unity's time itself.</param>
         /// <param name="random">Picks each Rep's Target Zone. Pass a seeded one for reproducible runs.</param>
@@ -70,6 +84,9 @@ namespace VrFencing.Drills
 
         /// <summary>Raised once per judged Rep. This is the record for the rep log.</summary>
         public event Action<RepResult> RepJudged;
+
+        /// <summary>The Fencer has not come back to the Start Mark <see cref="ReturnPromptSeconds"/> after the judgement: ask them to.</summary>
+        public event Action ReturnPrompted;
 
         /// <summary>The Fencer left the Strip; timers are frozen and contacts ignored.</summary>
         public event Action Paused;
@@ -107,6 +124,9 @@ namespace VrFencing.Drills
         /// <summary>A compound Rep's first Touch landed and its second is awaited.</summary>
         public bool IsAwaitingSecondTouch => _firstTouchAtActiveSeconds.HasValue && State == DrillState.Window;
 
+        /// <summary>The run is waiting for the Fencer at the Start Mark and has asked them to come back (<see cref="ReturnPrompted"/>).</summary>
+        public bool IsPromptingReturn { get; private set; }
+
         /// <summary>Reps judged so far in the current or last run.</summary>
         public IReadOnlyList<RepResult> Results => _results;
 
@@ -138,6 +158,7 @@ namespace VrFencing.Drills
             _results.Clear();
             _runStartedAtSeconds = _clock.NowSeconds;
             _pausedTotalSeconds = 0.0;
+            _atStartMarkSinceActiveSeconds = double.NegativeInfinity;
             IsPaused = false;
             _isPausedByFencer = false;
             Started?.Invoke();
@@ -215,6 +236,25 @@ namespace VrFencing.Drills
             }
 
             _latestFootwork = reading;
+        }
+
+        /// <summary>
+        /// Whether the Fencer is back at the Start Mark and still (Tracking module), reported every frame while a Drill
+        /// that waits for it runs. In <see cref="DrillState.Return"/>, the rest starts as soon as this turns true.
+        /// </summary>
+        public void ReportAtStartMark(bool isBackAndStill)
+        {
+            if (isBackAndStill == _isFencerAtStartMark)
+            {
+                return;
+            }
+
+            _isFencerAtStartMark = isBackAndStill;
+            _atStartMarkSinceActiveSeconds = IsRunning ? ActiveSeconds() : double.NegativeInfinity;
+            if (IsRunning && !IsPaused)
+            {
+                AdvanceDueTransitions();
+            }
         }
 
         /// <summary>The Fencer's head passed a Strip end or side. Pauses a running Drill.</summary>
@@ -379,6 +419,21 @@ namespace VrFencing.Drills
                         FinishRep(Drill.SuccessRule == SuccessRule.FootworkCall ? JudgeFootworkCall() : TimeoutResult(), windowClosesAt);
                         break;
 
+                    case DrillState.Return:
+                        if (_isFencerAtStartMark)
+                        {
+                            EnterState(DrillState.Rest, Math.Max(_stateStartedAtActiveSeconds, _atStartMarkSinceActiveSeconds));
+                            break;
+                        }
+
+                        if (!IsPromptingReturn && now >= _stateStartedAtActiveSeconds + ReturnPromptSeconds)
+                        {
+                            IsPromptingReturn = true;
+                            ReturnPrompted?.Invoke();
+                        }
+
+                        return;
+
                     case DrillState.Rest:
                         var restEndsAt = _stateStartedAtActiveSeconds + Drill.RestSeconds;
                         if (now < restEndsAt)
@@ -423,7 +478,9 @@ namespace VrFencing.Drills
             }
             else
             {
-                EnterState(DrillState.Rest, atActiveSeconds);
+                // Already back (or nothing reports the Start Mark): straight to the rest, as in a Drill with no wait.
+                var waitsForFencer = Drill.WaitsAtStartMark(IsShrunk) && !_isFencerAtStartMark;
+                EnterState(waitsForFencer ? DrillState.Return : DrillState.Rest, atActiveSeconds);
             }
         }
 
@@ -453,7 +510,7 @@ namespace VrFencing.Drills
             switch (Drill.SuccessRule)
             {
                 case SuccessRule.FootworkCall:
-                    var calls = FootworkJudging.FilterCallsByDrift(Drill.FootworkCalls, _results.Select(result => result.Footwork?.Action));
+                    var calls = Drill.FootworkCalls;
                     return new RepCue(CurrentRepIndex, targetZone: null, Drill.CueType, distance, footworkCall: calls[_random.Next(calls.Count)]);
 
                 case SuccessRule.TwoTouchesInOrder:
@@ -468,6 +525,7 @@ namespace VrFencing.Drills
         private void EnterState(DrillState state, double atActiveSeconds)
         {
             State = state;
+            IsPromptingReturn = false;
             _stateStartedAtActiveSeconds = atActiveSeconds;
             StateChanged?.Invoke(state);
         }
