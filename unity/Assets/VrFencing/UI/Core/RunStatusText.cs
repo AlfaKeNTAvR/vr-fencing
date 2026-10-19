@@ -81,6 +81,8 @@ namespace VrFencing.UI
                 case DrillState.Cue:
                 case DrillState.Window:
                     return FormatCueInstruction(runner);
+                case DrillState.Return:
+                    return runner.IsPromptingReturn ? RepReadText.BackToLineText : RestText;
                 case DrillState.Rest:
                     return RestText;
                 default:

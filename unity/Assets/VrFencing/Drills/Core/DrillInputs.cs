@@ -50,10 +50,10 @@ namespace VrFencing.Drills
         /// <summary>No step: the head stayed within a few centimeters of where it was at the cue (an extension, or nothing).</summary>
         None,
 
-        /// <summary>One step toward the Dummy, held there.</summary>
+        /// <summary>A step toward the Dummy, held there (or several: see <see cref="FootworkReading.StepCount"/>).</summary>
         Advance,
 
-        /// <summary>One step away from the Dummy.</summary>
+        /// <summary>A step away from the Dummy (or several: see <see cref="FootworkReading.StepCount"/>).</summary>
         Retreat,
 
         /// <summary>A fast, long forward burst of the head.</summary>
@@ -79,7 +79,8 @@ namespace VrFencing.Drills
             float forwardTravelMeters,
             float backwardTravelMeters,
             float peakForwardSpeedMetersPerSecond,
-            float headDropMeters)
+            float headDropMeters,
+            int stepCount = 0)
         {
             Action = action;
             OnsetSecondsAfterCue = onsetSecondsAfterCue;
@@ -87,6 +88,7 @@ namespace VrFencing.Drills
             BackwardTravelMeters = backwardTravelMeters;
             PeakForwardSpeedMetersPerSecond = peakForwardSpeedMetersPerSecond;
             HeadDropMeters = headDropMeters;
+            StepCount = stepCount;
         }
 
         public FootworkAction Action { get; }
@@ -103,7 +105,13 @@ namespace VrFencing.Drills
         /// <summary>Fastest forward head speed along the Strip; zero while there are too few samples to measure it.</summary>
         public float PeakForwardSpeedMetersPerSecond { get; }
 
-        /// <summary>How far the head went down from its height at the cue (a lunge lowers it). Logged only.</summary>
+        /// <summary>How far the head went down from its height at the cue. A lunge lowers it; an advance does not.</summary>
         public float HeadDropMeters { get; }
+
+        /// <summary>
+        /// For an advance or a retreat, how many steps the head took that way (quick advances in a row read as one
+        /// advance with several steps); zero for the other actions.
+        /// </summary>
+        public int StepCount { get; }
     }
 }
