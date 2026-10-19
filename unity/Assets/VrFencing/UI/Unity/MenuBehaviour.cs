@@ -159,7 +159,7 @@ namespace VrFencing.UI
             }
 
             _pointer.Tick(GetOffHandController(), IsOffHandLeft ? OVRInput.RawButton.LIndexTrigger : OVRInput.RawButton.RIndexTrigger,
-                screen != MenuScreen.Hidden, nowSeconds);
+                screen != MenuScreen.Hidden, _settings.LaserTiltDegrees, nowSeconds);
         }
 
         private void BuildPanels()
