@@ -2,7 +2,9 @@
     "name": "VrFencing.Session.Unity",
     "rootNamespace": "VrFencing.Session",
     "references": [
-        "VrFencing.Session.Core"
+        "VrFencing.Session.Core",
+        "VrFencing.Drills.Core",
+        "VrFencing.Drills.Unity"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
