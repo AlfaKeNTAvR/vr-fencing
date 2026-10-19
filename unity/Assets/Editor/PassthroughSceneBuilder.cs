@@ -103,8 +103,11 @@ namespace VrFencing.EditorTools
             manager.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
             EditorUtility.SetDirty(manager);
 
-            if (cameraRig.GetComponent<OVRPassthroughLayer>() == null)
-                cameraRig.AddComponent<OVRPassthroughLayer>();
+            var passthroughLayer = GetOrAddComponent<OVRPassthroughLayer>(cameraRig);
+
+            // [Life] device-log diagnostics for sleep/wake (PER-71): heartbeat, lifecycle callbacks, passthrough resume.
+            var lifecycleLog = GetOrAddComponent<LifecycleLogBehaviour>(cameraRig);
+            SetReference(lifecycleLog, "_passthroughLayer", passthroughLayer);
 
             // Arm tracking (IOBT) needs the body tracking permission; OVRManager asks for it at launch.
             // The field is internal to the Meta SDK, so it is set through its serialized name.
