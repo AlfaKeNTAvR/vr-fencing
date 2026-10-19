@@ -56,10 +56,13 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void ADeepPushIntoTheFloorNeverPutsTheDrawnBladeBelowIt([Values(1.0f, -1.0f)] float bowUp)
+        public void ADeepPushIntoTheFloorNeverPutsTheDrawnBladeBelowIt([Values(1.0f, -1.0f)] float bowUp, [Values(40.0f, 80.0f)] float degreesDown)
         {
             // The hand drives on until its guard is 60 cm past where the point met the floor, then comes back up;
-            // with the grip turned over (bow down) the bow itself would dig into the floor.
+            // with the grip turned over (bow down) the bow itself would dig into the floor. At 40 degrees the point skids
+            // along the floor (PER-69); nearly straight down it holds, and past the most bow the drawn blade lags.
+            var radians = degreesDown * (float)System.Math.PI / 180.0f;
+            var thrust = new Vector3(0.0f, -(float)System.Math.Sin(radians), (float)System.Math.Cos(radians));
             var drawn = new DrawnBlade();
             var touchdown = new Vector3(0.0f, 0.0f, 1.0f);
             var bowDirection = Vector3.UnitY * bowUp;
@@ -68,12 +71,17 @@ namespace VrFencing.Tests.Blade
             var wasDecoupled = false;
             foreach (var depth in depths)
             {
-                drawn.Step(BladeWithTipAt(touchdown + (DownForward * depth)), FloorOnly, bowDirection, FrameSeconds);
+                var tip = touchdown + (thrust * depth);
+                drawn.Step(new BladeSegment(tip - (thrust * BladePose.BladeLengthMeters), tip), FloorOnly, bowDirection, FrameSeconds);
                 AssertAboveTheFloor(drawn, $"depth {depth:0.00}");
                 wasDecoupled |= drawn.IsDecoupled;
             }
 
-            Assert.That(wasDecoupled, Is.True, "Past 15 cm of push the drawn blade lags the hand.");
+            if (degreesDown > 60.0f)
+            {
+                Assert.That(wasDecoupled, Is.True, "Past 20 cm of push the drawn blade lags the hand.");
+            }
+
             Assert.That(drawn.IsDecoupled, Is.False);
             Assert.That(drawn.Contact.IsPinned, Is.False, "Lifted, the point let go.");
         }

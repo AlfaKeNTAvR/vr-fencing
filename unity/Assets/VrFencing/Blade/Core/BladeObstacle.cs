@@ -8,22 +8,38 @@ namespace VrFencing.Blade
     /// Something the drawn blade cannot pass (PER-48, PER-49): a capsule (a part of the Dummy, another blade later)
     /// or a plane with solid space under it (the floor). <see cref="BladeContactBend"/> and <see cref="DrawnBlade"/>
     /// only ask an obstacle how far a point is from its surface, which way is out, where a moving point meets it and
-    /// where a point rests on it, so both kinds follow the same rule.
+    /// where a point rests on it, so both kinds follow the same rule. Each has a friction coefficient for the pressed
+    /// point (PER-69): the point holds while the blade's push on it stays inside the friction cone round the surface
+    /// normal, and slides once the push leans further.
     /// Positions in any one frame (the Strip frame in the app), meters.
     /// </summary>
     public readonly struct BladeObstacle
     {
+        /// <summary>
+        /// Friction of the point on the floor: the point holds while the push leans less than about 19 degrees off
+        /// straight into the floor, so a shallow press skids along it and a steep one pins.
+        /// </summary>
+        public const float FloorFriction = 0.35f;
+
+        /// <summary>
+        /// Friction of the point on the Dummy's jacket (every capsule): it grips, holding a push that leans up to about
+        /// 35 degrees off the surface normal; a glancing press slides round the body.
+        /// </summary>
+        public const float JacketFriction = 0.7f;
+
         private readonly bool _isPlane;
         private readonly Capsule _capsule;
         private readonly Vector3 _planePoint;
         private readonly Vector3 _planeNormal;
+        private readonly float _friction;
 
-        private BladeObstacle(bool isPlane, Capsule capsule, Vector3 planePoint, Vector3 planeNormal)
+        private BladeObstacle(bool isPlane, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction)
         {
             _isPlane = isPlane;
             _capsule = capsule;
             _planePoint = planePoint;
             _planeNormal = planeNormal;
+            _friction = friction;
         }
 
         /// <summary>
@@ -35,26 +51,48 @@ namespace VrFencing.Blade
         /// <summary>True for a plane (solid on one side); planes always hold where they overlap a capsule.</summary>
         public bool IsPlane => _isPlane;
 
-        public static BladeObstacle FromCapsule(Capsule capsule)
+        /// <summary>
+        /// The point's friction coefficient on this surface: the pressed point holds while the part of the blade's push
+        /// along the surface is at most this times the part into it.
+        /// </summary>
+        public float FrictionCoefficient => _friction;
+
+        /// <summary>A capsule (a part of the Dummy), with the jacket's friction unless given.</summary>
+        /// <exception cref="ArgumentOutOfRangeException">The friction is negative.</exception>
+        public static BladeObstacle FromCapsule(Capsule capsule, float friction = JacketFriction)
         {
-            return new BladeObstacle(false, capsule, Vector3.Zero, Vector3.UnitY);
+            return new BladeObstacle(false, capsule, Vector3.Zero, Vector3.UnitY, CheckFriction(friction));
         }
 
-        /// <summary>A plane through <paramref name="point"/>; the side <paramref name="outwardNormal"/> points to is free, the other solid.</summary>
+        /// <summary>
+        /// A plane through <paramref name="point"/>; the side <paramref name="outwardNormal"/> points to is free, the
+        /// other solid. The floor's friction unless given.
+        /// </summary>
         /// <exception cref="ArgumentException">The normal has no direction.</exception>
-        public static BladeObstacle FromPlane(Vector3 point, Vector3 outwardNormal)
+        /// <exception cref="ArgumentOutOfRangeException">The friction is negative.</exception>
+        public static BladeObstacle FromPlane(Vector3 point, Vector3 outwardNormal, float friction = FloorFriction)
         {
             if (outwardNormal.LengthSquared() < 1e-12f)
             {
                 throw new ArgumentException("A plane needs a normal with a direction.", nameof(outwardNormal));
             }
 
-            return new BladeObstacle(true, default, point, Vector3.Normalize(outwardNormal));
+            return new BladeObstacle(true, default, point, Vector3.Normalize(outwardNormal), CheckFriction(friction));
         }
 
         public static implicit operator BladeObstacle(Capsule capsule)
         {
             return FromCapsule(capsule);
+        }
+
+        private static float CheckFriction(float friction)
+        {
+            if (!(friction >= 0.0f))
+            {
+                throw new ArgumentOutOfRangeException(nameof(friction), friction, "Friction cannot be negative.");
+            }
+
+            return friction;
         }
 
         /// <summary>Distance from a point to the surface: negative inside.</summary>
@@ -81,6 +119,38 @@ namespace VrFencing.Blade
 
             var onAxis = SegmentMath.FindClosestPointOnSegment(point, _capsule.Start, _capsule.End);
             return onAxis + (SegmentMath.FindOutwardNormal(point, _capsule) * (_capsule.RadiusMeters + marginMeters));
+        }
+
+        /// <summary>
+        /// Where a blade running along <paramref name="tangent"/> touches the surface, on the side of
+        /// <paramref name="near"/>, <paramref name="marginMeters"/> out of it: the spot whose normal is square to the
+        /// blade (PER-69, the blade's side pressed on a body). A plane has no such single spot: the point is just moved
+        /// onto it.
+        /// </summary>
+        public Vector3 FindTangentPoint(Vector3 near, Vector3 tangent, float marginMeters)
+        {
+            if (_isPlane)
+            {
+                return ProjectOntoSurface(near, marginMeters);
+            }
+
+            var onAxis = SegmentMath.FindClosestPointOnSegment(near, _capsule.Start, _capsule.End);
+            var outward = SegmentMath.FindOutwardNormal(near, _capsule);
+            var square = outward - (Vector3.Dot(outward, tangent) * tangent);
+            var axis = _capsule.End - _capsule.Start;
+            var isOnCylinder = axis.LengthSquared() > 1e-10f
+                && Vector3.DistanceSquared(onAxis, _capsule.Start) > 1e-10f
+                && Vector3.DistanceSquared(onAxis, _capsule.End) > 1e-10f;
+            if (isOnCylinder)
+            {
+                // Round the cylinder only: the normal stays square to its axis.
+                var axisDirection = Vector3.Normalize(axis);
+                square -= Vector3.Dot(square, axisDirection) * axisDirection;
+            }
+
+            return square.LengthSquared() > 1e-10f
+                ? onAxis + (Vector3.Normalize(square) * (_capsule.RadiusMeters + marginMeters))
+                : ProjectOntoSurface(near, marginMeters);
         }
 
         /// <summary>

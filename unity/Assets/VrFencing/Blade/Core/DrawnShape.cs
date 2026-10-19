@@ -19,8 +19,9 @@ namespace VrFencing.Blade
         /// <summary>See <see cref="LagMeters"/>.</summary>
         public const float LagDegrees = 1.0f;
 
-        // Bisection steps between the hand's pose and the fallback: 2^-14 of a meter of travel is well under a millimeter.
-        private const int SearchSteps = 14;
+        // Bisection steps between the hand's pose and the fallback: 2^-11 of the way, under half a millimeter for the
+        // longest lags (each step builds a whole shape, so fewer keeps a lagging frame cheap on the Quest).
+        private const int SearchSteps = 11;
 
         /// <summary>Tests one pose: builds its shape and says whether it is allowed.</summary>
         public delegate bool PoseTest(BladeSegment pose);

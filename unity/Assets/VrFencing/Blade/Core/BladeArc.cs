@@ -21,6 +21,11 @@ namespace VrFencing.Blade
 
         /// <summary>False until solved: the next solve starts from a table of shapes instead.</summary>
         public bool IsSolved;
+
+        // Kept from the solve so they need not be integrated again: the angle between the blade at the guard and the
+        // load's line (radians), and the largest curvature for a unit length.
+        internal float GuardAngle;
+        internal float UnitMaxCurvature;
     }
 
     /// <summary>
@@ -54,9 +59,18 @@ namespace VrFencing.Blade
         private const int SeedsTried = 3;
 
         private const int SolveIterations = 12;
+
+        // From a table seed, a Newton step from the third on that does not at least halve the miss means it is not
+        // closing in: give that seed up (a warm start from the last shape always gets its full run).
+        private const int StallIterations = 2;
+        private const double StallRatio = 0.5;
         private const double SolvedWithin = 2e-5;
         private const double DerivativeStep = 1e-5;
         private const double MaxSolveStep = 0.5;
+
+        // A shape this close to the last (load, and tip angle in radians) is the same shape followed on.
+        private const float NearLoad = 1.0f;
+        private const float NearTipAngle = 0.5f;
 
         // A blade pushed this far straight in sets the most it may curve anywhere; a little slack so the push limit and
         // the curvature limit agree.
@@ -66,6 +80,15 @@ namespace VrFencing.Blade
         private static readonly double[] Scratch = new double[(IntegrationSteps + 1) * 2];
 
         private static readonly TableEntry[] Table = BuildTable();
+
+        // The side push: square to the blade at the contact; loads up to 3 bend the pushed stretch well past the
+        // curvature limit. Solved by Newton's method from the last load (to 1e-5 rad of the contact's angle), else by
+        // bisection.
+        private static readonly double SideLoadTipAngle = FindSideLoadTipAngle();
+        private const double SideLoadMaxLoad = 3.0;
+        private const int SideLoadSearchSteps = 20;
+        private const int SideLoadNewtonIterations = 5;
+        private const double SideLoadSolvedWithin = 1e-5;
 
         /// <summary>The most the drawn blade curves anywhere along it, 1/m: as pushed <see cref="BladeContactBend.MaxPushMeters"/> straight in.</summary>
         public static readonly float MaxCurvaturePerMeter = FindStraightPushCurvature(BladeContactBend.MaxPushMeters) * CapSlack;
@@ -86,14 +109,14 @@ namespace VrFencing.Blade
                 return false;
             }
 
-            if (shape.IsSolved && TryNewton(targetX, targetY, shape.Load, shape.TipAngle, ref shape))
+            if (shape.IsSolved && TryNewton(targetX, targetY, shape.Load, shape.TipAngle, false, ref shape))
             {
                 return true;
             }
 
             foreach (var seed in FindNearestSeeds(targetX, targetY))
             {
-                if (TryNewton(targetX, targetY, seed.Load, seed.TipAngle, ref shape))
+                if (TryNewton(targetX, targetY, seed.Load, seed.TipAngle, true, ref shape))
                 {
                     return true;
                 }
@@ -102,11 +125,176 @@ namespace VrFencing.Blade
             return false;
         }
 
+        /// <summary>
+        /// Like <see cref="TrySolve"/>, but only a shape near <paramref name="shape"/> (which must be solved): it follows
+        /// that one shape as the point moves a little, and does not jump to another shape to the same point (a seed from
+        /// the table counts only if it lands near).
+        /// </summary>
+        public static bool TrySolveNear(float along, float across, ref ElasticaShape shape)
+        {
+            if (!shape.IsSolved)
+            {
+                return false;
+            }
+
+            var near = shape;
+            var solved = TrySolve(along, across, ref shape);
+            return solved
+                && Math.Abs(shape.Load - near.Load) <= NearLoad
+                && Math.Abs(shape.TipAngle - near.TipAngle) <= NearTipAngle;
+        }
+
         /// <summary>The largest curvature along the blade, 1/m.</summary>
         public static float FindMaxCurvature(ElasticaShape shape)
         {
-            var end = Integrate(shape.Load, shape.TipAngle, IntegrationSteps, null);
-            return (float)(end.MaxCurvature / BladePose.BladeLengthMeters);
+            return FindMaxCurvature(shape, BladePose.BladeLengthMeters);
+        }
+
+        /// <summary>The largest curvature along a bent stretch <paramref name="lengthMeters"/> long, 1/m.</summary>
+        public static float FindMaxCurvature(ElasticaShape shape, float lengthMeters)
+        {
+            var unitCurvature = shape.IsSolved ? shape.UnitMaxCurvature : Integrate(shape.Load, shape.TipAngle, IntegrationSteps, null).MaxCurvature;
+            return (float)(unitCurvature / lengthMeters);
+        }
+
+        /// <summary>
+        /// The blade's side pressed on a body (PER-69): a cantilever clamped at the guard and pushed at one point of its
+        /// length, the contact, square to the blade there (the body cannot pull, and a smooth contact pushes along its
+        /// normal). Between the guard and the contact it is the elastica of that stretch with no curvature at the
+        /// contact; past it the free part carries no load and runs straight on. Solves the load and the stretch's length
+        /// so the contact is <paramref name="along"/> down the hand's blade and <paramref name="across"/> (positive) to
+        /// its side, pushed toward +across. False when no stretch of a sensible bend reaches it.
+        /// </summary>
+        /// <param name="shape">The solved load (its tip angle is the square push); a solved one starts the search.</param>
+        /// <param name="contactMeters">How far along the blade from the guard the contact is.</param>
+        public static bool TrySolveSideLoad(float along, float across, ref ElasticaShape shape, out float contactMeters)
+        {
+            contactMeters = 0.0f;
+            if (!(across > 0.0f) || !(along > 0.0f))
+            {
+                return false;
+            }
+
+            // The angle the contact sits off the hand's line grows with the load: Newton's method on it from the last
+            // load, or a bisection when there is none or it does not settle.
+            var target = Math.Atan2(across, along);
+            if (!(shape.IsSolved && shape.TipAngle == (float)SideLoadTipAngle && TryNewtonSideLoad(target, shape.Load, out var load)))
+            {
+                var low = 0.0;
+                var high = SideLoadMaxLoad;
+                if (FindSideLoadAngle(high) < target)
+                {
+                    return false;
+                }
+
+                for (var step = 0; step < SideLoadSearchSteps; step++)
+                {
+                    var middle = (low + high) * 0.5;
+                    if (FindSideLoadAngle(middle) < target)
+                    {
+                        low = middle;
+                    }
+                    else
+                    {
+                        high = middle;
+                    }
+                }
+
+                load = (low + high) * 0.5;
+            }
+            var end = Integrate(load, SideLoadTipAngle, IntegrationSteps, null);
+            var unitReach = Math.Sqrt((end.X * end.X) + (end.Y * end.Y));
+            contactMeters = (float)(Math.Sqrt((along * along) + (across * across)) / unitReach);
+            shape.Load = (float)load;
+            shape.TipAngle = (float)SideLoadTipAngle;
+            shape.IsSolved = true;
+            shape.GuardAngle = (float)end.GuardAngle;
+            shape.UnitMaxCurvature = (float)end.MaxCurvature;
+            return true;
+        }
+
+        /// <summary>
+        /// Writes the side-pressed blade's <paramref name="samples"/> (evenly along the whole blade, guard first): the
+        /// elastica from <paramref name="guard"/> along <paramref name="startDirection"/> to the contact
+        /// <paramref name="contactMeters"/> along it, pushed toward <paramref name="across"/>, then straight on to the
+        /// point. Returns the blade's direction at the contact (and past it).
+        /// </summary>
+        public static Vector3 FillSideLoad(Vector3 guard, Vector3 startDirection, Vector3 across, ElasticaShape shape, float contactMeters, Vector3[] samples)
+        {
+            var end = Integrate(shape.Load, shape.TipAngle, IntegrationSteps, Scratch);
+            var tangentAngle = shape.TipAngle - end.GuardAngle;
+            var tangent = ((float)Math.Cos(tangentAngle) * startDirection) + ((float)Math.Sin(tangentAngle) * across);
+            var contact = guard + (((float)end.X * startDirection) + ((float)end.Y * across)) * contactMeters;
+            var pieces = samples.Length - 1;
+            for (var piece = 0; piece <= pieces; piece++)
+            {
+                var alongBlade = BladePose.BladeLengthMeters * piece / pieces;
+                if (alongBlade >= contactMeters)
+                {
+                    samples[piece] = contact + (tangent * (alongBlade - contactMeters));
+                    continue;
+                }
+
+                // Nodes count from the contact (node 0) back to the guard (node IntegrationSteps).
+                var fromContact = (1.0 - (alongBlade / contactMeters)) * IntegrationSteps;
+                var node = Math.Min((int)fromContact, IntegrationSteps - 1);
+                var blend = fromContact - node;
+                ToGuardFrame(end, Scratch[node * 2], Scratch[(node * 2) + 1], out var x0, out var y0);
+                ToGuardFrame(end, Scratch[(node + 1) * 2], Scratch[((node + 1) * 2) + 1], out var x1, out var y1);
+                var x = x0 + ((x1 - x0) * blend);
+                var y = y0 + ((y1 - y0) * blend);
+                samples[piece] = guard + (((float)x * startDirection) + ((float)y * across)) * contactMeters;
+            }
+
+            return tangent;
+        }
+
+        private static bool TryNewtonSideLoad(double target, double start, out double load)
+        {
+            load = start;
+            for (var iteration = 0; iteration < SideLoadNewtonIterations; iteration++)
+            {
+                var angle = FindSideLoadAngle(load);
+                var miss = angle - target;
+                if (Math.Abs(miss) < SideLoadSolvedWithin)
+                {
+                    return true;
+                }
+
+                var slope = (FindSideLoadAngle(load + DerivativeStep) - angle) / DerivativeStep;
+                if (!(slope > 1e-9))
+                {
+                    return false;
+                }
+
+                load = Math.Max(0.0, Math.Min(SideLoadMaxLoad, load - (miss / slope)));
+            }
+
+            return false;
+        }
+
+        private static double FindSideLoadAngle(double load)
+        {
+            var end = Integrate(load, SideLoadTipAngle, IntegrationSteps, null);
+            return Math.Atan2(end.Y, end.X);
+        }
+
+        private static double FindSideLoadTipAngle()
+        {
+            // The square push's sign that deflects the contact toward +across.
+            return Integrate(1.0, Math.PI * 0.5, IntegrationSteps, null).Y > 0.0 ? Math.PI * 0.5 : -Math.PI * 0.5;
+        }
+
+        /// <summary>
+        /// Which way the blade pushes on what holds its end (the load's line, from the guard's side toward the point), in
+        /// the guard's frame: X along the hand's blade, Y toward +across (the side the shape bulges to). The pinned point
+        /// takes this push; it is not along the line from the guard to the point once the blade is bent, since the
+        /// clamp at the guard pushes sideways too.
+        /// </summary>
+        public static Vector2 FindLoadDirection(ElasticaShape shape)
+        {
+            var guardAngle = shape.IsSolved ? shape.GuardAngle : Integrate(shape.Load, shape.TipAngle, IntegrationSteps, null).GuardAngle;
+            return new Vector2((float)Math.Cos(guardAngle), -(float)Math.Sin(guardAngle));
         }
 
         /// <summary>
@@ -130,14 +318,23 @@ namespace VrFencing.Blade
             }
         }
 
-        private static bool TryNewton(double targetX, double targetY, double load, double tipAngle, ref ElasticaShape shape)
+        private static bool TryNewton(double targetX, double targetY, double load, double tipAngle, bool givesUpOnStall, ref ElasticaShape shape)
         {
+            var lastError = double.MaxValue;
             for (var iteration = 0; iteration < SolveIterations; iteration++)
             {
                 var end = Integrate(load, tipAngle, IntegrationSteps, null);
                 var errorX = end.X - targetX;
                 var errorY = end.Y - targetY;
-                if (Math.Sqrt((errorX * errorX) + (errorY * errorY)) < SolvedWithin)
+                var error = Math.Sqrt((errorX * errorX) + (errorY * errorY));
+                if (givesUpOnStall && iteration >= StallIterations && error > lastError * StallRatio)
+                {
+                    // Not closing in (no shape there, or another one far off): give up early, the search is costly.
+                    return false;
+                }
+
+                lastError = error;
+                if (error < SolvedWithin)
                 {
                     var side = Integrate(load, tipAngle, IntegrationSteps, Scratch).Bulge;
                     if (end.Inflections > 1 || side < -1e-6)
@@ -149,6 +346,8 @@ namespace VrFencing.Blade
                     shape.Load = (float)load;
                     shape.TipAngle = (float)tipAngle;
                     shape.IsSolved = true;
+                    shape.GuardAngle = (float)end.GuardAngle;
+                    shape.UnitMaxCurvature = (float)end.MaxCurvature;
                     return true;
                 }
 
