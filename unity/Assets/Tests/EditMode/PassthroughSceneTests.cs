@@ -32,5 +32,30 @@ namespace VrFencing.Tests
             Assert.That(dummy, Is.Not.Null, "No Dummy in the passthrough scene.");
             Assert.That(dummy.enabled, Is.True);
         }
+
+        [Test]
+        public void DummyStandsUnderTheStripsEnGardeLine()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var strip = Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>();
+            var dummy = Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>();
+
+            Assert.That(strip, Is.Not.Null, "No Strip in the passthrough scene.");
+            Assert.That(strip.EnGardeLine, Is.Not.Null, "The Strip has no En Garde Line transform.");
+            Assert.That(dummy.transform.parent, Is.SameAs(strip.EnGardeLine),
+                "The Dummy places itself along its parent's +z, so it must sit under the En Garde Line.");
+        }
+
+        [Test]
+        public void SceneHasNoGreyTestCube()
+        {
+            var scene = EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                Assert.That(root.name, Is.Not.EqualTo("ReferenceCube"), "The setup ticket's test cube is back in the scene.");
+            }
+        }
     }
 }
