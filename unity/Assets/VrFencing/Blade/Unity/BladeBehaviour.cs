@@ -144,8 +144,8 @@ namespace VrFencing.Blade
             if (_drawnBlade.IsDecoupled != wasDecoupled)
             {
                 Debug.Log(_drawnBlade.IsDecoupled
-                    ? $"[Blade] Pushed past {BladeContactBend.MaxPushMeters * 100.0f:0} cm: the drawn blade holds and lags the hand"
-                    : "[Blade] Hand back within the bow: the drawn blade follows it again");
+                    ? $"[Blade] Bent as far as it goes (push {_drawnBlade.Contact.PushMeters * 100.0f:0} cm, pinned {_drawnBlade.Contact.IsPinned}): the drawn blade holds and lags the hand"
+                    : "[Blade] Hand back within reach: the drawn blade follows it again");
             }
 
             PlayPressHaptic((float)now);
@@ -171,10 +171,11 @@ namespace VrFencing.Blade
             return _obstacles;
         }
 
-        /// <summary>While the point is pinned, a buzz that grows with the push, full once the hand is past the most bow.</summary>
+        /// <summary>While the point is pinned, a buzz that grows with the push; full while the drawn blade lags the hand.</summary>
         private void PlayPressHaptic(float now)
         {
-            if (!_drawnBlade.Contact.IsPinned || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
+            var isPressing = _drawnBlade.Contact.IsPinned || _drawnBlade.IsDecoupled;
+            if (!isPressing || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
             {
                 return;
             }

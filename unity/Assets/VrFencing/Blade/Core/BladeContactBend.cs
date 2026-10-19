@@ -20,17 +20,20 @@ namespace VrFencing.Blade
     /// <summary>
     /// Visual-only non-penetration of the point (PER-48): the drawn blade never passes through a body. Where the point
     /// first meets a body (any <see cref="BladeObstacle"/>: the Dummy's capsules and the floor now, another blade
-    /// later) it is pinned on that near-side surface, and the drawn blade bows as the hand pushes on. The hand is not
+    /// later) it is pinned on that near-side surface, and the drawn blade bends as the hand pushes on. The hand is not
     /// stopped (the haptics stand in) and Touch detection still uses the straight blade.
     ///
     /// <list type="bullet">
-    /// <item>The drawn blade keeps its length (<see cref="BladePose.BladeLengthMeters"/>) and leaves the guard along
-    /// the hand's blade direction, as it is clamped in the hand; it bows toward the given bow direction (the épée's own
-    /// bend, up from the grip).</item>
+    /// <item>The drawn blade is one smooth curve of the blade's full length (<see cref="BladeArc"/>) that leaves the
+    /// guard along the hand and ends on the pin. It bends in the plane of the push: sideways when the pin is off the
+    /// hand's line, bowing out when pushed straight in (toward the given bow direction, then wherever it last bowed).</item>
     /// <item>The point slides along the surface, never through it, when the blade turns more than
     /// <see cref="MaxSidewaysDegrees"/> off the line from the guard to the point (friction gives way).</item>
-    /// <item>Past <see cref="MaxPushMeters"/> of push the blade bends no further: the drawn guard stops on the line
-    /// to the hand and lags it (<see cref="IsDecoupled"/>) until the hand comes back.</item>
+    /// <item>The curve never bends more than <see cref="BladeArc.MaxCurvaturePerMeter"/> (the bow of
+    /// <see cref="MaxPushMeters"/> pushed straight in), never more than <see cref="MaxBendDegrees"/> off the hand's line,
+    /// and never through a body. When the hand asks for more, front or side, the drawn hilt stops following
+    /// (<see cref="IsDecoupled"/>): it takes the allowed pose closest to the hand on the way to the blade lined up on the
+    /// point at the deepest push, or holds where it was; it follows again once the hand is back within reach.</item>
     /// <item>The point lets go only when the straight point is outside every body and has a clear path to the pin
     /// (the hand came back out or went around), or when the body moved away. It pins again only on a new entry from
     /// outside, found along the point's whole path since the last pose so a fast thrust cannot tunnel.</item>
@@ -52,6 +55,12 @@ namespace VrFencing.Blade
         /// </summary>
         public const float MaxSidewaysDegrees = 20.0f;
 
+        /// <summary>
+        /// The most the line from the drawn guard to the point may turn off the hand's blade, when the point cannot slide
+        /// (held by the body's shape): past it the blade would hook, so the drawn hilt lags the hand instead.
+        /// </summary>
+        public const float MaxBendDegrees = 40.0f;
+
         /// <summary>The pinned point rests this far out of the surface: the drawn point's radius, so it touches without sinking in.</summary>
         public const float PointRadiusMeters = 0.0045f;
 
@@ -60,23 +69,39 @@ namespace VrFencing.Blade
 
         // The path from the pin to the straight point is clear when every one of these samples stays out of the bodies.
         private const int ClearPathSamples = 10;
-
-        // The drawn length is measured along this many straight pieces.
-        private const int LengthSamples = 32;
         private const int SearchSteps = 24;
-        private const float MaxBowMeters = 0.45f;
 
-        // s^2 (1 - s) peaks at s = 2/3 with 4/27; scaled so the bow amplitude is the largest sideways offset.
-        private const float BowShapeScale = 27.0f / 4.0f;
+        // The bow plane follows the line to the point once that is this far off the blade; nearer the blade, it keeps
+        // where it last bowed, so tracking jitter on a straight push does not swing the bow around.
+        private const float PlaneSettleMeters = 0.02f;
+
+        // A first guess that bows the blade toward the bow direction when it is pushed straight in.
+        private const float StartingBow = 0.5f;
+
+        private readonly Vector3[] _samples = new Vector3[DrawnBlade.SampleCount + 1];
+        private readonly Vector3[] _candidate = new Vector3[DrawnBlade.SampleCount + 1];
+        private readonly DrawnShape.PoseTest _tryShape;
 
         private Vector3? _previousTip;
         private Vector3 _pinnedPoint;
         private int _pinnedBody;
-        private Vector3 _guard;
-        private Vector3 _bladeDirection = Vector3.UnitZ;
-        private Vector3 _decoupledChordDirection = Vector3.UnitZ;
-        private float _bowMeters;
+        private bool _hasShape;
+        private Vector3 _guardDirection = Vector3.UnitZ;
+        private Vector3 _fallbackDirection = Vector3.UnitZ;
         private Vector3 _bowDirection = Vector3.UnitY;
+        private Vector3 _candidateBowDirection;
+        private float _sidewaysAmount;
+        private float _bowAmount;
+        private float _candidateSideways;
+        private float _candidateBow;
+        private float _bowMeters;
+        private IReadOnlyList<BladeObstacle> _bodies;
+        private Vector3[] _drawnBefore;
+
+        public BladeContactBend()
+        {
+            _tryShape = TryShape;
+        }
 
         /// <summary>True while the drawn point is held at <see cref="PinnedPoint"/>.</summary>
         public bool IsPinned { get; private set; }
@@ -87,14 +112,20 @@ namespace VrFencing.Blade
         /// <summary>How far the hand has pushed past the surface: blade length minus the hand's guard distance to the pin. 0 when not pinned.</summary>
         public float PushMeters { get; private set; }
 
-        /// <summary>True while the hand has pushed past <see cref="MaxPushMeters"/> and the drawn guard lags it.</summary>
-        public bool IsDecoupled => IsPinned && PushMeters > MaxPushMeters;
+        /// <summary>True while the hand asks for more bend than the blade has, and the drawn hilt lags it.</summary>
+        public bool IsDecoupled { get; private set; }
 
-        /// <summary>Where the drawn guard is: the hand's guard, or while <see cref="IsDecoupled"/> the point where the drawn blade stops.</summary>
-        public Vector3 GuardPosition => _guard;
+        /// <summary>Where the drawn guard is, while pinned: the hand's guard, unless <see cref="IsDecoupled"/>.</summary>
+        public Vector3 GuardPosition => _samples[0];
+
+        /// <summary>Which way the drawn blade leaves the drawn guard, while pinned: the hand's blade, unless <see cref="IsDecoupled"/>.</summary>
+        public Vector3 GuardDirection => _guardDirection;
 
         /// <summary>The largest sideways offset of the drawn blade from the guard-to-point line, while pinned.</summary>
         public float BowMeters => IsPinned ? _bowMeters : 0.0f;
+
+        /// <summary>Which way the drawn blade bends, perpendicular to it at the guard.</summary>
+        public Vector3 BowDirection => _bowDirection;
 
         /// <summary>Forgets the pin and the point's last position, e.g. after the blade or the Strip jumped.</summary>
         public void Reset()
@@ -105,12 +136,16 @@ namespace VrFencing.Blade
 
         /// <summary>
         /// Moves to the blade's new straight pose: pins the point where its path from the last pose first meets a body,
-        /// or, while pinned, slides it, checks for release and reshapes the bow.
+        /// or, while pinned, slides it, checks for release and reshapes the drawn blade.
         /// </summary>
         /// <param name="bodies">Every obstacle the blade cannot pass, in the blade's frame, in the same order every step.</param>
-        /// <param name="bowDirection">Which way the blade bows when pushed straight in (the grip's up); made perpendicular to the blade.</param>
+        /// <param name="bowDirection">Which way the blade bows when first pushed straight in (the grip's up); made perpendicular to the blade.</param>
+        /// <param name="drawnBefore">
+        /// The blade as drawn before this step (<see cref="DrawnBlade.SampleCount"/> + 1 points), if any: a new pin is only
+        /// taken when the pinned shape can be reached from it without passing through a body.
+        /// </param>
         /// <returns>Why the point let go this step, or <see cref="PinRelease.None"/>.</returns>
-        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection)
+        public PinRelease Step(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies, Vector3 bowDirection, Vector3[] drawnBefore = null)
         {
             if (bodies == null)
             {
@@ -120,8 +155,6 @@ namespace VrFencing.Blade
             var tip = straightBlade.TipPosition;
             var previousTip = _previousTip;
             _previousTip = tip;
-            _guard = straightBlade.GuardPosition;
-            _bladeDirection = straightBlade.Direction;
 
             if (IsPinned)
             {
@@ -133,7 +166,7 @@ namespace VrFencing.Blade
                 }
 
                 SlideIfPastFriction(straightBlade, bodies[_pinnedBody]);
-                Reshape(straightBlade, bowDirection);
+                Reshape(straightBlade, bodies);
                 return PinRelease.None;
             }
 
@@ -142,17 +175,28 @@ namespace VrFencing.Blade
                 IsPinned = true;
                 _pinnedPoint = entryPoint;
                 _pinnedBody = body;
-                _decoupledChordDirection = _bladeDirection;
-                Reshape(straightBlade, bowDirection);
+                _hasShape = false;
+                _fallbackDirection = straightBlade.Direction;
+                _bowDirection = FindPerpendicularDirection(bowDirection, straightBlade.Direction);
+                _sidewaysAmount = 0.0f;
+                _bowAmount = StartingBow;
+                _drawnBefore = drawnBefore;
+                var isShaped = Reshape(straightBlade, bodies);
+                _drawnBefore = null;
+                if (!isShaped && drawnBefore != null)
+                {
+                    // No pinned shape is reachable from the drawn blade (it would cross a body): the point is not taken
+                    // here, and the free drawn blade stays held off the body instead.
+                    Unpin();
+                }
             }
 
             return PinRelease.None;
         }
 
         /// <summary>
-        /// Where the drawn blade's centerline is at <paramref name="fraction"/> of the way from the guard (0) to the point
-        /// (1) while pinned: from <see cref="GuardPosition"/> along the hand's blade direction, bowing out, to the pinned
-        /// point. Not pinned, the straight blade.
+        /// Where the drawn blade's centerline is at <paramref name="fraction"/> of the way from the drawn guard (0) to the
+        /// point (1) while pinned. Not pinned, the straight blade.
         /// </summary>
         public Vector3 GetCenterlinePoint(BladeSegment straightBlade, float fraction)
         {
@@ -162,27 +206,24 @@ namespace VrFencing.Blade
                 return Vector3.Lerp(straightBlade.GuardPosition, straightBlade.TipPosition, clamped);
             }
 
-            return GetBowedPoint(_guard, _bladeDirection, _pinnedPoint, _bowDirection, _bowMeters, clamped);
+            var scaled = clamped * DrawnBlade.SampleCount;
+            var index = Math.Min((int)scaled, DrawnBlade.SampleCount - 1);
+            return Vector3.Lerp(_samples[index], _samples[index + 1], scaled - index);
         }
 
-        /// <summary>
-        /// The bowed centerline: the chord from the guard to the point, a term that turns the start onto the hand's
-        /// blade (s (1 - s)^2, zero at both ends, slope 1 at the guard), and the bow (s^2 (1 - s), zero at both ends and
-        /// flat at the guard, so the blade still leaves the guard straight).
-        /// </summary>
-        private static Vector3 GetBowedPoint(Vector3 guard, Vector3 bladeDirection, Vector3 point, Vector3 bowDirection, float bowMeters, float s)
+        /// <summary>The drawn centerline point <paramref name="index"/> while pinned, 0 at the drawn guard to <see cref="DrawnBlade.SampleCount"/> at the point.</summary>
+        public Vector3 GetSample(int index)
         {
-            var chord = point - guard;
-            var offAxis = chord - (Vector3.Dot(chord, bladeDirection) * bladeDirection);
-            var oneMinus = 1.0f - s;
-            return guard + (s * chord) - (s * oneMinus * oneMinus * offAxis) + (bowMeters * BowShapeScale * s * s * oneMinus * bowDirection);
+            return _samples[index];
         }
 
         private void Unpin()
         {
             IsPinned = false;
+            IsDecoupled = false;
             PushMeters = 0.0f;
             _bowMeters = 0.0f;
+            _hasShape = false;
         }
 
         private PinRelease FindRelease(Vector3 tip, IReadOnlyList<BladeObstacle> bodies)
@@ -251,74 +292,147 @@ namespace VrFencing.Blade
             return SegmentMath.FindAngleDegrees(straightBlade.Direction, point - straightBlade.GuardPosition);
         }
 
-        /// <summary>Works out the push, the drawn guard and the bow that keeps the drawn blade at its full length.</summary>
-        private void Reshape(BladeSegment straightBlade, Vector3 bowDirection)
+        /// <summary>
+        /// Draws the blade from the hand to the pin if that shape is allowed; otherwise from the allowed pose closest to
+        /// the hand on the way to the fallback (the blade lined up on the pin, pushed in no further than
+        /// <see cref="MaxPushMeters"/>); otherwise it holds the last shape.
+        /// </summary>
+        /// <returns>False when no allowed shape was found (it held, or drew the fallback on a first frame).</returns>
+        private bool Reshape(BladeSegment straightBlade, IReadOnlyList<BladeObstacle> bodies)
         {
             var handChord = _pinnedPoint - straightBlade.GuardPosition;
-            PushMeters = BladePose.BladeLengthMeters - handChord.Length();
-            _bowDirection = FindPerpendicularDirection(bowDirection, _bladeDirection);
+            var handDistance = handChord.Length();
+            PushMeters = BladePose.BladeLengthMeters - handDistance;
 
-            if (PushMeters > MaxPushMeters)
+            // The fallback lines the blade up on the pin from the hand's side. A hand past the point keeps the last good
+            // line, so the drawn blade stays on the near side.
+            if (handDistance > 1e-4f && Vector3.Dot(handChord, straightBlade.Direction) > 0.0f)
             {
-                // The drawn guard stops on the line from the point to the hand; if the hand is past the point, it
-                // keeps the last good line, so the drawn blade stays on the near side.
-                if (Vector3.Dot(handChord, _bladeDirection) > 0.0f)
-                {
-                    _decoupledChordDirection = Vector3.Normalize(handChord);
-                }
-
-                _guard = _pinnedPoint - (_decoupledChordDirection * (BladePose.BladeLengthMeters - MaxPushMeters));
-            }
-            else
-            {
-                _guard = straightBlade.GuardPosition;
-                if (handChord.LengthSquared() > 1e-8f)
-                {
-                    _decoupledChordDirection = Vector3.Normalize(handChord);
-                }
+                _fallbackDirection = handChord / handDistance;
             }
 
-            _bowMeters = SolveBow();
+            var fallbackDistance = Math.Max(BladePose.BladeLengthMeters - MaxPushMeters, Math.Min(BladePose.BladeLengthMeters, handDistance));
+            var fallbackGuard = _pinnedPoint - (_fallbackDirection * fallbackDistance);
+            var fallback = new BladeSegment(fallbackGuard, fallbackGuard + (_fallbackDirection * BladePose.BladeLengthMeters));
+
+            _bodies = bodies;
+            var reached = DrawnShape.FindClosestAllowed(straightBlade, fallback, _tryShape);
+            _bodies = null;
+            if (reached.HasValue)
+            {
+                Accept(reached.Value > 0.0f ? DrawnShape.Interpolate(straightBlade, fallback, reached.Value) : straightBlade);
+            }
+            else if (!_hasShape)
+            {
+                // The first frame of a pin with nothing allowed (the blade already lies in a body): draw the fallback
+                // anyway, so the point is at the pin, and hold from there.
+                _bodies = Array.Empty<BladeObstacle>();
+                TryShape(fallback);
+                _bodies = null;
+                Accept(fallback);
+            }
+
+            IsDecoupled = DrawnShape.IsOffHand(_samples[0], _guardDirection, straightBlade);
+            return reached.HasValue;
         }
 
-        /// <summary>Finds the bow that keeps the drawn blade at its full length, by bisection: the drawn length only grows with the bow.</summary>
-        private float SolveBow()
+        private void Accept(BladeSegment pose)
         {
-            if (MeasureLength(0.0f) >= BladePose.BladeLengthMeters)
-            {
-                return 0.0f;
-            }
-
-            var low = 0.0f;
-            var high = MaxBowMeters;
-            for (var step = 0; step < SearchSteps; step++)
-            {
-                var middle = (low + high) * 0.5f;
-                if (MeasureLength(middle) < BladePose.BladeLengthMeters)
-                {
-                    low = middle;
-                }
-                else
-                {
-                    high = middle;
-                }
-            }
-
-            return (low + high) * 0.5f;
+            Array.Copy(_candidate, _samples, _samples.Length);
+            _hasShape = true;
+            _guardDirection = pose.Direction;
+            _bowDirection = _candidateBowDirection;
+            _sidewaysAmount = _candidateSideways;
+            _bowAmount = _candidateBow;
+            _bowMeters = FindBowMeters();
         }
 
-        private float MeasureLength(float bowMeters)
+        /// <summary>
+        /// Builds the curve from <paramref name="pose"/>'s guard to the pin into the candidate shape and says whether it
+        /// is allowed: it reaches the pin, bends within the limits, and is outside every body. If the side it bows to is
+        /// blocked, it tries bowing to the other side.
+        /// </summary>
+        private bool TryShape(BladeSegment pose)
         {
-            var length = 0.0f;
-            var previous = _guard;
-            for (var sample = 1; sample <= LengthSamples; sample++)
+            var direction = pose.Direction;
+            var chord = _pinnedPoint - pose.GuardPosition;
+            if (SegmentMath.FindAngleDegrees(direction, chord) > MaxBendDegrees)
             {
-                var point = GetBowedPoint(_guard, _bladeDirection, _pinnedPoint, _bowDirection, bowMeters, (float)sample / LengthSamples);
-                length += Vector3.Distance(previous, point);
-                previous = point;
+                return false;
             }
 
-            return length;
+            var across = FindBowPlane(direction, chord);
+            var sideways = _sidewaysAmount;
+            var bow = _bowAmount;
+            if (BuildCandidate(pose.GuardPosition, direction, across, chord, sideways, bow))
+            {
+                return true;
+            }
+
+            return BuildCandidate(pose.GuardPosition, direction, across, chord, 0.0f, _bowAmount >= 0.0f ? -StartingBow : StartingBow);
+        }
+
+        private bool BuildCandidate(Vector3 guard, Vector3 direction, Vector3 across, Vector3 chord, float sideways, float bow)
+        {
+            var along = Vector3.Dot(chord, direction);
+            var acrossAmount = Vector3.Dot(chord, across);
+            if (!BladeArc.TrySolve(along, acrossAmount, ref sideways, ref bow)
+                || BladeArc.FindMaxCurvature(sideways, bow) > BladeArc.MaxCurvaturePerMeter)
+            {
+                return false;
+            }
+
+            BladeArc.FillSamples(guard, direction, across, sideways, bow, _candidate);
+
+            // Put the end exactly on the pin: the small rest (solver tolerance, and the part of the line to the point out
+            // of the bow plane) is spread in like a light sideways push, zero at the guard.
+            var rest = _pinnedPoint - _candidate[DrawnBlade.SampleCount];
+            for (var index = 1; index <= DrawnBlade.SampleCount; index++)
+            {
+                var fraction = (float)index / DrawnBlade.SampleCount;
+                _candidate[index] += rest * (fraction * fraction * (3.0f - fraction) * 0.5f);
+            }
+
+            _candidateBowDirection = across;
+            _candidateSideways = sideways;
+            _candidateBow = bow;
+            // The point's own path is the slide's, along the surface; only the rest of the blade is swept here.
+            return _bodies.Count == 0
+                || DrawnShape.IsClear(_candidate, _hasShape ? _samples : _drawnBefore, _bodies, DrawnBlade.BladeRadiusMeters, 1, sweepsTip: false);
+        }
+
+        /// <summary>
+        /// The bow plane's sideways direction (perpendicular to the blade at the guard): toward the point when it is well
+        /// off the blade's line, else where the blade last bowed; turned on the same side as the last, so a point
+        /// crossing the line does not flip the bow over.
+        /// </summary>
+        private Vector3 FindBowPlane(Vector3 direction, Vector3 chord)
+        {
+            var last = FindPerpendicularDirection(_bowDirection, direction);
+            var offLine = chord - (Vector3.Dot(chord, direction) * direction);
+            if (Vector3.Dot(offLine, last) < 0.0f)
+            {
+                offLine = -offLine;
+            }
+
+            var blended = (last * PlaneSettleMeters) + offLine;
+            return blended.LengthSquared() > 1e-10f ? Vector3.Normalize(blended) : last;
+        }
+
+        private float FindBowMeters()
+        {
+            var guard = _samples[0];
+            var line = _samples[DrawnBlade.SampleCount] - guard;
+            var lineLength = line.Length();
+            var largest = 0.0f;
+            foreach (var sample in _samples)
+            {
+                var offset = sample - guard;
+                var sideways = lineLength > 1e-6f ? offset - (Vector3.Dot(offset, line / lineLength) * (line / lineLength)) : offset;
+                largest = Math.Max(largest, sideways.Length());
+            }
+
+            return largest;
         }
 
         /// <summary>The earliest point along the path where the point's sphere meets a body, resting on its surface.</summary>

@@ -8,8 +8,8 @@ namespace VrFencing.Blade
     /// <summary>
     /// Draws the épée on its mount transform (front of the guard at the origin, blade along +z): grip and pommel behind
     /// the guard, the bell guard, a tapering blade drawn in pieces so it can bend (<see cref="DrawnBlade"/>), and a red
-    /// point that flashes on a Touch or glance. While the hand pushes past the most bow, the hilt is drawn where the
-    /// blade stops and a faint ghost hilt shows where the hand really is. Primitives get the URP material from Resources; the default primitive
+    /// point that flashes on a Touch or glance. While the drawn blade lags the hand (bent as far as it goes, or held off
+    /// a body), the hilt is drawn where the blade stops and a faint ghost hilt shows where the hand really is. Primitives get the URP material from Resources; the default primitive
     /// material is not URP and renders magenta and doubled per eye on the Quest.
     /// </summary>
     internal sealed class BladeVisual : IDisposable
@@ -96,8 +96,12 @@ namespace VrFencing.Blade
         /// </summary>
         public void Draw(DrawnBlade drawnBlade, TrackedPose stripInRoom, float nowSeconds)
         {
-            // The drawn guard keeps the hand's blade direction, so only its position moves off the mount.
+            // The drawn hilt sits at the drawn guard, turned onto the drawn blade (it lags the hand when the blade cannot
+            // bend further or is held off a body).
             _hilt.localPosition = ToMount(stripInRoom, drawnBlade.GuardPosition);
+            var hiltDirection = _mount.InverseTransformDirection(
+                System.Numerics.Vector3.Transform(drawnBlade.GuardDirection, stripInRoom.Rotation).ToUnity());
+            _hilt.localRotation = hiltDirection.sqrMagnitude > 1e-8f ? Quaternion.FromToRotation(Vector3.forward, hiltDirection) : Quaternion.identity;
             if (_ghost.activeSelf != drawnBlade.IsDecoupled)
             {
                 _ghost.SetActive(drawnBlade.IsDecoupled);
