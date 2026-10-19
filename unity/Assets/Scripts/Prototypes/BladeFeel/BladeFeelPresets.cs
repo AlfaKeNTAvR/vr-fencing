@@ -54,7 +54,8 @@ namespace VrFencing.Prototypes.BladeFeel
         public const float GuardDepthMeters = 0.04f;     // FIE m.17.1: 3-5.5 cm
         public const float BladeVisualDiameterMeters = 0.008f;
         public const float TipMarkerDiameterMeters = 0.016f;
-        public const float PitchStepDegrees = 5f;
+        public const float AngleStepDegrees = 5f;
+        public const float MaxAngleDegrees = 90f;
 
         public static readonly BladeMountPreset[] BladeMounts =
         {

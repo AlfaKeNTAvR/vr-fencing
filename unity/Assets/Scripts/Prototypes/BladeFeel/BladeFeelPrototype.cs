@@ -8,7 +8,9 @@
 //   Left X            cycle blade mount preset
 //   Left Y            cycle haptic preset
 //   Left stick click  toggle Touch rule strict / loose
-//   Left stick up/dn  blade pitch +/- 5 degrees
+//   Left stick up/dn  blade pitch +/- 5 degrees (-90..+90)
+//   Left stick l/r    blade yaw -/+ 5 degrees (-90..+90)
+//   Mount, pitch and yaw persist in persistentDataPath/blade-tuning.json.
 //   Left trigger      re-place the Targets in front of where the Fencer stands now
 //   Right A / B       preview the Touch / flat haptic pattern
 using System.Collections.Generic;
@@ -20,10 +22,10 @@ namespace VrFencing.Prototypes.BladeFeel
 {
     public sealed class BladeFeelPrototype : MonoBehaviour
     {
-        private const float TargetPlacementDelaySeconds = 1.5f;
         private const float StatsWindowSeconds = 5f;
         private const float FlatHapticCooldownSeconds = 0.15f;
         private const string LogTag = "[BladeFeel]";
+        private const string LitMaterialResourcePath = "BladeFeel/BladeFeelLit";
 
         private OVRCameraRig _cameraRig;
         private Transform _bladeMount;
@@ -36,13 +38,14 @@ namespace VrFencing.Prototypes.BladeFeel
         private readonly List<Renderer> _targetRenderers = new();
         private readonly List<float> _targetFlashEndTimes = new();
         private TouchDetector _detector;
+        private bool _isPlacementPending;
+        private bool _isPlacementForced;
         private bool _hasPreviousBlade;
         private BladeSegment _previousBlade;
 
-        private int _bladeMountIndex;
+        private BladeTuning _tuning;
         private int _hapticPresetIndex;
         private bool _isStrict = true;
-        private float _pitchDegrees;
 
         private ControllerHapticPlayer _haptics;
         private float _lastFlatHapticTime = float.NegativeInfinity;
@@ -70,7 +73,9 @@ namespace VrFencing.Prototypes.BladeFeel
 
         private void Start()
         {
-            _litMaterial = FindDefaultLitMaterial();
+            _litMaterial = LoadLitMaterial();
+            _tuning = BladeTuningStore.Load();
+            _tuning.mountIndex = Mathf.Clamp(_tuning.mountIndex, 0, BladeFeelPresets.BladeMounts.Length - 1);
             _haptics = new ControllerHapticPlayer(OVRInput.Controller.RTouch);
             _repLog = new RepLog("reps.jsonl");
             _repLog.Write("time", System.DateTime.UtcNow.ToString("o"), "event", "session_start",
@@ -78,7 +83,7 @@ namespace VrFencing.Prototypes.BladeFeel
             BuildBlade(_cameraRig.rightControllerAnchor);
             BuildHud(_cameraRig.leftControllerAnchor);
             ApplyBladeMount();
-            Invoke(nameof(PlaceTargets), TargetPlacementDelaySeconds);
+            _isPlacementPending = true; // Placed on the first frame with a tracked head.
             _statsWindowStart = Time.unscaledTime;
         }
 
@@ -98,6 +103,13 @@ namespace VrFencing.Prototypes.BladeFeel
         private void LateUpdate()
         {
             var now = Time.unscaledTime;
+            if (_isPlacementPending && (_isPlacementForced || IsHeadTracked()))
+            {
+                PlaceTargets();
+                _isPlacementPending = false;
+                _isPlacementForced = false;
+            }
+
             var blade = new BladeSegment(_bladeMount.position, _tipMarker.position);
             var tipSpeed = 0f;
             if (_hasPreviousBlade && _detector != null)
@@ -116,6 +128,10 @@ namespace VrFencing.Prototypes.BladeFeel
             UpdateStats(now, tipSpeed);
         }
 
+        private static bool IsHeadTracked() =>
+            OVRPlugin.GetNodePositionTracked(OVRPlugin.Node.Head)
+            && OVRPlugin.GetNodeOrientationTracked(OVRPlugin.Node.Head);
+
         private TouchRules CurrentRules() => _isStrict ? TouchRules.Strict : TouchRules.Loose;
 
         private void HandleInput()
@@ -125,9 +141,8 @@ namespace VrFencing.Prototypes.BladeFeel
 
             if (OVRInput.GetDown(OVRInput.Button.One, Left))
             {
-                _bladeMountIndex = (_bladeMountIndex + 1) % BladeFeelPresets.BladeMounts.Length;
-                ApplyBladeMount();
-                LogSetting("blade_mount");
+                _tuning.mountIndex = (_tuning.mountIndex + 1) % BladeFeelPresets.BladeMounts.Length;
+                OnBladeTuningChanged("blade_mount");
             }
 
             if (OVRInput.GetDown(OVRInput.Button.Two, Left))
@@ -143,13 +158,22 @@ namespace VrFencing.Prototypes.BladeFeel
                 LogSetting("touch_rule");
             }
 
+            // Pitch is shown as "up positive"; Unity's +x rotation tips the blade down, hence the sign flip in ApplyBladeMount.
             if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstickUp, Left))
-                NudgePitch(-BladeFeelPresets.PitchStepDegrees); // Negative x rotation tips the blade up.
+                NudgeAngle(ref _tuning.pitchDegrees, BladeFeelPresets.AngleStepDegrees, "blade_pitch");
             if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstickDown, Left))
-                NudgePitch(BladeFeelPresets.PitchStepDegrees);
+                NudgeAngle(ref _tuning.pitchDegrees, -BladeFeelPresets.AngleStepDegrees, "blade_pitch");
+            if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstickRight, Left))
+                NudgeAngle(ref _tuning.yawDegrees, BladeFeelPresets.AngleStepDegrees, "blade_yaw");
+            if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstickLeft, Left))
+                NudgeAngle(ref _tuning.yawDegrees, -BladeFeelPresets.AngleStepDegrees, "blade_yaw");
 
             if (OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, Left))
-                PlaceTargets();
+            {
+                // The Fencer pressed it while wearing the headset, so place now even if the tracked flag lags.
+                _isPlacementPending = true;
+                _isPlacementForced = true;
+            }
 
             if (OVRInput.GetDown(OVRInput.Button.One, Right))
                 _haptics.Play(CurrentHaptics().Touch, Time.unscaledTime);
@@ -157,20 +181,27 @@ namespace VrFencing.Prototypes.BladeFeel
                 _haptics.Play(CurrentHaptics().Flat, Time.unscaledTime);
         }
 
-        private void NudgePitch(float deltaDegrees)
+        private void NudgeAngle(ref float angleDegrees, float deltaDegrees, string changed)
         {
-            _pitchDegrees += deltaDegrees;
+            angleDegrees = Mathf.Clamp(angleDegrees + deltaDegrees, -BladeFeelPresets.MaxAngleDegrees,
+                BladeFeelPresets.MaxAngleDegrees);
+            OnBladeTuningChanged(changed);
+        }
+
+        private void OnBladeTuningChanged(string changed)
+        {
             ApplyBladeMount();
-            LogSetting("blade_pitch");
+            BladeTuningStore.Save(_tuning);
+            LogSetting(changed);
         }
 
         private HapticPreset CurrentHaptics() => BladeFeelPresets.Haptics[_hapticPresetIndex];
-        private BladeMountPreset CurrentMount() => BladeFeelPresets.BladeMounts[_bladeMountIndex];
+        private BladeMountPreset CurrentMount() => BladeFeelPresets.BladeMounts[_tuning.mountIndex];
 
         private void ApplyBladeMount()
         {
             _bladeMount.localPosition = new Vector3(0f, 0f, CurrentMount().GuardForwardMeters);
-            _bladeMount.localRotation = Quaternion.Euler(_pitchDegrees, 0f, 0f);
+            _bladeMount.localRotation = Quaternion.Euler(-_tuning.pitchDegrees, _tuning.yawDegrees, 0f);
             // The blade jumped; do not sweep the jump as a motion.
             _hasPreviousBlade = false;
         }
@@ -219,7 +250,7 @@ namespace VrFencing.Prototypes.BladeFeel
                 "blade_axis_angle_deg", bladeEvent.BladeAxisAngleDegrees,
                 "blade_mount", CurrentMount().Name,
                 "guard_forward_m", CurrentMount().GuardForwardMeters,
-                "blade_pitch_deg", _pitchDegrees,
+                "blade_pitch_deg", _tuning.pitchDegrees, "blade_yaw_deg", _tuning.yawDegrees,
                 "haptic_preset", CurrentHaptics().Name,
                 "touch_rule", _isStrict ? "strict" : "loose");
         }
@@ -235,7 +266,7 @@ namespace VrFencing.Prototypes.BladeFeel
         {
             Debug.Log($"{LogTag} setting {changed}: {DescribeSettings().Replace("\n", " | ")}");
             _repLog.Write("time", System.DateTime.UtcNow.ToString("o"), "event", "setting", "changed", changed,
-                "blade_mount", CurrentMount().Name, "blade_pitch_deg", _pitchDegrees,
+                "blade_mount", CurrentMount().Name, "blade_pitch_deg", _tuning.pitchDegrees, "blade_yaw_deg", _tuning.yawDegrees,
                 "haptic_preset", CurrentHaptics().Name, "touch_rule", _isStrict ? "strict" : "loose");
         }
 
@@ -248,31 +279,26 @@ namespace VrFencing.Prototypes.BladeFeel
             _targetRenderers.Clear();
             _targetFlashEndTimes.Clear();
 
-            // Start pose: the head projected onto the floor (tracking origin is floor level), facing the head's yaw.
+            // Everything in world space: head pose from the centre-eye anchor, floor = world y of the
+            // floor-level tracking space.
             var head = _cameraRig.centerEyeAnchor;
             var floorY = _cameraRig.trackingSpace.position.y;
-            var origin = new Vector3(head.position.x, floorY, head.position.z);
-            var forward = Vector3.ProjectOnPlane(head.forward, Vector3.up);
-            if (forward.sqrMagnitude < 1e-6f)
-                forward = Vector3.forward;
-            var facing = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            var targets = TargetPlacement.PlaceTargets(head.position, head.rotation, floorY, BladeFeelPresets.Targets);
 
-            var targets = new List<SphereTarget>();
-            foreach (var layout in BladeFeelPresets.Targets)
+            foreach (var target in targets)
             {
-                var center = origin + facing * new Vector3(layout.RightMeters, layout.HeightMeters, layout.ForwardMeters);
-                targets.Add(new SphereTarget(layout.Id, center, layout.RadiusMeters));
-                var sphere = CreatePrimitive(PrimitiveType.Sphere, $"Target_{layout.Id}", null,
+                var sphere = CreatePrimitive(PrimitiveType.Sphere, $"Target_{target.Id}", null,
                     BladeFeelPresets.TargetIdleColor);
-                sphere.position = center;
-                sphere.localScale = Vector3.one * (2f * layout.RadiusMeters);
+                sphere.position = target.Center;
+                sphere.localScale = Vector3.one * (2f * target.Radius);
                 _targetRenderers.Add(sphere.GetComponent<Renderer>());
                 _targetFlashEndTimes.Add(0f);
             }
 
             _detector = new TouchDetector(targets);
             _hasPreviousBlade = false;
-            Debug.Log($"{LogTag} Targets placed from start pose {origin} facing {forward.normalized}");
+            Debug.Log($"{LogTag} Targets placed: head {head.position} forward {head.forward} " +
+                      $"facing {TargetPlacement.FindFacing(head.rotation)} torso at {targets[2].Center}");
         }
 
         private void Flash(int targetIndex, Color color, float now)
@@ -353,7 +379,8 @@ namespace VrFencing.Prototypes.BladeFeel
         private string DescribeSettings()
         {
             var rules = CurrentRules();
-            return $"Blade: {CurrentMount().Name}, pitch {_pitchDegrees:+0;-0;0}°\n" +
+            return $"Blade: {CurrentMount().Name}\n" +
+                   $"Pitch {_tuning.pitchDegrees:+0;-0;0}° (up +)  Yaw {_tuning.yawDegrees:+0;-0;0}° (right +)\n" +
                    $"Haptics: {CurrentHaptics().Name}\n" +
                    $"Rule: {(_isStrict ? "STRICT" : "LOOSE")} (motion <={rules.MaxApproachAngleDegrees:0}°, " +
                    $"blade <={rules.MaxBladeAxisAngleDegrees:0}°)";
@@ -380,7 +407,7 @@ namespace VrFencing.Prototypes.BladeFeel
 
             Debug.Log($"{LogTag} stats window={elapsed:0.0}s frames={_statsFrames} fps={_statsFrames / elapsed:0.0} " +
                       $"max_frame_ms={_statsMaxFrameSeconds * 1000f:0.0} max_tip_speed_mps={_statsMaxTipSpeed:0.00} " +
-                      $"display_hz={OVRPlugin.systemDisplayFrequency:0}");
+                      $"display_hz={OVRPlugin.systemDisplayFrequency:0} head_tracked={IsHeadTracked()} targets_placed={_detector != null}");
             _statsWindowStart = now;
             _statsFrames = 0;
             _statsMaxFrameSeconds = 0f;
@@ -408,14 +435,18 @@ namespace VrFencing.Prototypes.BladeFeel
         }
 
         /// <summary>
-        /// The render pipeline's default material (URP Lit). The scene's reference cube
-        /// already uses it, so it and its shader are guaranteed to be in the build.
+        /// URP Lit material asset under Resources/, made by the editor tool
+        /// BladeFeelMaterialCreator. Being in Resources/ puts it and its shader in the
+        /// build. Do not take the material of a runtime CreatePrimitive instead: that is
+        /// the built-in Standard shader, which URP draws as magenta and which breaks
+        /// single-pass stereo (objects appear doubled).
         /// </summary>
-        private static Material FindDefaultLitMaterial()
+        private static Material LoadLitMaterial()
         {
-            var probe = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            var material = probe.GetComponent<Renderer>().sharedMaterial;
-            Destroy(probe);
+            var material = Resources.Load<Material>(LitMaterialResourcePath);
+            if (material == null)
+                Debug.LogError($"{LogTag} Missing Resources/{LitMaterialResourcePath}.mat; " +
+                               "run VR Fencing > Create blade feel material. Objects will render magenta.");
             return material;
         }
     }
