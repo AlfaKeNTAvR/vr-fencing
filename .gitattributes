@@ -1,2 +1,5 @@
 # Fencer Recordings (PER-79) are binary: never convert line endings in them.
 *.fencer binary
+
+# Shell scripts run under Git Bash: keep LF so core.autocrlf=true checkouts never hand bash a CRLF script.
+*.sh text eol=lf
