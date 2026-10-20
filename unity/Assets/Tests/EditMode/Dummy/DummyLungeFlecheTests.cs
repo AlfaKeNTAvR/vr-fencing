@@ -57,7 +57,7 @@ namespace VrFencing.Tests.Dummy
 
             for (var frame = 1; frame <= 72; frame++)
             {
-                footwork.StepLunge(lunge * DummyFootwork.MinimumJerk(frame / 72.0f), lunge, FrameSeconds);
+                footwork.StepLunge(lunge * MinimumJerk(frame / 72.0f), lunge, FrameSeconds);
                 var lead = footwork.Legs.Front.Ankle.Z - rest.Front.Ankle.Z;
                 Assert.That(lead, Is.GreaterThanOrEqualTo(-Tolerance), $"Frame {frame}: the front foot fell behind the body.");
                 furthestLead = Math.Max(furthestLead, lead);
@@ -384,6 +384,13 @@ namespace VrFencing.Tests.Dummy
             return new DummyFootwork(Height, Hand.Right, Start, new Random(1), isAlive: false);
         }
 
+        /// <summary>The minimum-jerk curve from 0 to 1, as the footwork and the Armed Dummy use.</summary>
+        private static float MinimumJerk(float fraction)
+        {
+            var t = Math.Min(Math.Max(fraction, 0.0f), 1.0f);
+            return t * t * t * ((t * ((t * 6.0f) - 15.0f)) + 10.0f);
+        }
+
         private static FootworkStep Next(FootworkStep step)
         {
             return step == FootworkStep.Standing ? FootworkStep.Lunging : step == FootworkStep.Lunging ? FootworkStep.Recovering : FootworkStep.Standing;
@@ -396,8 +403,8 @@ namespace VrFencing.Tests.Dummy
             for (var seconds = FrameSeconds; seconds <= 2.1f; seconds += FrameSeconds)
             {
                 var offset = seconds < 1.0f
-                    ? lunge * DummyFootwork.MinimumJerk(seconds)
-                    : seconds < 1.3f ? lunge : lunge * (1.0f - DummyFootwork.MinimumJerk((seconds - 1.3f) / 0.6f));
+                    ? lunge * MinimumJerk(seconds)
+                    : seconds < 1.3f ? lunge : lunge * (1.0f - MinimumJerk((seconds - 1.3f) / 0.6f));
                 footwork.StepLunge(offset, lunge, FrameSeconds);
                 onFrame(offset, frame++);
             }
