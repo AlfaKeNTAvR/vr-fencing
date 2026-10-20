@@ -123,6 +123,53 @@ namespace VrFencing.Tests.Dummy
             }
         }
 
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void SteppingLegsMoveTheLegBonesAndTheZonesWithThem(Hand hand)
+        {
+            var dummy = CreateDummyWithBody();
+            dummy.Configure(Height, hand);
+            var legs = SteppedLegs(hand);
+            var frontFoot = hand == Hand.Right ? HumanBodyBones.RightFoot : HumanBodyBones.LeftFoot;
+            var footBefore = FindBone(frontFoot).position;
+
+            dummy.SetLegs(legs);
+
+            Assert.That(Vector3.Distance(FindBone(frontFoot).position, footBefore), Is.GreaterThan(0.02f));
+            AssertBoneOnJoint(dummy, hand == Hand.Right ? HumanBodyBones.RightLowerLeg : HumanBodyBones.LeftLowerLeg, SkeletonJoint.FrontKnee);
+            AssertBoneOnJoint(dummy, hand == Hand.Right ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg, SkeletonJoint.BackKnee);
+            foreach (var zone in dummy.GetZonesOnStrip())
+            {
+                var part = FindChild($"Zone {zone.Zone}");
+                Assert.That(Vector3.Distance(part.position, zone.Shape.Center.ToUnity()), Is.LessThan(1e-4f), zone.Zone.ToString());
+            }
+        }
+
+        [Test]
+        public void PosingTheStepDummyEveryFrameCostsLittle()
+        {
+            var dummy = CreateDummyWithBody();
+            dummy.Configure(Height, Hand.Right);
+            var footwork = new DummyFootwork(Height, Hand.Right, 2.0f, new System.Random(1));
+            const int frames = 2000;
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            for (var frame = 0; frame < frames; frame++)
+            {
+                footwork.Step((frame / 40) % 2 == 0 ? 1.5f : 2.5f, 1.0f / 72.0f);
+                dummy.SetDistanceMeters(footwork.DistanceMeters);
+                dummy.SetLegs(footwork.Legs);
+            }
+
+            watch.Stop();
+            var microsecondsPerFrame = watch.Elapsed.TotalMilliseconds * 1000.0 / frames;
+            TestContext.WriteLine($"Footwork plus Dummy posing (body rig): {microsecondsPerFrame:0.0} us per frame.");
+            Debug.Log($"[Dummy] Footwork plus Dummy posing (body rig): {microsecondsPerFrame:0.0} us per frame in the Editor.");
+
+            // A 72 Hz frame is 13.9 ms. Loose: the Editor is slower than a build, the Quest slower than this laptop.
+            Assert.That(microsecondsPerFrame, Is.LessThan(500.0));
+        }
+
         [Test]
         public void AModelThatIsNotAHumanoidFallsBackToTheCapsuleSilhouette()
         {
@@ -141,6 +188,18 @@ namespace VrFencing.Tests.Dummy
             {
                 Object.DestroyImmediate(notHumanoid);
             }
+        }
+
+        /// <summary>The legs a few frames into an advance, when the front foot is up and forward.</summary>
+        private static DummyLegs SteppedLegs(Hand hand)
+        {
+            var footwork = new DummyFootwork(Height, hand, 2.0f, new System.Random(1));
+            for (var frame = 0; frame < 10; frame++)
+            {
+                footwork.Step(1.6f, 1.0f / 72.0f);
+            }
+
+            return footwork.Legs;
         }
 
         private void AssertBoneOnJoint(DummyBehaviour dummy, HumanBodyBones bone, SkeletonJoint joint)

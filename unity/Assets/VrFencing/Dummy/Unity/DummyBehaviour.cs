@@ -21,6 +21,9 @@ namespace VrFencing.Dummy
     /// <see cref="SetArmPose"/> moves the zones by turning the joints, without rebuilding. A blade for a later armed
     /// Dummy goes under <see cref="GetJointTransform"/>(<see cref="ArmJoint.Wrist"/>).
     ///
+    /// Legs (PER-110): <see cref="SetLegs"/> moves the legs, and the thigh and foot zones and the drawn legs with them,
+    /// as the stepping Dummy's footwork poses them every frame. Nothing is rebuilt.
+    ///
     /// Body (PER-78): with a Humanoid body model set (the scene's is Movement SDK's <c>Armature.fbx</c>), the rest of
     /// the silhouette is that rigged body, posed on the same en garde joints and drawn in the translucent silhouette
     /// color; the Target Zones stay capsules on top of it, so they light and flash as before. Without a model, or if
@@ -59,6 +62,9 @@ namespace VrFencing.Dummy
         private readonly Dictionary<TargetZone, ZoneLight> _shownLights = new Dictionary<TargetZone, ZoneLight>();
         private readonly Dictionary<ArmJoint, Transform> _jointTransforms = new Dictionary<ArmJoint, Transform>();
         private readonly List<Renderer> _bodyRenderers = new List<Renderer>();
+
+        // The capsule silhouette's parts in Layout.SilhouetteParts order; empty when the rigged body is drawn.
+        private readonly List<Transform> _silhouetteTransforms = new List<Transform>();
 
         // The serialized preset as the scene set it, kept the first time anything moves the Dummy.
         private DummyDistance? _sceneDistancePreset;
@@ -154,6 +160,31 @@ namespace VrFencing.Dummy
 
             Layout.PoseArm(armPose);
             PoseJoints();
+        }
+
+        /// <summary>
+        /// Moves the legs to <paramref name="legs"/> (Dummy frame, mirrored for the Dummy's hand, e.g.
+        /// <see cref="DummyFootwork.Legs"/>), and with them the thigh and foot zones and the drawn legs, without
+        /// rebuilding. <see cref="DummyLegs.EnGarde"/> stands them back in en garde.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">The Dummy is not configured yet.</exception>
+        public void SetLegs(DummyLegs legs)
+        {
+            if (Layout == null)
+            {
+                throw new InvalidOperationException("Configure the Dummy before posing its legs.");
+            }
+
+            Layout.PoseLegs(legs);
+            FitStanceZone(TargetZone.Thigh);
+            FitStanceZone(TargetZone.Foot);
+            for (var index = 0; index < _silhouetteTransforms.Count; index++)
+            {
+                var part = Layout.SilhouetteParts[index];
+                FitCapsule(_silhouetteTransforms[index], part, part.RadiusMeters);
+            }
+
+            _bodyRig?.Pose(Layout);
         }
 
         /// <summary>The transform of a sword arm joint, or null before the Dummy is configured.</summary>
@@ -304,6 +335,16 @@ namespace VrFencing.Dummy
             throw new ArgumentOutOfRangeException(nameof(zone), zone, "The Dummy has no such Target Zone.");
         }
 
+        /// <summary>Refits a zone that hangs under the parts root (not on the arm) to where the layout has it now.</summary>
+        private void FitStanceZone(TargetZone zone)
+        {
+            if (_zoneRenderers.TryGetValue(zone, out var zoneRenderer))
+            {
+                var shape = Layout.GetZone(zone);
+                FitCapsule(zoneRenderer.transform, shape, shape.RadiusMeters * Mathf.Clamp01(_look.ZoneThicknessFraction));
+            }
+        }
+
         /// <summary>The radius the zone is drawn at: a fraction of the radius it is judged on, never more.</summary>
         private float GetZoneDrawnRadius(TargetZone zone)
         {
@@ -348,7 +389,9 @@ namespace VrFencing.Dummy
             {
                 foreach (var part in Layout.SilhouetteParts)
                 {
-                    _bodyRenderers.Add(CreateCapsuleRenderer("Silhouette", part, part.RadiusMeters, _partsRoot, material));
+                    var partRenderer = CreateCapsuleRenderer("Silhouette", part, part.RadiusMeters, _partsRoot, material);
+                    _bodyRenderers.Add(partRenderer);
+                    _silhouetteTransforms.Add(partRenderer.transform);
                 }
             }
 
@@ -390,6 +433,7 @@ namespace VrFencing.Dummy
             _shownLights.Clear();
             _jointTransforms.Clear();
             _bodyRenderers.Clear();
+            _silhouetteTransforms.Clear();
             _bodyRig = null;
             if (_partsRoot != null)
             {

@@ -73,7 +73,7 @@ A virtual object the Fencer aims Touches at.
 _Avoid_: goal
 
 **Dummy**:
-A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does), and stands still unless a Drill makes it keep its Dummy Distance, sliding along the Strip as the Fencer advances and retreats, a reaction delay late.
+A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does), and stands still unless a Drill makes it keep its Dummy Distance, stepping along the Strip (advancing and retreating on planted feet) as the Fencer advances and retreats, a reaction delay late.
 _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 
 **Target Zone**:

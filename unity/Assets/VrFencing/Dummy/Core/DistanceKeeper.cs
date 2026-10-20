@@ -68,7 +68,7 @@ namespace VrFencing.Dummy
     ///
     /// Its output is an intent, <see cref="TargetFrontFootZ"/>: where the Dummy's front foot should stand on the Strip
     /// (Strip-frame z, from the Fencer's En Garde Line toward the Dummy). Something else carries the body there: the
-    /// rigid <see cref="DummyGlide"/> for now, stepping legs later (PER-110). Its input, every frame, is where the
+    /// stepping legs of <see cref="DummyFootwork"/> (PER-110). Its input, every frame, is where the
     /// Fencer's front foot is along the Strip.
     ///
     /// Rules:
