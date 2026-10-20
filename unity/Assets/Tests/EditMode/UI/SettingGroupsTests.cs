@@ -86,6 +86,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.ArmedDummy), Is.EqualTo(new[]
             {
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
+                SettingId.RiposteInLungeParries,
             }));
         }
 

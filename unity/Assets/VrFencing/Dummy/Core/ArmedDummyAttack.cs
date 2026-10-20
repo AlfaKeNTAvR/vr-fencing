@@ -39,7 +39,9 @@ namespace VrFencing.Dummy
     /// time: en garde with the blade in line (<see cref="SwordArmReach.PoseEnGarde"/>) for a random delay, a short
     /// wind-up, the thrust, a short hold, then back to en garde. A Parry (<see cref="ReportParried"/>) cuts the thrust
     /// or hold short and recovers from where the arm is; landing on the Fencer (<see cref="ReportLanded"/>) stops the
-    /// thrust where it is and holds there. Only the arm moves; the feet stay planted.
+    /// thrust where it is and holds there. Only the arm moves, unless the attack lunges (PER-101,
+    /// <see cref="LungeMeters"/>): then the whole Dummy moves forward with the thrust, on the same profile, and back in the
+    /// recovery (<see cref="GetLungeOffsetMeters"/>).
     ///
     /// The thrust moves the point along a straight line from the wind-up to the aim (<see cref="Path"/>), the arm
     /// posed by <see cref="SwordArmReach.PoseToReach"/> at each instant, so every pose is within the joint limits and
@@ -58,14 +60,24 @@ namespace VrFencing.Dummy
         private readonly Vector3 _rightHandedStart;
         private readonly Vector3 _rightHandedAim;
         private double _recoverStartSeconds;
+        private float _recoverFromLungeMeters;
+        private float _holdLungeMeters;
         private SwordArmPose _recoverFrom;
         private double _holdStartSeconds;
         private SwordArmPose _holdPose;
 
         private ArmedDummyAttack(
-            double startSeconds, float delaySeconds, float heightMeters, Hand hand, Vector3 rightHandedAim, AttackSpeed speed, float bladeLengthMeters)
+            double startSeconds,
+            float delaySeconds,
+            float heightMeters,
+            Hand hand,
+            Vector3 rightHandedAim,
+            AttackSpeed speed,
+            float bladeLengthMeters,
+            float lungeMeters)
         {
             _startSeconds = startSeconds;
+            LungeMeters = lungeMeters;
             _heightMeters = heightMeters;
             _bladeLengthMeters = bladeLengthMeters;
             DelaySeconds = delaySeconds;
@@ -74,8 +86,9 @@ namespace VrFencing.Dummy
             _guard = SwordArmReach.PoseEnGarde(heightMeters, bladeLengthMeters);
             _windUp = SwordArmReach.PoseWindUp(heightMeters, bladeLengthMeters);
             _rightHandedStart = SwordArmReach.GetPoint(heightMeters, _windUp, bladeLengthMeters);
-            _thrust = SwordArmReach.PoseToReach(heightMeters, rightHandedAim, bladeLengthMeters);
-            _rightHandedAim = SwordArmReach.GetPoint(heightMeters, _thrust, bladeLengthMeters);
+            // A lunge carries the shoulder forward, so the arm reaches for the aim from where the lunge ends.
+            _thrust = SwordArmReach.PoseToReach(heightMeters, rightHandedAim - Lunge(lungeMeters), bladeLengthMeters);
+            _rightHandedAim = SwordArmReach.GetPoint(heightMeters, _thrust, bladeLengthMeters) + Lunge(lungeMeters);
 
             var lengthMeters = Vector3.Distance(_rightHandedStart, _rightHandedAim);
             ThrustSeconds = Math.Max(
@@ -86,15 +99,26 @@ namespace VrFencing.Dummy
             _holdPose = _thrust;
             _recoverStartSeconds = ThrustEndSeconds + ArmedDummyTuning.HoldSeconds;
             _recoverFrom = _thrust;
+            _holdLungeMeters = lungeMeters;
+            _recoverFromLungeMeters = lungeMeters;
         }
 
         public float DelaySeconds { get; }
 
         public AttackSpeed Speed { get; }
 
+        /// <summary>
+        /// How far the whole Dummy moves toward the Fencer in the thrust (PER-101: the Dummy lunges); 0 for a thrust with
+        /// the feet planted.
+        /// </summary>
+        public float LungeMeters { get; }
+
         public float ThrustSeconds { get; }
 
-        /// <summary>The point's planned straight path in the thrust, in the Dummy frame, for judging.</summary>
+        /// <summary>
+        /// The point's planned straight path in the thrust, in the Dummy frame where the attack started (before any
+        /// lunge), for judging.
+        /// </summary>
         public AttackPath Path { get; }
 
         /// <summary>When the wind-up starts.</summary>
@@ -132,6 +156,13 @@ namespace VrFencing.Dummy
             }
         }
 
+        /// <summary>The Dummy's lunge for its height (PER-101): as long as a Fencer's (<see cref="DistancePresets.LungeLengthPerHeight"/>).</summary>
+        public static float GetLungeMeters(float heightMeters)
+        {
+            DummyLayout.RequirePositiveHeight(heightMeters);
+            return DistancePresets.LungeLengthPerHeight * heightMeters;
+        }
+
         /// <summary>A random delay from <see cref="ArmedDummyTuning.MinimumDelaySeconds"/> to <see cref="ArmedDummyTuning.MaximumDelaySeconds"/>.</summary>
         public static float DrawDelaySeconds(Random random)
         {
@@ -148,15 +179,30 @@ namespace VrFencing.Dummy
         /// Plans a thrust at <paramref name="aim"/> (in the Dummy frame, see <see cref="AttackAim"/>) for a Dummy of
         /// <paramref name="heightMeters"/> and <paramref name="hand"/> holding a blade of <paramref name="bladeLengthMeters"/>:
         /// en garde for <paramref name="delaySeconds"/> from <paramref name="startSeconds"/>, the wind-up, then the
-        /// thrust at the speed level's speed. An aim out of reach gets the point as near it as the arm reaches.
+        /// thrust at the speed level's speed. An aim out of reach gets the point as near it as the arm reaches. With
+        /// <paramref name="lungeMeters"/>, the Dummy lunges that far forward in the thrust (the aim is where the Dummy
+        /// stood at the start), and the speed level is the point's speed over the floor.
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">
         /// The delay is outside <see cref="ArmedDummyTuning.MinimumDelaySeconds"/> to
-        /// <see cref="ArmedDummyTuning.MaximumDelaySeconds"/>, the height is not positive, or the speed is not a level.
+        /// <see cref="ArmedDummyTuning.MaximumDelaySeconds"/>, the height is not positive, the speed is not a level, or the
+        /// lunge is negative.
         /// </exception>
         public static ArmedDummyAttack Plan(
-            double startSeconds, float delaySeconds, float heightMeters, Hand hand, Vector3 aim, AttackSpeed speed, float bladeLengthMeters)
+            double startSeconds,
+            float delaySeconds,
+            float heightMeters,
+            Hand hand,
+            Vector3 aim,
+            AttackSpeed speed,
+            float bladeLengthMeters,
+            float lungeMeters = 0.0f)
         {
+            if (!(lungeMeters >= 0.0f) || float.IsInfinity(lungeMeters))
+            {
+                throw new ArgumentOutOfRangeException(nameof(lungeMeters), lungeMeters, "Must be a non-negative number of meters.");
+            }
+
             if (!(delaySeconds >= ArmedDummyTuning.MinimumDelaySeconds && delaySeconds <= ArmedDummyTuning.MaximumDelaySeconds))
             {
                 throw new ArgumentOutOfRangeException(nameof(delaySeconds), delaySeconds,
@@ -165,7 +211,7 @@ namespace VrFencing.Dummy
 
             DummyLayout.RequirePositiveHeight(heightMeters);
             GetPeakPointSpeed(speed);
-            return new ArmedDummyAttack(startSeconds, delaySeconds, heightMeters, hand, ToHand(aim, hand), speed, bladeLengthMeters);
+            return new ArmedDummyAttack(startSeconds, delaySeconds, heightMeters, hand, ToHand(aim, hand), speed, bladeLengthMeters, lungeMeters);
         }
 
         public AttackPhase GetPhase(double nowSeconds)
@@ -201,8 +247,9 @@ namespace VrFencing.Dummy
                 case AttackPhase.WindUp:
                     return SwordArmPose.Slerp(_guard, _windUp, SmoothStep(Fraction(nowSeconds, WindUpStartSeconds, ArmedDummyTuning.WindUpSeconds)));
                 case AttackPhase.Thrust:
-                    var point = Vector3.Lerp(_rightHandedStart, _rightHandedAim, Path.GetProgress(nowSeconds));
-                    return SwordArmReach.PoseToReach(_heightMeters, point, _bladeLengthMeters);
+                    var progress = Path.GetProgress(nowSeconds);
+                    var point = Vector3.Lerp(_rightHandedStart, _rightHandedAim, progress);
+                    return SwordArmReach.PoseToReach(_heightMeters, point - Lunge(LungeMeters * progress), _bladeLengthMeters);
                 case AttackPhase.Hold:
                     return _holdPose;
                 case AttackPhase.Recover:
@@ -210,6 +257,27 @@ namespace VrFencing.Dummy
                         _recoverFrom, _guard, AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds)));
                 default:
                     return _guard;
+            }
+        }
+
+        /// <summary>
+        /// How far forward of where the attack started the whole Dummy stands at <paramref name="nowSeconds"/>: 0 until the
+        /// thrust, along the thrust's profile to <see cref="LungeMeters"/>, held, then back to 0 in the recovery. Always 0
+        /// for an attack that does not lunge.
+        /// </summary>
+        public float GetLungeOffsetMeters(double nowSeconds)
+        {
+            switch (GetPhase(nowSeconds))
+            {
+                case AttackPhase.Thrust:
+                    return LungeMeters * Path.GetProgress(nowSeconds);
+                case AttackPhase.Hold:
+                    return _holdLungeMeters;
+                case AttackPhase.Recover:
+                    var back = AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds));
+                    return _recoverFromLungeMeters * (1.0f - back);
+                default:
+                    return 0.0f;
             }
         }
 
@@ -227,6 +295,7 @@ namespace VrFencing.Dummy
             }
 
             _recoverFrom = GetPose(nowSeconds);
+            _recoverFromLungeMeters = GetLungeOffsetMeters(nowSeconds);
             _recoverStartSeconds = nowSeconds;
             IsParried = true;
             return true;
@@ -250,12 +319,20 @@ namespace VrFencing.Dummy
             if (phase == AttackPhase.Thrust)
             {
                 _holdPose = GetPose(nowSeconds);
+                _holdLungeMeters = GetLungeOffsetMeters(nowSeconds);
+                _recoverFromLungeMeters = _holdLungeMeters;
                 _holdStartSeconds = nowSeconds;
                 _recoverFrom = _holdPose;
                 _recoverStartSeconds = nowSeconds + ArmedDummyTuning.HoldSeconds;
             }
 
             return true;
+        }
+
+        /// <summary>The Dummy frame's move for a lunge of <paramref name="meters"/>: forward, toward the Fencer (+z).</summary>
+        private static Vector3 Lunge(float meters)
+        {
+            return new Vector3(0.0f, 0.0f, meters);
         }
 
         /// <summary>Between the Dummy frame and the right-handed Dummy frame: a reflection, its own inverse.</summary>

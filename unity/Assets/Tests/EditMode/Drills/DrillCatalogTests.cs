@@ -20,6 +20,7 @@ namespace VrFencing.Tests.Drills
         private static readonly string[] AllRealDrillIds = DrillOneToThreeIds
             .Concat(new[] { DrillCatalog.DistanceChoiceDrillId, DrillCatalog.CompoundDrillId, DrillCatalog.FootworkCallsDrillId })
             .Concat(new[] { DrillCatalog.SlowParryDrillId, DrillCatalog.FastParryDrillId, DrillCatalog.LowParryDrillId })
+            .Concat(new[] { DrillCatalog.BeatDrillId, DrillCatalog.StopHitDrillId, DrillCatalog.LungeParryDrillId })
             .ToArray();
 
         private static DrillDefinition Build(string id, TrainerSettings settings = null)
@@ -35,12 +36,12 @@ namespace VrFencing.Tests.Drills
         }
 
         [Test]
-        public void ReleaseBuildsListDrillsOneToNineEasyToHard()
+        public void ReleaseBuildsListDrillsOneToTwelveEasyToHard()
         {
             var drills = DrillCatalog.CreateDefault(includeTestDrills: false).BuildAll(new TrainerSettings());
 
             Assert.That(drills.OrderBy(drill => drill.Order).Select(drill => drill.Id), Is.EqualTo(AllRealDrillIds));
-            Assert.That(drills.Select(drill => drill.Order), Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 }));
+            Assert.That(drills.Select(drill => drill.Order), Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }));
         }
 
         [Test]

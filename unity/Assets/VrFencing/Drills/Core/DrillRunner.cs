@@ -54,6 +54,15 @@ namespace VrFencing.Drills
         private ParryReport? _parry;
         private double? _parryAtActiveSeconds;
 
+        // Beat Reps (PER-101): the Beat that the Touch now follows, and when it came (active clock); null until then.
+        private BeatReport? _beat;
+        private double? _beatAtActiveSeconds;
+
+        // Stop Hit Reps (PER-101): the attack is under way (contacts count), and the Stop Hit's contact and time.
+        private bool _isAttackUnderWay;
+        private BladeContact? _stopHit;
+        private double? _stopHitAtActiveSeconds;
+
         // The latest footwork reading reported since the current cue, for Drills that judge footwork.
         private FootworkReading? _latestFootwork;
 
@@ -132,6 +141,9 @@ namespace VrFencing.Drills
 
         /// <summary>A Parry Rep's attack was parried and the Riposte is awaited.</summary>
         public bool IsAwaitingRiposte => _parryAtActiveSeconds.HasValue && State == DrillState.Window;
+
+        /// <summary>A Beat Rep's Beat landed and the Touch is awaited.</summary>
+        public bool IsAwaitingTouchAfterBeat => _beatAtActiveSeconds.HasValue && State == DrillState.Window;
 
         /// <summary>The run is waiting for the Fencer at the Start Mark and has asked them to come back (<see cref="ReturnPrompted"/>).</summary>
         public bool IsPromptingReturn { get; private set; }
@@ -218,7 +230,25 @@ namespace VrFencing.Drills
                 return;
             }
 
+            if (Drill.SuccessRule == SuccessRule.StopHit)
+            {
+                ReportStopHitContact(contact);
+                return;
+            }
+
             var contactAtActiveSeconds = ActiveSeconds();
+            if (Drill.SuccessRule == SuccessRule.BeatThenTouch && !_beatAtActiveSeconds.HasValue)
+            {
+                // The Fencer's blade sweeping across the Dummy while beating is not an attack; a point-first Touch is.
+                if (contact.Kind == ContactKind.PointFirst)
+                {
+                    FinishRep(CreateResult(RepOutcome.NoBeat, contact, contactAtActiveSeconds - _stateStartedAtActiveSeconds, null), contactAtActiveSeconds);
+                    AdvanceDueTransitions();
+                }
+
+                return;
+            }
+
             var outcome = JudgeContact(contact);
             if (Drill.SuccessRule == SuccessRule.TwoTouchesInOrder && !_firstTouchAtActiveSeconds.HasValue && outcome == RepOutcome.Success)
             {
@@ -232,12 +262,50 @@ namespace VrFencing.Drills
             var result = CreateResult(
                 outcome,
                 contact,
-                reactionSeconds: (_parryAtActiveSeconds ?? _firstTouchAtActiveSeconds ?? contactAtActiveSeconds) - _stateStartedAtActiveSeconds,
+                reactionSeconds: (_parryAtActiveSeconds ?? _beatAtActiveSeconds ?? _firstTouchAtActiveSeconds ?? contactAtActiveSeconds) - _stateStartedAtActiveSeconds,
                 secondTouchSeconds: contactAtActiveSeconds - _firstTouchAtActiveSeconds,
-                riposteSeconds: contactAtActiveSeconds - _parryAtActiveSeconds);
+                riposteSeconds: contactAtActiveSeconds - _parryAtActiveSeconds,
+                touchAfterBeatSeconds: contactAtActiveSeconds - _beatAtActiveSeconds);
 
             FinishRep(result, contactAtActiveSeconds);
             AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// Beat Drills (PER-101): a contact knocked the Armed Dummy's blade out of line (the Blade's Beat judge). The first
+        /// one inside an open window opens <see cref="DrillDefinition.BeatTouchWindowSeconds"/> for a Touch. Ignored in
+        /// other Drills, after the first, during the cue, the rest or a pause.
+        /// </summary>
+        public void ReportBeat(BeatReport beat)
+        {
+            if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.BeatThenTouch)
+            {
+                return;
+            }
+
+            AdvanceDueTransitions();
+            if (State != DrillState.Window || _beatAtActiveSeconds.HasValue)
+            {
+                return;
+            }
+
+            _beat = beat;
+            _beatAtActiveSeconds = ActiveSeconds();
+            AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// Stop Hit Drills (PER-101): the Armed Dummy's attack has started (its wind-up), so a Touch on its arm is now a
+        /// Stop Hit. Contacts before it are ignored, as a Touch while the Dummy only stands en garde is no Stop Hit.
+        /// </summary>
+        public void ReportAttackUnderWay()
+        {
+            if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.StopHit || State != DrillState.Window)
+            {
+                return;
+            }
+
+            _isAttackUnderWay = true;
         }
 
         /// <summary>
@@ -282,12 +350,18 @@ namespace VrFencing.Drills
         /// </summary>
         public void ReportAttackLanded(FencerHit? hit = null)
         {
-            if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.Parry)
+            if (!IsRunning || IsPaused || (Drill.SuccessRule != SuccessRule.Parry && Drill.SuccessRule != SuccessRule.StopHit))
             {
                 return;
             }
 
             AdvanceDueTransitions();
+            if (Drill.SuccessRule == SuccessRule.StopHit)
+            {
+                JudgeStopHitLanding(hit);
+                return;
+            }
+
             if (State != DrillState.Window || _parryAtActiveSeconds.HasValue)
             {
                 return;
@@ -410,6 +484,67 @@ namespace VrFencing.Drills
             AdvanceDueTransitions();
         }
 
+        /// <summary>
+        /// Stop Hit Drills: a contact once the attack is under way. A point-first Touch on the arm (the Drill's zones) is
+        /// the Stop Hit, judged a success once the double window passes with no landing; another zone or a flat contact
+        /// fails at once. Contacts before the attack and after the Stop Hit are ignored.
+        /// </summary>
+        private void ReportStopHitContact(BladeContact contact)
+        {
+            if (!_isAttackUnderWay || _stopHitAtActiveSeconds.HasValue)
+            {
+                return;
+            }
+
+            var contactAtActiveSeconds = ActiveSeconds();
+            var outcome = JudgeContact(contact);
+            if (outcome == RepOutcome.Success)
+            {
+                _stopHit = contact;
+                _stopHitAtActiveSeconds = contactAtActiveSeconds;
+                AdvanceDueTransitions();
+                return;
+            }
+
+            FinishRep(CreateResult(outcome, contact, contactAtActiveSeconds - _stateStartedAtActiveSeconds, null), contactAtActiveSeconds);
+            AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// Stop Hit Drills: the attack landed on the Fencer (<paramref name="hit"/>) or ended without reaching them. Before
+        /// any Stop Hit a landing fails as <see cref="RepOutcome.HitFirst"/>, an attack that ended short as
+        /// <see cref="RepOutcome.NoStopHit"/>; a landing within the double window after the Stop Hit is a
+        /// <see cref="RepOutcome.Double"/>.
+        /// </summary>
+        private void JudgeStopHitLanding(FencerHit? hit)
+        {
+            if (State != DrillState.Window)
+            {
+                return;
+            }
+
+            var landedAtActiveSeconds = ActiveSeconds();
+            if (_stopHitAtActiveSeconds.HasValue)
+            {
+                if (hit.HasValue)
+                {
+                    FinishRep(StopHitResult(RepOutcome.Double, hit), landedAtActiveSeconds);
+                    AdvanceDueTransitions();
+                }
+
+                return;
+            }
+
+            var outcome = hit.HasValue ? RepOutcome.HitFirst : RepOutcome.NoStopHit;
+            FinishRep(CreateResult(outcome, contact: null, reactionSeconds: null, secondTouchSeconds: null, fencerHit: hit), landedAtActiveSeconds);
+            AdvanceDueTransitions();
+        }
+
+        private RepResult StopHitResult(RepOutcome outcome, FencerHit? hit)
+        {
+            return CreateResult(outcome, _stopHit, _stopHitAtActiveSeconds - _stateStartedAtActiveSeconds, secondTouchSeconds: null, fencerHit: hit);
+        }
+
         private RepOutcome JudgeContact(BladeContact contact)
         {
             if (contact.Kind == ContactKind.Flat)
@@ -417,7 +552,7 @@ namespace VrFencing.Drills
                 return RepOutcome.FlatContact;
             }
 
-            var isOnTarget = Drill.CueType == CueType.ArmedDummyAttack
+            var isOnTarget = Drill.TouchesAnyDrillZone
                 ? ContainsZone(Drill.TargetZones, contact.Zone)
                 : contact.Zone == CurrentTargetZone;
             if (!isOnTarget)
@@ -468,7 +603,8 @@ namespace VrFencing.Drills
             double? reactionSeconds,
             double? secondTouchSeconds,
             double? riposteSeconds = null,
-            FencerHit? fencerHit = null)
+            FencerHit? fencerHit = null,
+            double? touchAfterBeatSeconds = null)
         {
             return new RepResult(
                 Drill.Id,
@@ -489,7 +625,9 @@ namespace VrFencing.Drills
                 riposteSeconds,
                 fencerHit,
                 CurrentCue.AttackTarget,
-                CurrentCue.AttackSpeed);
+                CurrentCue.AttackSpeed,
+                touchAfterBeatSeconds,
+                _beat?.OutOfLineMeters);
         }
 
         private void AdvanceDueTransitions()
@@ -511,17 +649,13 @@ namespace VrFencing.Drills
                         break;
 
                     case DrillState.Window:
-                        var windowClosesAt = _parryAtActiveSeconds.HasValue
-                            ? _parryAtActiveSeconds.Value + DrillDefinition.RiposteWindowSeconds
-                            : _firstTouchAtActiveSeconds.HasValue
-                                ? _firstTouchAtActiveSeconds.Value + Drill.SecondTouchWindowSeconds
-                                : _stateStartedAtActiveSeconds + Drill.WindowSeconds;
+                        var windowClosesAt = GetWindowClosesAt();
                         if (now < windowClosesAt)
                         {
                             return;
                         }
 
-                        FinishRep(Drill.SuccessRule == SuccessRule.FootworkCall ? JudgeFootworkCall() : TimeoutResult(), windowClosesAt);
+                        FinishRep(JudgeWindowEnd(), windowClosesAt);
                         break;
 
                     case DrillState.Return:
@@ -556,15 +690,58 @@ namespace VrFencing.Drills
         }
 
         /// <summary>
+        /// When the open window ends (active clock): the Riposte's from the Parry, the Touch's from the Beat, the double
+        /// window from the Stop Hit, the compound's second Touch from the first, else the Rep's own.
+        /// </summary>
+        private double GetWindowClosesAt()
+        {
+            if (_parryAtActiveSeconds.HasValue)
+            {
+                return _parryAtActiveSeconds.Value + DrillDefinition.RiposteWindowSeconds;
+            }
+
+            if (_beatAtActiveSeconds.HasValue)
+            {
+                return _beatAtActiveSeconds.Value + DrillDefinition.BeatTouchWindowSeconds;
+            }
+
+            if (_stopHitAtActiveSeconds.HasValue)
+            {
+                return _stopHitAtActiveSeconds.Value + DrillDefinition.StopHitDoubleWindowSeconds;
+            }
+
+            if (_firstTouchAtActiveSeconds.HasValue)
+            {
+                return _firstTouchAtActiveSeconds.Value + Drill.SecondTouchWindowSeconds;
+            }
+
+            return _stateStartedAtActiveSeconds + Drill.WindowSeconds;
+        }
+
+        /// <summary>The Rep when its window ends with nothing more: a footwork call is judged, a Stop Hit that saw no double succeeds, else a timeout.</summary>
+        private RepResult JudgeWindowEnd()
+        {
+            if (Drill.SuccessRule == SuccessRule.FootworkCall)
+            {
+                return JudgeFootworkCall();
+            }
+
+            return _stopHitAtActiveSeconds.HasValue ? StopHitResult(RepOutcome.Success, hit: null) : TimeoutResult();
+        }
+
+        /// <summary>
         /// No (further) contact in time. A compound whose first Touch landed keeps that Touch's reaction time; a Parry
         /// with no Riposte after it is <see cref="RepOutcome.NoRiposte"/> and keeps the Parry's.
         /// </summary>
         private RepResult TimeoutResult()
         {
+            var outcome = _parryAtActiveSeconds.HasValue
+                ? RepOutcome.NoRiposte
+                : _beatAtActiveSeconds.HasValue ? RepOutcome.NoTouchAfterBeat : RepOutcome.Timeout;
             return CreateResult(
-                _parryAtActiveSeconds.HasValue ? RepOutcome.NoRiposte : RepOutcome.Timeout,
+                outcome,
                 contact: null,
-                reactionSeconds: (_parryAtActiveSeconds ?? _firstTouchAtActiveSeconds) - _stateStartedAtActiveSeconds,
+                reactionSeconds: (_parryAtActiveSeconds ?? _beatAtActiveSeconds ?? _firstTouchAtActiveSeconds) - _stateStartedAtActiveSeconds,
                 secondTouchSeconds: null);
         }
 
@@ -604,6 +781,11 @@ namespace VrFencing.Drills
             _firstTouchAtActiveSeconds = null;
             _parry = null;
             _parryAtActiveSeconds = null;
+            _beat = null;
+            _beatAtActiveSeconds = null;
+            _isAttackUnderWay = false;
+            _stopHit = null;
+            _stopHitAtActiveSeconds = null;
             _latestFootwork = null;
             CurrentCue = PickCue();
             EnterState(DrillState.Cue, atActiveSeconds);
@@ -628,8 +810,9 @@ namespace VrFencing.Drills
                     return new RepCue(CurrentRepIndex, pair.First, Drill.CueType, distance, secondTargetZone: pair.Second);
 
                 case SuccessRule.Parry:
+                case SuccessRule.StopHit:
                     var attacks = Drill.Attacks;
-                    var riposteZone = Drill.CueType == CueType.ArmedDummyAttack
+                    var riposteZone = Drill.TouchesAnyDrillZone
                         ? (TargetZone?)null
                         : Drill.TargetZones[_random.Next(Drill.TargetZones.Count)];
                     return new RepCue(
@@ -639,6 +822,9 @@ namespace VrFencing.Drills
                         distance,
                         attackTarget: attacks.DrawTarget(_random),
                         attackSpeed: attacks.GetSpeed(CurrentRepIndex));
+
+                case SuccessRule.BeatThenTouch:
+                    return new RepCue(CurrentRepIndex, targetZone: null, Drill.CueType, distance);
 
                 default:
                     return new RepCue(CurrentRepIndex, Drill.TargetZones[_random.Next(Drill.TargetZones.Count)], Drill.CueType, distance);

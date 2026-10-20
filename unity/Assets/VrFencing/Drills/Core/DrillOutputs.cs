@@ -60,6 +60,21 @@ namespace VrFencing.Drills
 
         /// <summary>Parry Drills that require a Riposte: no Touch within the Riposte window after the Parry.</summary>
         NoRiposte,
+
+        /// <summary>Beat Drills (PER-101): a Touch landed before any Beat knocked the Dummy's blade out of line.</summary>
+        NoBeat,
+
+        /// <summary>Beat Drills: no Touch within <see cref="DrillDefinition.BeatTouchWindowSeconds"/> of the Beat.</summary>
+        NoTouchAfterBeat,
+
+        /// <summary>Stop Hit Drills (PER-101): the Armed Dummy's point landed on the Fencer before any Stop Hit.</summary>
+        HitFirst,
+
+        /// <summary>Stop Hit Drills: the Dummy's point landed within the double window after the Stop Hit.</summary>
+        Double,
+
+        /// <summary>Stop Hit Drills: the attack ended without a Stop Hit and without reaching the Fencer (parried or short).</summary>
+        NoStopHit,
     }
 
     /// <summary>A Rep's cue, for the Dummy (light or name the zone, call the footwork, stand at its distance) and the UI.</summary>
@@ -137,9 +152,13 @@ namespace VrFencing.Drills
             double? riposteSeconds = null,
             FencerHit? fencerHit = null,
             AttackTarget? attackTarget = null,
-            AttackSpeed? attackSpeed = null)
+            AttackSpeed? attackSpeed = null,
+            double? touchAfterBeatSeconds = null,
+            float? beatOutOfLineMeters = null)
         {
             DrillId = drillId;
+            TouchAfterBeatSeconds = touchAfterBeatSeconds;
+            BeatOutOfLineMeters = beatOutOfLineMeters;
             AttackTarget = attackTarget;
             AttackSpeed = attackSpeed;
             ParryLine = parryLine;
@@ -221,6 +240,12 @@ namespace VrFencing.Drills
 
         /// <summary>Parry Drills: how fast the Armed Dummy thrust; null for other Drills.</summary>
         public AttackSpeed? AttackSpeed { get; }
+
+        /// <summary>Beat Drills (PER-101): from the Beat to the Touch's contact; null without both.</summary>
+        public double? TouchAfterBeatSeconds { get; }
+
+        /// <summary>Beat Drills: how far the Beat knocked the Dummy's point off its line; null without a Beat.</summary>
+        public float? BeatOutOfLineMeters { get; }
     }
 
     /// <summary>How a run ended: every judged Rep in order, and whether the Fencer cancelled.</summary>

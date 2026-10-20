@@ -48,6 +48,7 @@ namespace VrFencing.UI
         RiposteInSlowParries,
         RiposteInFastParries,
         RiposteInLowParries,
+        RiposteInLungeParries,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -180,6 +181,7 @@ namespace VrFencing.UI
                 case SettingId.RiposteInSlowParries: return "Riposte: Parry 6/4 slow";
                 case SettingId.RiposteInFastParries: return "Riposte: Parry 6/4 fast";
                 case SettingId.RiposteInLowParries: return "Riposte: Parry 8/7";
+                case SettingId.RiposteInLungeParries: return "Riposte: Dummy lunges";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -202,6 +204,8 @@ namespace VrFencing.UI
                     return FormatRiposte(settings.ArmedDummy.RiposteInFastParries);
                 case SettingId.RiposteInLowParries:
                     return FormatRiposte(settings.ArmedDummy.RiposteInLowParries);
+                case SettingId.RiposteInLungeParries:
+                    return FormatRiposte(settings.ArmedDummy.RiposteInLungeParries);
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
@@ -315,6 +319,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.RiposteInLowParries:
                     changed.ArmedDummy.RiposteInLowParries = !settings.ArmedDummy.RiposteInLowParries;
+                    break;
+                case SettingId.RiposteInLungeParries:
+                    changed.ArmedDummy.RiposteInLungeParries = !settings.ArmedDummy.RiposteInLungeParries;
                     break;
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);

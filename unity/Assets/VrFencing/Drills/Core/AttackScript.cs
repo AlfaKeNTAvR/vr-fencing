@@ -14,7 +14,8 @@ namespace VrFencing.Drills
     public sealed class AttackScript
     {
         /// <exception cref="ArgumentException">No targets or no speeds.</exception>
-        public AttackScript(IReadOnlyList<AttackTarget> targets, IReadOnlyList<AttackSpeed> speeds)
+        /// <param name="lunges">The Dummy lunges forward with each thrust (PER-101).</param>
+        public AttackScript(IReadOnlyList<AttackTarget> targets, IReadOnlyList<AttackSpeed> speeds, bool lunges = false)
         {
             if (targets == null || targets.Count == 0)
             {
@@ -28,7 +29,11 @@ namespace VrFencing.Drills
 
             Targets = targets.ToArray();
             Speeds = speeds.ToArray();
+            Lunges = lunges;
         }
+
+        /// <summary>The Dummy lunges forward with each thrust, its feet moving (PER-101); otherwise they stay planted.</summary>
+        public bool Lunges { get; }
 
         /// <summary>
         /// Every target, at slow, medium and real speed in turn (the PER-95 feel test's script): what a Parry Drill gets

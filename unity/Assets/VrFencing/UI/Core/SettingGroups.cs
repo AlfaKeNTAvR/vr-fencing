@@ -62,6 +62,7 @@ namespace VrFencing.UI
             [SettingGroup.ArmedDummy] = new[]
             {
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
+                SettingId.RiposteInLungeParries,
             },
         };
 

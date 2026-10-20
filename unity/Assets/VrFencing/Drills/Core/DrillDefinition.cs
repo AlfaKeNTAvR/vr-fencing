@@ -22,6 +22,12 @@ namespace VrFencing.Drills
         /// Drill's Target Zones (in épée the whole body is target).
         /// </summary>
         ArmedDummyAttack,
+
+        /// <summary>
+        /// The Armed Dummy holds its blade in line (PER-101, Beat then thrust): nothing is named or lit, and the Touch
+        /// after the Beat may land on any of the Drill's Target Zones.
+        /// </summary>
+        BladeInLine,
     }
 
     /// <summary>How a Rep is judged.</summary>
@@ -57,6 +63,21 @@ namespace VrFencing.Drills
         /// ignored; an attack that lands unparried fails the Rep.
         /// </summary>
         Parry,
+
+        /// <summary>
+        /// The Armed Dummy holds its blade in line (PER-101): the Fencer must Beat it out of line
+        /// (<see cref="DrillRunner.ReportBeat"/>), then land a point-first Touch on any of the Drill's zones within
+        /// <see cref="DrillDefinition.BeatTouchWindowSeconds"/>. A Touch before the Beat fails the Rep.
+        /// </summary>
+        BeatThenTouch,
+
+        /// <summary>
+        /// The Armed Dummy attacks (<see cref="DrillDefinition.Attacks"/>) and the Fencer must Touch its arm (the Drill's
+        /// zones) while the attack is on the way, before its point lands (PER-101). The Dummy's point landing within
+        /// <see cref="DrillDefinition.StopHitDoubleWindowSeconds"/> after the Stop Hit is a double, a fail. Contacts
+        /// before the attack starts (<see cref="DrillRunner.ReportAttackUnderWay"/>) and Parries are ignored.
+        /// </summary>
+        StopHit,
     }
 
     /// <summary>Two Target Zones a compound Rep cues in order.</summary>
@@ -190,14 +211,25 @@ namespace VrFencing.Drills
                 throw new ArgumentException("Only a Parry Drill can require a Riposte.", nameof(requiresRiposte));
             }
 
-            if (attacks != null && successRule != SuccessRule.Parry)
+            var isAttackRule = successRule == SuccessRule.Parry || successRule == SuccessRule.StopHit;
+            if (attacks != null && !isAttackRule)
             {
-                throw new ArgumentException("Only a Parry Drill has an attack script.", nameof(attacks));
+                throw new ArgumentException("Only a Parry or Stop Hit Drill has an attack script.", nameof(attacks));
             }
 
-            if ((cueType == CueType.ArmedDummyAttack) && successRule != SuccessRule.Parry)
+            if (successRule == SuccessRule.StopHit && attacks == null)
             {
-                throw new ArgumentException("Only a Parry Drill is cued by the Armed Dummy's attack.", nameof(cueType));
+                throw new ArgumentException("A Stop Hit Drill needs an attack script.", nameof(attacks));
+            }
+
+            if (cueType == CueType.ArmedDummyAttack && !isAttackRule)
+            {
+                throw new ArgumentException("Only a Parry or Stop Hit Drill is cued by the Armed Dummy's attack.", nameof(cueType));
+            }
+
+            if ((cueType == CueType.BladeInLine) != (successRule == SuccessRule.BeatThenTouch))
+            {
+                throw new ArgumentException("A Beat Drill, and only a Beat Drill, is cued by the blade held in line.", nameof(cueType));
             }
 
             if (lightsNamedZone && cueType != CueType.NamedTargetZone)
@@ -239,11 +271,20 @@ namespace VrFencing.Drills
             TaskLine = taskLine ?? string.Empty;
             LightsNamedZone = lightsNamedZone;
             RequiresRiposte = requiresRiposte;
-            Attacks = successRule == SuccessRule.Parry ? attacks ?? AttackScript.EveryTargetAndSpeed : null;
+            Attacks = isAttackRule ? attacks ?? AttackScript.EveryTargetAndSpeed : null;
         }
 
         /// <summary>A Riposte must land within this of the Parry (PER-23: 1 s).</summary>
         public const float RiposteWindowSeconds = 1.0f;
+
+        /// <summary>The Touch must land within this of the Beat (PER-23: 1 s).</summary>
+        public const float BeatTouchWindowSeconds = 1.0f;
+
+        /// <summary>
+        /// The Armed Dummy's point landing this soon after a Stop Hit makes a double (PER-23: the 40 to 50 ms double
+        /// window; the épée rule's 50 ms, as in a Bout).
+        /// </summary>
+        public const float StopHitDoubleWindowSeconds = 0.05f;
 
         /// <summary>
         /// A Parry Drill also needs a Riposte after the Parry (PER-23: per Drill, so a parry-only warm-up turns it off).
@@ -252,7 +293,14 @@ namespace VrFencing.Drills
         public bool RequiresRiposte { get; }
 
         /// <summary>The Armed Dummy holds a blade and attacks in this Drill (<see cref="SuccessRule.Parry"/>).</summary>
-        public bool UsesArmedDummy => SuccessRule == SuccessRule.Parry;
+        public bool UsesArmedDummy =>
+            SuccessRule == SuccessRule.Parry || SuccessRule == SuccessRule.StopHit || SuccessRule == SuccessRule.BeatThenTouch;
+
+        /// <summary>
+        /// The Touch may land on any of <see cref="TargetZones"/>, none cued: the Armed Dummy's attack or its blade in
+        /// line is the cue.
+        /// </summary>
+        public bool TouchesAnyDrillZone => CueType == CueType.ArmedDummyAttack || CueType == CueType.BladeInLine;
 
         /// <summary>
         /// The Armed Dummy's targets and speeds (PER-100); <see cref="AttackScript.EveryTargetAndSpeed"/> for a Parry Drill

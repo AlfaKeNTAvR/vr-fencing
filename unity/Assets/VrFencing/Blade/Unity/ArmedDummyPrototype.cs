@@ -55,6 +55,11 @@ namespace VrFencing.Blade
         private FencerHitSource? _lastLoggedSource;
         private ArmedDummyAttack _attack;
         private ParryJudge _judge;
+        private readonly BeatJudge _beatJudge = new BeatJudge();
+        private SwordArmPose? _inLinePose;
+        private bool _hasReportedBeat;
+        private bool _hasReportedAttackUnderWay;
+        private float _attackDistanceMeters;
         private BladeClash? _lastClash;
         private bool _hasAttackClashed;
         private bool _hasReportedLanding;
@@ -113,7 +118,14 @@ namespace VrFencing.Blade
                 return;
             }
 
-            _dummy.SetArmPose(_attack?.GetPose(nowSeconds) ?? SwordArmReach.PoseEnGarde(_dummy.Layout.HeightMeters, BladePose.BladeLengthMeters));
+            if (_attack != null && _attack.LungeMeters > 0.0f)
+            {
+                // The Dummy lunges (PER-101): the whole Dummy moves along the Strip with the thrust and back.
+                _dummy.SetDistanceMeters(_attackDistanceMeters - _attack.GetLungeOffsetMeters(nowSeconds));
+            }
+
+            _dummy.SetArmPose(
+                _attack?.GetPose(nowSeconds) ?? _inLinePose ?? SwordArmReach.PoseEnGarde(_dummy.Layout.HeightMeters, BladePose.BladeLengthMeters));
             var (forte, gripUp) = GetDummyBladeOnStrip();
             var wasPressed = _blade.IsPressed;
             _blade.Step(forte, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, fencerBlade, fencerDrawn, deltaSeconds);
@@ -131,6 +143,8 @@ namespace VrFencing.Blade
             }
 
             UpdateFencer(stripInRoom, fencerBlade);
+            ReportAttackUnderWay(nowSeconds);
+            JudgeBeat(nowSeconds, clash);
             JudgeParry(nowSeconds, clash, fencerBlade);
             JudgeHit(nowSeconds);
             _visual.Draw(_blade.Drawn, stripInRoom, (float)nowSeconds);
@@ -203,6 +217,12 @@ namespace VrFencing.Blade
                 return;
             }
 
+            // A Stop Hit Drill (PER-101) asks for a Touch, not a Parry: the thrust carries on through blade contact.
+            if (_runner.Drill.SuccessRule != SuccessRule.Parry)
+            {
+                return;
+            }
+
             var isInContact = _detector.IsInContact || _blade.IsPressed;
             if (clash.HasValue)
             {
@@ -221,7 +241,8 @@ namespace VrFencing.Blade
                 return;
             }
 
-            var line = AttackLine.OnStrip(_attack.Path, _dummy.DistanceMeters, nowSeconds);
+            // The path was planned where the attack started, before any lunge.
+            var line = AttackLine.OnStrip(_attack.Path, _attackDistanceMeters, nowSeconds);
             // Without a headset pose there is no tracked Fencer: the stand-in at the En Garde Line keeps the judging fair.
             var body = _fencer.HasBody ? _fencer.Capsules : AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
             var parry = _judge.Step(nowSeconds, _blade.Swing.TipOffset, isInContact, line, body);
@@ -282,9 +303,17 @@ namespace VrFencing.Blade
 
             _attack.ReportLanded(nowSeconds);
             _hasReportedLanding = true;
+            var landed = hit.Value;
+            if (_runner.State != DrillState.Window)
+            {
+                // The Rep was already judged (a Stop Hit that landed clear of the double window): like the épée's
+                // lock-out, the late point lights nothing.
+                Debug.Log($"[ArmedDummy] Point landed on the Fencer's {landed.Part} after the Rep was judged: locked out.");
+                return;
+            }
+
             _hitFlash.Show();
             _haptics?.PlayArmedDummyHit();
-            var landed = hit.Value;
             Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried.");
             _runner.ReportAttackLanded(landed);
         }
@@ -294,6 +323,7 @@ namespace VrFencing.Blade
             _isActive = isActive;
             _attack = null;
             _judge = null;
+            _inLinePose = null;
             Restart();
             _clashBuzzGate.Reset();
             _visual.SetVisible(isActive);
@@ -307,7 +337,18 @@ namespace VrFencing.Blade
 
         private void OnRepCued(RepCue cue)
         {
-            if (!IsTestDrillRunning() || _dummy.Layout == null || !cue.AttackTarget.HasValue || !cue.AttackSpeed.HasValue)
+            if (!IsTestDrillRunning() || _dummy.Layout == null)
+            {
+                return;
+            }
+
+            if (cue.CueType == CueType.BladeInLine)
+            {
+                HoldBladeInLine(cue);
+                return;
+            }
+
+            if (!cue.AttackTarget.HasValue || !cue.AttackSpeed.HasValue)
             {
                 return;
             }
@@ -323,13 +364,16 @@ namespace VrFencing.Blade
                 ? DummyLayout.DummyToStrip(aimOnStrip, _dummy.DistanceMeters)
                 : AttackAim.GetAimInDummyFrame(
                     target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
-            _attack = ArmedDummyAttack.Plan(Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters);
+            var lungeMeters = _runner.Drill.Attacks.Lunges ? ArmedDummyAttack.GetLungeMeters(layout.HeightMeters) : 0.0f;
+            _attack = ArmedDummyAttack.Plan(
+                Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters, lungeMeters);
+            _hasReportedAttackUnderWay = false;
             _judge = new ParryJudge(_settings.Blade.ParryRule, _settings.Hand);
             _hasAttackClashed = false;
             _hasReportedLanding = false;
             var missMeters = System.Numerics.Vector3.Distance(_attack.Path.AimPoint, aim);
             Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
-                $"Dummy at {_dummy.DistanceMeters:0.00} m ({cue.DummyStandBackMeters:0.00} m back), " +
+                $"Dummy at {_dummy.DistanceMeters:0.00} m ({cue.DummyStandBackMeters:0.00} m back, lunge {lungeMeters:0.00} m), " +
                 $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms over {_attack.Path.LengthMeters * 100.0f:0} cm" +
                 (missMeters > 0.01f ? $", lands {missMeters * 100.0f:0} cm off the aim (out of the arm's reach)." : "."));
         }
@@ -346,7 +390,67 @@ namespace VrFencing.Blade
                 _dummy.SetDistanceMeters(_dummy.DistanceMeters + cue.DummyStandBackMeters);
             }
 
+            _attackDistanceMeters = _dummy.DistanceMeters;
             Restart();
+        }
+
+        /// <summary>
+        /// Beat Drills (PER-101): the Dummy stands at the Rep's distance with its arm straight and its blade in line at the
+        /// Fencer's chest (as near as the arm reaches), until the Fencer beats it.
+        /// </summary>
+        private void HoldBladeInLine(RepCue cue)
+        {
+            StandForAttack(cue);
+            _attack = null;
+            _judge = null;
+            _beatJudge.Reset();
+            _hasReportedBeat = false;
+            var layout = _dummy.Layout;
+            var chest = AttackAim.GetAimInDummyFrame(AttackTarget.Chest, layout, _dummy.DistanceMeters, null, System.Numerics.Vector3.UnitZ);
+            var rightHandedChest = layout.Hand == Hand.Left ? HandMirroring.MirrorPosition(chest) : chest;
+            _inLinePose = SwordArmReach.PoseToReach(layout.HeightMeters, rightHandedChest, BladePose.BladeLengthMeters);
+            Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: blade in line, Dummy at {_dummy.DistanceMeters:0.00} m.");
+        }
+
+        /// <summary>Stop Hit Drills (PER-101): tells the runner once the attack's wind-up starts, so a Touch on the arm now counts.</summary>
+        private void ReportAttackUnderWay(double nowSeconds)
+        {
+            if (_attack == null || _hasReportedAttackUnderWay || _attack.GetPhase(nowSeconds) == AttackPhase.Waiting)
+            {
+                return;
+            }
+
+            _hasReportedAttackUnderWay = true;
+            _runner.ReportAttackUnderWay();
+        }
+
+        /// <summary>
+        /// Beat Drills (PER-101): judges this frame's contact on the blade in line (<see cref="BeatJudge"/>) and forwards the
+        /// first Beat that knocks it out of line.
+        /// </summary>
+        private void JudgeBeat(double nowSeconds, BladeClash? clash)
+        {
+            if (_inLinePose == null || _hasReportedBeat)
+            {
+                return;
+            }
+
+            if (clash.HasValue)
+            {
+                _beatJudge.ReportClash(clash.Value);
+            }
+
+            var beat = _beatJudge.Step(nowSeconds, _blade.Swing.TipOffset, _detector.IsInContact || _blade.IsPressed);
+            if (!beat.HasValue)
+            {
+                return;
+            }
+
+            _hasReportedBeat = true;
+            var report = beat.Value;
+            Debug.Log($"[ArmedDummy] Beat: point knocked {report.OutOfLineMeters * 100.0f:0} cm out of line, Fencer blade at " +
+                $"{report.FencerBladeFraction:0.00}, Dummy blade at {report.DummyBladeFraction:0.00}.");
+            _runner.ReportBeat(report);
         }
 
         private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)

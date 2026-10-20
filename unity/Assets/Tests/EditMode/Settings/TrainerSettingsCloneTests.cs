@@ -52,6 +52,7 @@ namespace VrFencing.Tests.Settings
             settings.ArmedDummy.RiposteInSlowParries = false;
             settings.ArmedDummy.RiposteInFastParries = false;
             settings.ArmedDummy.RiposteInLowParries = false;
+            settings.ArmedDummy.RiposteInLungeParries = false;
 
             Assert.That(SettingsLeaves.Read(settings.Clone()), Is.EqualTo(SettingsLeaves.Read(settings)));
         }
