@@ -49,9 +49,9 @@ namespace VrFencing.Dummy
     ///   reach, the back foot drags forward the least it must (<see cref="FootworkTuning.LungeBackLegReachFraction"/>)
     ///   and steps back in the recovery.
     /// - Knees come from analytic two-bone IK, bending the way they bend in en garde.
-    /// - Only the hips and legs move in the Dummy frame: the hips dip in a step, drop and stay back in a lunge, crouch in a
-    ///   fleche, breathe and shift weight when standing. The shoulders, head and sword arm ride rigidly with the Dummy
-    ///   frame, so the head stays level and the Armed Dummy's aim is untouched.
+    /// - The hips dip in a step, drop and stay back in a lunge, crouch in a fleche, breathe and shift weight when
+    ///   standing. The upper body rides on them and leans with them (PER-115, <see cref="DummyTorso"/>, posed by
+    ///   <see cref="DummyLayout.PoseLegs"/>), so the whole body moves as one.
     /// - Each step's duration, lift, foot pitch, hip dip and foot rhythm vary slightly, and the breathing and weight shift
     ///   never repeat exactly, all drawn from one seeded random generator, so no two steps look the same and tests repeat.
     ///
@@ -278,6 +278,18 @@ namespace VrFencing.Dummy
             ComposeLegs();
         }
 
+        /// <summary>
+        /// How far the hips have moved from en garde (right-handed Dummy frame, before the life layer) with the body
+        /// <paramref name="offsetMeters"/> into a lunge of <paramref name="lungeLengthMeters"/>: down and back, deeper as
+        /// the lunge goes on. The Armed Dummy plans its thrust from the shoulder this puts the torso at (PER-115).
+        /// </summary>
+        public static Vector3 GetLungeHipOffset(float heightMeters, float offsetMeters, float lungeLengthMeters)
+        {
+            var depth = lungeLengthMeters > 0.0f ? SmoothStep(offsetMeters / lungeLengthMeters) : 0.0f;
+            return new Vector3(
+                0.0f, -FootworkTuning.LungeHipDropPerHeight * heightMeters * depth, -FootworkTuning.LungeHipBackPerHeight * heightMeters * depth);
+        }
+
         /// <summary>The minimum-jerk curve from 0 to 1: zero speed and acceleration at both ends.</summary>
         public static float MinimumJerk(float fraction)
         {
@@ -428,9 +440,7 @@ namespace VrFencing.Dummy
             }
 
             DistanceMeters = _lungeStart - offsetMeters;
-            var depth = SmoothStep(offsetMeters / _lungeLengthMeters);
-            _moveHipOffset = new Vector3(
-                0.0f, -FootworkTuning.LungeHipDropPerHeight * _heightMeters * depth, -FootworkTuning.LungeHipBackPerHeight * _heightMeters * depth);
+            _moveHipOffset = GetLungeHipOffset(_heightMeters, offsetMeters, _lungeLengthMeters);
 
             if (CurrentStep == FootworkStep.Lunging)
             {

@@ -53,8 +53,8 @@ namespace VrFencing.Dummy
         public const float BackFootHeelUpDegrees = 8.0f;
 
         /// <summary>
-        /// The hips dip this much at mid-step and rise again (PER-111): about 1.4 cm at 1.8 m. Only the hips: the
-        /// shoulders, head and sword arm ride level, so the head stays level and the Armed Dummy's aim is untouched.
+        /// The hips dip this much at mid-step and rise again (PER-111): about 1.4 cm at 1.8 m. The upper body rides on the
+        /// hips (PER-115, <see cref="DummyTorso"/>), so the shoulders, head and arms dip with them.
         /// </summary>
         public const float StepHipDipPerHeight = 0.008f;
 
@@ -88,7 +88,7 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// The hips rise and settle this much with each breath (the knees straighten a little): about 7 mm at 1.8 m. The
-        /// shoulders and head do not move (see <see cref="StepHipDipPerHeight"/>).
+        /// upper body rises and settles with them (see <see cref="StepHipDipPerHeight"/>).
         /// </summary>
         public const float BreathHipRisePerHeight = 0.004f;
 
@@ -128,9 +128,9 @@ namespace VrFencing.Dummy
         public const float LungeHipDropPerHeight = 0.17f;
 
         /// <summary>
-        /// In a full lunge the hips stay this far behind the shoulders (the body leans forward about 25 degrees from the
-        /// hips). The shoulders, head and sword arm ride with the Dummy frame exactly as before, so the Armed Dummy's
-        /// aim, timing and judging do not change; only the hips, the legs and the bottom of the body Target Zone move.
+        /// In a full lunge the hips stay this far behind where they stand in en garde, as the back leg cannot reach further.
+        /// The torso leans in over them (<see cref="LungeTorsoLeanDegrees"/>, PER-115) and carries the shoulders, head and
+        /// arms; the Armed Dummy plans its thrust from where that puts the sword shoulder.
         /// </summary>
         public const float LungeHipBackPerHeight = 0.22f;
 
@@ -196,5 +196,40 @@ namespace VrFencing.Dummy
 
         /// <summary>The hips drop this much at mid-fleche, a running crouch.</summary>
         public const float FlecheHipDropPerHeight = 0.04f;
+
+        // ---- Upper body (PER-115, DummyTorso) ----
+
+        /// <summary>
+        /// In a full lunge (hips <see cref="LungeHipBackPerHeight"/> back) the torso leans this far forward about the hips,
+        /// over the front leg, as an épée fencer's does. Hips further forward or back lean it in proportion, so a weight
+        /// shift onto the back leg tips the chest forward a degree or so.
+        /// </summary>
+        public const float LungeTorsoLeanDegrees = 35.0f;
+
+        /// <summary>
+        /// Hips dropped by <see cref="LungeHipDropPerHeight"/> add this much forward lean: a crouch (a fleche, a deep step)
+        /// bends the body a little.
+        /// </summary>
+        public const float HipDropTorsoLeanDegrees = 5.0f;
+
+        /// <summary>The torso never leans further forward than this.</summary>
+        public const float MaximumTorsoLeanDegrees = 40.0f;
+
+        /// <summary>
+        /// The torso never leans further back than this: with the hips shifted forward it straightens, it does not arch.
+        /// </summary>
+        public const float MaximumTorsoLeanBackDegrees = 3.0f;
+
+        /// <summary>
+        /// The head tilts this fraction of the torso's lean (the neck takes the rest), so in a lunge it follows the chest
+        /// down but keeps looking at the Fencer.
+        /// </summary>
+        public const float HeadFollowsLeanFraction = 0.4f;
+
+        /// <summary>
+        /// The back arm tilts this fraction of the torso's lean about its shoulder, so it stays raised behind in a lunge
+        /// instead of swinging over with the chest; the hand, furthest from the hips, then never outruns the Blade's sweep.
+        /// </summary>
+        public const float BackArmFollowsLeanFraction = 0.3f;
     }
 }

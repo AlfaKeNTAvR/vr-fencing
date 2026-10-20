@@ -406,11 +406,18 @@ namespace VrFencing.Tests.Drills
             return (ArmedDummyAttack.Plan(0.0, delaySeconds, height, hand, aim, speed, DistancePresets.BladeLengthMeters, lunge), aim);
         }
 
-        /// <summary>The point at <paramref name="nowSeconds"/> in the Dummy frame where the attack started: the arm's point plus the lunge.</summary>
+        /// <summary>
+        /// The point at <paramref name="nowSeconds"/> in the Dummy frame where the attack started: the arm's point from the
+        /// shoulder where the lunging torso has it (PER-115), plus the lunge.
+        /// </summary>
         private static Vector3 PointOnFloorFrame(ArmedDummyAttack attack, double nowSeconds, Hand hand, float height)
         {
-            var point = new SwordArm(height, hand, attack.GetPose(nowSeconds)).GetBladePoint(DistancePresets.BladeLengthMeters);
-            return point + new Vector3(0.0f, 0.0f, attack.GetLungeOffsetMeters(nowSeconds));
+            var offset = attack.GetLungeOffsetMeters(nowSeconds);
+            var hipOffset = attack.LungeMeters > 0.0f ? DummyFootwork.GetLungeHipOffset(height, offset, attack.LungeMeters) : Vector3.Zero;
+            var shoulder = DummyTorso.GetSwordShoulder(height, hipOffset);
+            var point = SwordArmReach.GetPoint(height, shoulder, attack.GetPose(nowSeconds), DistancePresets.BladeLengthMeters);
+            var pointForHand = hand == Hand.Left ? HandMirroring.MirrorPosition(point) : point;
+            return pointForHand + new Vector3(0.0f, 0.0f, offset);
         }
     }
 }

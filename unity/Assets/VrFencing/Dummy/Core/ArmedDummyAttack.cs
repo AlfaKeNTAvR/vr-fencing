@@ -44,7 +44,8 @@ namespace VrFencing.Dummy
     /// recovery (<see cref="GetLungeOffsetMeters"/>).
     ///
     /// The thrust moves the point along a straight line from the wind-up to the aim (<see cref="Path"/>), the arm
-    /// posed by <see cref="SwordArmReach.PoseToReach"/> at each instant, so every pose is within the joint limits and
+    /// posed by <see cref="SwordArmReach.PoseToReach"/> at each instant from where the lunging torso has the shoulder
+    /// (PER-115), so every pose is within the joint limits and
     /// the point's peak speed is the speed level's. All numbers are in <see cref="ArmedDummyTuning"/>.
     /// Poses are right-handed (<see cref="SwordArmPose"/>); positions are in the Dummy's own frame. Times in seconds on
     /// any one clock.
@@ -87,9 +88,11 @@ namespace VrFencing.Dummy
             _guard = SwordArmReach.PoseEnGarde(heightMeters, bladeLengthMeters);
             _windUp = SwordArmReach.PoseWindUp(heightMeters, bladeLengthMeters);
             _rightHandedStart = SwordArmReach.GetPoint(heightMeters, _windUp, bladeLengthMeters);
-            // A lunge carries the shoulder forward, so the arm reaches for the aim from where the lunge ends.
-            _thrust = SwordArmReach.PoseToReach(heightMeters, rightHandedAim - Lunge(lungeMeters), bladeLengthMeters);
-            _rightHandedAim = SwordArmReach.GetPoint(heightMeters, _thrust, bladeLengthMeters) + Lunge(lungeMeters);
+            // A lunge carries the shoulder forward, down and in with the leaning torso (PER-115), so the arm reaches for
+            // the aim from where the shoulder is when the lunge ends.
+            var lungeShoulder = GetShoulderInLunge(lungeMeters);
+            _thrust = SwordArmReach.PoseToReach(heightMeters, lungeShoulder, rightHandedAim - Lunge(lungeMeters), bladeLengthMeters);
+            _rightHandedAim = SwordArmReach.GetPoint(heightMeters, lungeShoulder, _thrust, bladeLengthMeters) + Lunge(lungeMeters);
 
             var lengthMeters = Vector3.Distance(_rightHandedStart, _rightHandedAim);
             ThrustSeconds = Math.Max(
@@ -251,7 +254,8 @@ namespace VrFencing.Dummy
                 case AttackPhase.Thrust:
                     var progress = Path.GetProgress(nowSeconds);
                     var point = Vector3.Lerp(_rightHandedStart, _rightHandedAim, progress);
-                    return SwordArmReach.PoseToReach(_heightMeters, point - Lunge(LungeMeters * progress), _bladeLengthMeters);
+                    var offset = LungeMeters * progress;
+                    return SwordArmReach.PoseToReach(_heightMeters, GetShoulderInLunge(offset), point - Lunge(offset), _bladeLengthMeters);
                 case AttackPhase.Hold:
                     return _holdPose;
                 case AttackPhase.Recover:
@@ -335,14 +339,25 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// How long the recovery from <paramref name="lungeMeters"/> forward takes: <see cref="ArmedDummyTuning.RecoverSeconds"/>,
-        /// or longer for a long lunge (a tall Dummy's), so the body comes back no faster than
-        /// <see cref="ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond"/> (PER-114).
+        /// or longer for a long lunge (a tall Dummy's), so the body, and the arm riding the rising torso, come back no
+        /// faster than <see cref="ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond"/> (PER-114, PER-115).
         /// </summary>
         private static float GetRecoverSeconds(float lungeMeters)
         {
             return Math.Max(
                 ArmedDummyTuning.RecoverSeconds,
-                AttackPath.MinimumJerkPeakFactor * lungeMeters / ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond);
+                AttackPath.MinimumJerkPeakFactor * lungeMeters * ArmedDummyTuning.RecoverUpperBodySpeedFactor
+                / ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond);
+        }
+
+        /// <summary>
+        /// The right-handed sword shoulder with the body <paramref name="offsetMeters"/> into this attack's lunge, as the
+        /// footwork poses the hips and the torso leans on them (before the breathing and weight shift, a centimeter or two).
+        /// </summary>
+        private Vector3 GetShoulderInLunge(float offsetMeters)
+        {
+            var hipOffset = LungeMeters > 0.0f ? DummyFootwork.GetLungeHipOffset(_heightMeters, offsetMeters, LungeMeters) : Vector3.Zero;
+            return DummyTorso.GetSwordShoulder(_heightMeters, hipOffset);
         }
 
         /// <summary>The Dummy frame's move for a lunge of <paramref name="meters"/>: forward, toward the Fencer (+z).</summary>
