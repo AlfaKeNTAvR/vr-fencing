@@ -2,24 +2,29 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using VrFencing.Blade;
+using VrFencing.Session;
 using VrFencing.Settings;
 using VrFencing.Strip;
 
 namespace VrFencing.Partner
 {
     /// <summary>
-    /// The bout's judge on this headset (PER-82, decided in PER-56 and PER-74), while connected to a partner:
+    /// The bout on this headset (PER-82 and PER-83, decided in PER-56, PER-57, PER-58, PER-72, PER-74 and PER-75), while
+    /// connected to a partner:
     /// <list type="bullet">
     /// <item>Detects this Fencer's Touches on the opponent as drawn here (<see cref="OpponentTouchSensor"/>, with this
     /// Fencer's Touch rule and the Host's Touch pressure) and claims them; glances and flat contacts only play their
-    /// haptic and flash here (a glance also leaves a faint mark), they never light.</item>
-    /// <item>Runs <see cref="BoutLink"/> (plain C#): pings for the synced clock and the ping text, claims, the judge on
-    /// the Host, the lights.</item>
-    /// <item>Draws the scoring box above the bout Strip's centre, and buzzes both controllers when this Fencer is
-    /// touched.</item>
+    /// haptic and flash here (a glance also leaves a faint mark, and counts in Paired Practice), they never light.</item>
+    /// <item>Reads this Fencer's stance (behind their bout En Garde Line, off their own Strip) and, on the Host, how far
+    /// apart the two bodies are, for the bout flow.</item>
+    /// <item>Runs <see cref="BoutLink"/> (plain C#): pings for the synced clock, claims, the judge and the flow on the
+    /// Host, the lights, the calls and the Paired Practice tally.</item>
+    /// <item>Draws the scoring box above the bout Strip's centre with the call, the halt's reason and the prompt or
+    /// tally; speaks the calls; moves the drawn En Garde Lines to the bout's; buzzes both controllers when this Fencer
+    /// is touched; in Paired Practice fades the opponent at corps-a-corps; saves each ended tally to the Session log.</item>
     /// </list>
     /// Its messages travel as their own Netcode named message (<see cref="MessageName"/>), beside the body and blade
-    /// streams. Every claim, verdict and light logs a <c>[Bout]</c> line.
+    /// streams. Every claim, verdict, light and flow change logs a <c>[Bout]</c> line.
     /// </summary>
     [RequireComponent(typeof(PartnerSessionBehaviour))]
     // After the opponent view has drawn this frame's opponent (110).
@@ -31,7 +36,7 @@ namespace VrFencing.Partner
 
         private const string LogTag = "[Bout]";
 
-        // Room for the largest message with its length prefix.
+        // Room for the largest message (the flow, 47 bytes) with its length prefix.
         private const int WriterCapacityBytes = 64;
 
         [SerializeField]
@@ -39,8 +44,12 @@ namespace VrFencing.Partner
         private BladeBehaviour _blade;
 
         [SerializeField]
-        [Tooltip("This Fencer's Strip: the frame the box is drawn in, and the off-Strip rule. Found in the scene if empty.")]
+        [Tooltip("This Fencer's Strip: the frame the box is drawn in, the off-Strip rule, and the drawn En Garde Lines. Found in the scene if empty.")]
         private StripBehaviour _strip;
+
+        [SerializeField]
+        [Tooltip("The Session log a Paired Practice tally is saved to when it ends. Found in the scene if empty; without one, nothing is saved.")]
+        private SessionRecorderBehaviour _session;
 
         private readonly OpponentTouchSensor _sensor = new OpponentTouchSensor();
 
@@ -52,16 +61,31 @@ namespace VrFencing.Partner
         private TrainerSettings _settings;
         private BoutLink _link;
         private ScoringBoxView _box;
+        private BoutVoice _voice;
         private bool _wasConnected;
+        private bool _isOffOwnStrip;
         private int _loggedRejectedMessages;
 
         /// <summary>The judge's protocol while connected (null otherwise), for the PC Editor's Partner window.</summary>
         public BoutLink Link => _link;
 
-        /// <summary>Takes changed Settings: the Touch rule and pressure, the double window (as Host).</summary>
+        /// <summary>Takes changed Settings: the Touch rule and pressure, the double window (as Host), the off-strip tolerance.</summary>
         public void ApplySettings(TrainerSettings settings)
         {
             _settings = settings.Clone();
+        }
+
+        /// <summary>Either Fencer resets the Paired Practice tally (the Partner page's Reset tally); it is saved first.</summary>
+        public void ResetTally()
+        {
+            if (_link == null)
+            {
+                return;
+            }
+
+            _link.ResetTally();
+            FlushLog();
+            SaveEndedTallies();
         }
 
         private void Awake()
@@ -72,6 +96,7 @@ namespace VrFencing.Partner
             _opponentView = GetComponent<OpponentViewBehaviour>();
             _blade = _blade != null ? _blade : FindFirstObjectByType<BladeBehaviour>();
             _strip = _strip != null ? _strip : FindFirstObjectByType<StripBehaviour>();
+            _session = _session != null ? _session : FindFirstObjectByType<SessionRecorderBehaviour>();
             _settings = SettingsFile.Load();
         }
 
@@ -95,6 +120,7 @@ namespace VrFencing.Partner
         {
             Unregister();
             _box?.Dispose();
+            _voice?.Dispose();
         }
 
         private void LateUpdate()
@@ -118,14 +144,18 @@ namespace VrFencing.Partner
             }
 
             _box ??= new ScoringBoxView();
+            _voice ??= new BoutVoice();
             _link.SetMyRules(new BoutRules(_settings.Blade.TouchPressure, _settings.BoutDoubleWindowSeconds));
+            _link.SetMode(_partner.State.Mode, now);
+            ReadStance();
             DetectTouches(now);
             _link.Tick(now);
             SendOutgoing();
+            FlushLog();
 
-            foreach (var line in _link.TakeLog())
+            foreach (var call in _link.TakeCalls())
             {
-                Debug.Log(line);
+                _voice.Say(call);
             }
 
             if (_link.TakeBeingTouched() && _blade != null)
@@ -133,8 +163,10 @@ namespace VrFencing.Partner
                 _blade.PlayBeingTouched();
             }
 
+            SaveEndedTallies();
             LogRejectedMessages();
             DrawBox(now);
+            DrawLinesAndFade();
         }
 
         private void OnConnectionChanged(bool isConnected)
@@ -146,14 +178,47 @@ namespace VrFencing.Partner
             {
                 var me = _partner.State.Role == PartnerRole.Host ? BoutSide.Host : BoutSide.Partner;
                 _link = new BoutLink(me);
-                Debug.Log($"{LogTag} Judging the bout as the {me}{(me == BoutSide.Host ? " (the judge runs here)" : string.Empty)}.");
+                Debug.Log($"{LogTag} Judging the bout as the {me}{(me == BoutSide.Host ? " (the judge and the bout flow run here)" : string.Empty)}.");
+                return;
             }
-            else
+
+            // A Paired Practice tally in progress ends with the session.
+            _link?.Clear();
+            FlushLog();
+            SaveEndedTallies();
+            _link = null;
+            _box?.SetVisible(false);
+            if (_strip != null)
             {
-                _link = null;
-                _box?.SetVisible(false);
-                Unregister();
+                _strip.ShowBoutEnGardeLines(null);
             }
+
+            if (_opponentView != null)
+            {
+                _opponentView.IsFadedForCorpsACorps = false;
+            }
+
+            Unregister();
+        }
+
+        /// <summary>This Fencer's place on the bout Strip, and on the Host how far apart the two bodies are drawn.</summary>
+        private void ReadStance()
+        {
+            var local = _opponentLink != null ? _opponentLink.Local : null;
+            var bout = _opponentLink != null ? _opponentLink.Link.Bout : null;
+            if (local == null || bout == null)
+            {
+                _isOffOwnStrip = false;
+                _link.SetMyStance(null, null);
+                return;
+            }
+
+            var hasPlacedStrip = _strip != null && _strip.IsPlaced;
+            var stance = FencerStance.Read(local.Body, local.Head?.Position, local.Strip, bout, OffStripToleranceMeters, hasPlacedStrip);
+            _isOffOwnStrip = stance.OffStrip != OffStripKind.None;
+            var view = _opponentView != null ? _opponentView.DrawnView : null;
+            var opponentBody = view != null && !view.IsBodyStale ? view.Body : null;
+            _link.SetMyStance(stance, FencerStance.GetBodiesApartMeters(local.Body, local.Head?.Position, opponentBody));
         }
 
         /// <summary>This Fencer's blade against the opponent as drawn this frame; Touches are claimed, the rest only felt.</summary>
@@ -182,10 +247,13 @@ namespace VrFencing.Partner
                         break;
                     case BladeEventType.TipGlance:
                         _box.MarkGlance(ToRoom(bladeEvent.ContactPoint), Time.time);
+                        _link.ReportGlance();
                         break;
                 }
             }
         }
+
+        private float OffStripToleranceMeters => _strip != null ? _strip.OffStripToleranceMeters : 0.0f;
 
         /// <summary>The off-Strip rule needs a placed Strip; without one (the PC Editor's replay) a Touch is never off it.</summary>
         private bool IsOffOwnStrip(LocalFencerFrame local)
@@ -215,6 +283,59 @@ namespace VrFencing.Partner
                 _link.Box.IsMyLampLit(now),
                 _link.Box.IsOpponentsLampLit(now),
                 ScoringBox.FormatPing(_link.Clock.RoundTripSeconds));
+            var info = _link.HasHostFlow ? BoutCall.FormatInfo(_link.FlowState, _link.Me, _link.Tally, _isOffOwnStrip) : string.Empty;
+            _box.DrawFlow(_link.Announcer.Word, _link.Announcer.Reason, info);
+        }
+
+        /// <summary>The bout's En Garde Lines drawn on this Fencer's Strip; in Paired Practice, the opponent faded at corps-a-corps.</summary>
+        private void DrawLinesAndFade()
+        {
+            var bout = _opponentLink != null ? _opponentLink.Link.Bout : null;
+            if (_strip != null)
+            {
+                _strip.ShowBoutEnGardeLines(bout != null ? (bout.MyEnGardeLineZ, bout.OpponentEnGardeLineZ) : ((float, float)?)null);
+            }
+
+            if (_opponentView == null)
+            {
+                return;
+            }
+
+            var local = _opponentLink != null ? _opponentLink.Local : null;
+            var view = _opponentView.DrawnView;
+            var apart = local != null && view != null ? FencerStance.GetBodiesApartMeters(local.Body, local.Head?.Position, view.Body) : null;
+            _opponentView.IsFadedForCorpsACorps = _link.FlowState.Mode == PartnerMode.PairedPractice
+                                                  && apart.HasValue && apart.Value < FencerStance.CorpsACorpsMeters;
+        }
+
+        private void SaveEndedTallies()
+        {
+            foreach (var ended in _link.TakeEndedTallies())
+            {
+                var role = _link.Me.ToString();
+                Debug.Log($"{LogTag} Paired Practice tally ended ({ended.End}): you {BoutCall.FormatCounts(ended.Mine)}; opponent {BoutCall.FormatCounts(ended.Opponents)}.");
+                var recorder = _session != null ? _session.Recorder : null;
+                if (recorder == null)
+                {
+                    Debug.LogWarning($"{LogTag} No Session log in this scene; the tally is not saved.");
+                    continue;
+                }
+
+                recorder.RecordPairedPractice(role, ended.End, ended.Mine, ended.Opponents);
+            }
+        }
+
+        private void FlushLog()
+        {
+            if (_link == null)
+            {
+                return;
+            }
+
+            foreach (var line in _link.TakeLog())
+            {
+                Debug.Log(line);
+            }
         }
 
         private Vector3 ToRoom(System.Numerics.Vector3 pointInStrip)

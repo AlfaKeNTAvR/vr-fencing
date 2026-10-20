@@ -15,6 +15,8 @@ namespace VrFencing.UI
     {
         // The join code is read across a room: about 4.5 cm capitals.
         private const float CodeFontSize = 0.64f;
+        // The version and the voice credits: three small lines at the foot of the page.
+        private const float CreditsFontSize = 0.12f;
         // 20 keys in 3 rows of 7: 9 cm by 7.5 cm, easy to hit with the laser at arm's length.
         private const float KeySpacingMeters = 0.1f;
         private const float FirstKeyRowY = 0.07f;
@@ -32,6 +34,7 @@ namespace VrFencing.UI
         private readonly UiButton _leave;
         private readonly UiButton _back;
         private readonly UiButton _mode;
+        private readonly UiButton _resetTally;
 
         private readonly CodeKeypad _keypad = new CodeKeypad();
         private readonly TextMeshPro _typed;
@@ -47,6 +50,7 @@ namespace VrFencing.UI
             Action<string> joinCode,
             Action cancelKeypad,
             Action switchMode,
+            Action resetTally,
             Action leave,
             Action back)
         {
@@ -65,7 +69,11 @@ namespace VrFencing.UI
                 TextAlignmentOptions.Center, UiKit.TextColor);
             _status = UiKit.CreateText(page, "Status", new Vector2(0.0f, 0.05f), new Vector2(0.72f, 0.06f), 1, UiKit.SmallFontSize,
                 TextAlignmentOptions.Center, UiKit.DimTextColor);
-            _mode = UiButton.Create(page, "Mode", new Vector2(0.0f, -0.035f), new Vector2(0.46f, 0.065f), UiKit.BodyFontSize, switchMode);
+            _mode = UiButton.Create(page, "Mode", new Vector2(-0.1f, -0.035f), new Vector2(0.46f, 0.065f), UiKit.BodyFontSize, switchMode);
+
+            // Paired Practice only (PER-83): either Fencer zeroes both tallies; the old one is saved to the Session log.
+            _resetTally = UiButton.Create(page, "Reset Tally", new Vector2(0.255f, -0.035f), new Vector2(0.2f, 0.065f), UiKit.SmallFontSize, resetTally);
+            _resetTally.SetLabel("Reset tally");
 
             var buttonSize = new Vector2(0.21f, 0.07f);
             _host = UiButton.Create(page, "Host", new Vector2(-0.25f, -0.135f), buttonSize, UiKit.BodyFontSize, host);
@@ -75,9 +83,11 @@ namespace VrFencing.UI
             _leave = UiButton.Create(page, "Leave", new Vector2(0.25f, -0.135f), buttonSize, UiKit.BodyFontSize, leave);
             _leave.SetLabel("Leave");
 
-            _message = UiKit.CreateText(page, "Message", new Vector2(0.0f, -0.215f), new Vector2(0.72f, 0.06f), 1, UiKit.SmallFontSize,
+            _message = UiKit.CreateText(page, "Message", new Vector2(0.0f, -0.2f), new Vector2(0.72f, 0.045f), 1, UiKit.SmallFontSize,
                 TextAlignmentOptions.Center, UiKit.NoteTextColor);
-            _version = UiKit.CreateText(page, "Version", new Vector2(0.0f, -0.265f), new Vector2(0.72f, 0.03f), 1, UiKit.TinyFontSize,
+
+            // The app version, then the voice's credits (PER-75: the attribution the clips' licences ask for).
+            _version = UiKit.CreateText(page, "Version", new Vector2(0.0f, -0.255f), new Vector2(0.74f, 0.06f), 1, CreditsFontSize,
                 TextAlignmentOptions.Center, UiKit.DimTextColor);
 
             _keypadRoot = new GameObject("Keypad");
@@ -153,7 +163,7 @@ namespace VrFencing.UI
             UiKit.SetText(_headline, PartnerPageText.FormatHeadline(session));
             UiKit.SetText(_status, PartnerPageText.FormatStatus(session));
             UiKit.SetText(_message, session.Message);
-            UiKit.SetText(_version, $"App version {appVersion}");
+            UiKit.SetText(_version, $"App version {appVersion}. {BoutCall.Credits}");
             _host.SetInteractable(session.CanHost);
             _join.SetInteractable(session.CanJoin);
             _leave.SetInteractable(session.CanLeave);
@@ -162,6 +172,7 @@ namespace VrFencing.UI
             _mode.SetVisible(isModeShown);
             _mode.SetLabel(PartnerPageText.FormatMode(session));
             _mode.SetInteractable(session.CanSwitchMode);
+            _resetTally.SetVisible(session.Phase == PartnerPhase.Connected && session.Mode == PartnerMode.PairedPractice);
         }
 
         private void PressKey(char key)

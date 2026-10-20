@@ -35,6 +35,19 @@ namespace VrFencing.Partner
         private const float PingFontSize = 0.6f;
         private const float PingBelowBoxMeters = 0.09f;
 
+        // The call ("En garde!", "Halte!") in letters about 15 cm tall above the box, read across the Strip (PER-74);
+        // the halt's reason under it, just above the box; the prompt or tally under the ping.
+        private const float CallFontSize = 2.2f;
+        private const float CallAboveBoxMeters = 0.3f;
+        private const float ReasonFontSize = 0.9f;
+        private const float ReasonAboveBoxMeters = 0.09f;
+        private const float InfoFontSize = 0.6f;
+        private const float InfoBelowPingMeters = 0.13f;
+        private const float TextWidthMeters = 2.0f;
+
+        private static readonly Color CallColor = new Color(1.0f, 0.92f, 0.3f, 1.0f);
+        private static readonly Color InfoColor = new Color(0.85f, 0.9f, 1.0f, 1.0f);
+
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly Color BoxColor = new Color(0.08f, 0.08f, 0.1f, 1.0f);
         private static readonly Color MyLampLit = new Color(0.1f, 1.0f, 0.2f, 1.0f);
@@ -48,6 +61,9 @@ namespace VrFencing.Partner
         private readonly Renderer _myLamp;
         private readonly Renderer _opponentLamp;
         private readonly TextMeshPro _ping;
+        private readonly TextMeshPro _call;
+        private readonly TextMeshPro _reason;
+        private readonly TextMeshPro _info;
         private readonly Renderer _glanceMark;
         private bool? _isMyLampLit;
         private bool? _isOpponentLampLit;
@@ -70,7 +86,11 @@ namespace VrFencing.Partner
             _myLamp = CreatePart("Your Lamp", material, MyLampDim, new Vector3(-LampSideOffsetMeters, 0.0f, lampDepth), lampScale);
             _opponentLamp = CreatePart("Opponent Lamp", material, OpponentLampDim, new Vector3(LampSideOffsetMeters, 0.0f, lampDepth), lampScale);
 
-            _ping = CreatePingText(_root.transform);
+            var pingY = -(BoxHeightMeters * 0.5f) - PingBelowBoxMeters;
+            _ping = CreateText(_root.transform, "Ping", pingY, PingFontSize, Color.white, TextAlignmentOptions.Center);
+            _call = CreateText(_root.transform, "Call", (BoxHeightMeters * 0.5f) + CallAboveBoxMeters, CallFontSize, CallColor, TextAlignmentOptions.Center);
+            _reason = CreateText(_root.transform, "Reason", (BoxHeightMeters * 0.5f) + ReasonAboveBoxMeters, ReasonFontSize, CallColor, TextAlignmentOptions.Center);
+            _info = CreateText(_root.transform, "Info", pingY - InfoBelowPingMeters, InfoFontSize, InfoColor, TextAlignmentOptions.Top);
 
             var markMaterial = Resources.Load<Material>(MarkMaterialResourcePath);
             _glanceMark = CreatePrimitive(PrimitiveType.Sphere, "Glance Mark", null, markMaterial, GlanceMarkColor, Vector3.zero, Vector3.one * GlanceMarkDiameterMeters);
@@ -106,10 +126,18 @@ namespace VrFencing.Partner
                 SetColor(_opponentLamp, isOpponentLampLit ? OpponentLampLit : OpponentLampDim);
             }
 
-            if (_ping != null && _ping.text != pingText)
-            {
-                _ping.text = pingText;
-            }
+            SetText(_ping, pingText);
+        }
+
+        /// <summary>
+        /// The bout flow's text (PER-83): the call in large letters above the box, the halt's reason under it, and the
+        /// prompt or Paired Practice tally under the ping. Empty strings hide them.
+        /// </summary>
+        public void DrawFlow(string call, string reason, string info)
+        {
+            SetText(_call, call);
+            SetText(_reason, reason);
+            SetText(_info, info);
         }
 
         /// <summary>A faint mark where a glance met the opponent, fading over <see cref="GlanceMarkSeconds"/>.</summary>
@@ -190,28 +218,37 @@ namespace VrFencing.Partner
             partRenderer.SetPropertyBlock(_propertyBlock);
         }
 
-        private static TextMeshPro CreatePingText(Transform parent)
+        private static void SetText(TextMeshPro text, string value)
+        {
+            if (text != null && text.text != value)
+            {
+                text.text = value;
+            }
+        }
+
+        private static TextMeshPro CreateText(Transform parent, string textName, float centerY, float fontSize, Color color, TextAlignmentOptions alignment)
         {
             if (TMP_Settings.defaultFontAsset == null)
             {
-                Debug.LogError("[Bout] No TextMeshPro default font (TMP Essentials missing); the ping is not drawn.");
+                Debug.LogError($"[Bout] No TextMeshPro default font (TMP Essentials missing); the {textName} text is not drawn.");
                 return null;
             }
 
-            var textObject = new GameObject("Ping", typeof(RectTransform));
+            var textObject = new GameObject(textName, typeof(RectTransform));
             textObject.transform.SetParent(parent, false);
 
             // TextMeshPro reads from its -z side, the box's front: this Fencer's side.
-            textObject.transform.SetLocalPositionAndRotation(
-                new Vector3(0.0f, -(BoxHeightMeters * 0.5f) - PingBelowBoxMeters, -BoxDepthMeters * 0.5f),
-                Quaternion.identity);
+            textObject.transform.SetLocalPositionAndRotation(new Vector3(0.0f, centerY, -BoxDepthMeters * 0.5f), Quaternion.identity);
             var text = textObject.AddComponent<TextMeshPro>();
             text.font = TMP_Settings.defaultFontAsset;
-            text.fontSize = PingFontSize;
-            text.rectTransform.sizeDelta = new Vector2(BoxWidthMeters, 0.12f);
-            text.alignment = TextAlignmentOptions.Center;
+            text.fontSize = fontSize;
+
+            // Tall enough for one line of its size; top-aligned text (the info) runs down from its centre line.
+            text.rectTransform.sizeDelta = new Vector2(TextWidthMeters, fontSize * 0.2f);
+            text.alignment = alignment;
             text.textWrappingMode = TextWrappingModes.NoWrap;
-            text.color = Color.white;
+            text.overflowMode = TextOverflowModes.Overflow;
+            text.color = color;
             var outline = Resources.Load<Material>(OutlineMaterialResourcePath);
             if (outline != null)
             {

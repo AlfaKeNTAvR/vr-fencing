@@ -108,7 +108,7 @@ namespace VrFencing.Tests.UI
         public void TheKeypadJoinsOnlyAFullCode()
         {
             var joined = new List<string>();
-            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, joined.Add, () => { }, () => { }, () => { }, () => { });
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, joined.Add, () => { }, () => { }, () => { }, () => { }, () => { });
             var session = new VrFencing.Partner.PartnerSession();
             session.BeginEnteringCode();
             screen.SetVisible(true);
@@ -133,7 +133,7 @@ namespace VrFencing.Tests.UI
         [Test]
         public void OnlyTheHostCanSwitchTheMode()
         {
-            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { });
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var guest = new VrFencing.Partner.PartnerSession();
             guest.BeginJoin("FGR78N");
             guest.OnJoined(VrFencing.Partner.PartnerMode.Bout);
