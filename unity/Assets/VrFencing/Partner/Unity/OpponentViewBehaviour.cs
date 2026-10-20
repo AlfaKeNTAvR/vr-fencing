@@ -27,13 +27,14 @@ namespace VrFencing.Partner
     public sealed class OpponentViewBehaviour : MonoBehaviour
     {
         private const string LogTag = "[Opponent]";
-        private const string MaterialResourcePath = "VrFencingDummy";
+        // The Dummy's fencing suit (PER-41), mask included: the opponent is dressed the same.
+        private const string MaterialResourcePath = "VrFencingSuit";
 
         /// <summary>This Fencer's blade as an obstacle for the opponent's: about the blade's half-width at the forte.</summary>
         private const float MyBladeRadiusMeters = 0.005f;
 
-        // The Dummy's silhouette color (DummyBehaviour), so the opponent reads as the same kind of figure.
-        private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f);
+        // The Dummy's suit color (DummyBehaviour), so the opponent reads as the same kind of figure.
+        private static readonly Color SilhouetteColor = new Color(0.97f, 0.97f, 0.95f);
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         [SerializeField]
@@ -304,6 +305,9 @@ namespace VrFencing.Partner
 
             var grip = view.Grip.Value;
             var blade = grip.ToBladeSettings();
+
+            // The partner's grip is on the wire; a pistol grip's shape is not (it is only drawn), so it shows as a Visconti.
+            _bladeVisual.SetGrip(grip.Mount, PistolGripShape.Visconti);
             if (_appliedFlex != grip.Flex)
             {
                 _drawnBlade.Flex.SetSoftness(grip.Flex);

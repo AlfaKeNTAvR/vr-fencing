@@ -28,6 +28,7 @@ namespace VrFencing.UI
         TouchPressure,
         BladeFlex,
         BladeMount,
+        PistolGrip,
         BladePitch,
         BladeYaw,
         BladeSet,
@@ -161,6 +162,7 @@ namespace VrFencing.UI
                 case SettingId.TouchPressure: return "Touch pressure";
                 case SettingId.BladeFlex: return "Blade flex";
                 case SettingId.BladeMount: return "Grip";
+                case SettingId.PistolGrip: return "Pistol grip";
                 case SettingId.BladePitch: return "Blade pitch (up +)";
                 case SettingId.BladeYaw: return "Blade yaw (right +)";
                 case SettingId.BladeSet: return "Blade set (curve)";
@@ -218,6 +220,8 @@ namespace VrFencing.UI
                     return settings.Blade.Flex.ToString();
                 case SettingId.BladeMount:
                     return FormatMount(settings.Blade.Mount);
+                case SettingId.PistolGrip:
+                    return settings.Blade.PistolGrip.ToString();
                 case SettingId.TouchHaptic:
                     return FormatHaptic(settings.Blade.TouchHaptic);
                 case SettingId.FlatHaptic:
@@ -258,6 +262,7 @@ namespace VrFencing.UI
                 case SettingId.TouchRule:
                 case SettingId.ParryRule:
                 case SettingId.BladeFlex:
+                case SettingId.PistolGrip:
                 case SettingId.BladePitch:
                 case SettingId.BladeYaw:
                 case SettingId.BladeSet:
@@ -340,6 +345,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.BladeMount:
                     changed.Blade.Mount = Cycle(settings.Blade.Mount, direction);
+                    break;
+                case SettingId.PistolGrip:
+                    changed.Blade.PistolGrip = Cycle(settings.Blade.PistolGrip, direction);
                     break;
                 case SettingId.TouchHaptic:
                     changed.Blade.TouchHaptic = Cycle(settings.Blade.TouchHaptic, direction);
