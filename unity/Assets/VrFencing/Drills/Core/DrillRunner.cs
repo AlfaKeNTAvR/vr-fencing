@@ -627,7 +627,8 @@ namespace VrFencing.Drills
                 CurrentCue.AttackTarget,
                 CurrentCue.AttackSpeed,
                 touchAfterBeatSeconds,
-                _beat?.OutOfLineMeters);
+                _beat?.OutOfLineMeters,
+                CurrentCue.DummyDifficulty);
         }
 
         private void AdvanceDueTransitions()
@@ -798,16 +799,18 @@ namespace VrFencing.Drills
             var distance = Drill.RepDummyDistances != null
                 ? Drill.RepDummyDistances[_random.Next(Drill.RepDummyDistances.Count)]
                 : Drill.GetDummyDistance(IsShrunk);
+            var difficulty = Drill.GetDummyDifficulty(CurrentRepIndex);
 
             switch (Drill.SuccessRule)
             {
                 case SuccessRule.FootworkCall:
                     var calls = Drill.FootworkCalls;
-                    return new RepCue(CurrentRepIndex, targetZone: null, Drill.CueType, distance, footworkCall: calls[_random.Next(calls.Count)]);
+                    return new RepCue(
+                        CurrentRepIndex, targetZone: null, Drill.CueType, distance, footworkCall: calls[_random.Next(calls.Count)], dummyDifficulty: difficulty);
 
                 case SuccessRule.TwoTouchesInOrder:
                     var pair = Drill.ZonePairs[_random.Next(Drill.ZonePairs.Count)];
-                    return new RepCue(CurrentRepIndex, pair.First, Drill.CueType, distance, secondTargetZone: pair.Second);
+                    return new RepCue(CurrentRepIndex, pair.First, Drill.CueType, distance, secondTargetZone: pair.Second, dummyDifficulty: difficulty);
 
                 case SuccessRule.Parry:
                 case SuccessRule.StopHit:
@@ -827,7 +830,8 @@ namespace VrFencing.Drills
                     return new RepCue(CurrentRepIndex, targetZone: null, Drill.CueType, distance);
 
                 default:
-                    return new RepCue(CurrentRepIndex, Drill.TargetZones[_random.Next(Drill.TargetZones.Count)], Drill.CueType, distance);
+                    return new RepCue(
+                        CurrentRepIndex, Drill.TargetZones[_random.Next(Drill.TargetZones.Count)], Drill.CueType, distance, dummyDifficulty: difficulty);
             }
         }
 

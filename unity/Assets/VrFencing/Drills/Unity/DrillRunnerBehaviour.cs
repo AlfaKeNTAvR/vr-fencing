@@ -10,7 +10,8 @@ namespace VrFencing.Drills
     /// (the Blade's contacts, the Strip's off-strip and back-on signals, the UI's start and cancel).
     /// When a run starts it stands the Dummy at the Drill's Dummy Distance (the shortened variant's when the run is
     /// shrunk), and in a Drill with a Dummy Distance per Rep (distance choice) moves it on every cue; when the run ends
-    /// it stands the Dummy back where the scene had it.
+    /// it stands the Dummy back where the scene had it. In a Drill whose Dummy keeps its distance (PER-105) it runs the
+    /// moving Dummy every frame of the run (<see cref="DistanceKeeperDriver"/>), at each Rep's difficulty.
     /// All rules live in the Core; this only supplies time and applies the Drill's data.
     /// </summary>
     public sealed class DrillRunnerBehaviour : MonoBehaviour
@@ -30,6 +31,8 @@ namespace VrFencing.Drills
 
         public DrillRunner Runner { get; private set; }
 
+        private DistanceKeeperDriver _distanceKeeper;
+
         private void Awake()
         {
             Runner = new DrillRunner(new UnityTimeClock(), new System.Random());
@@ -42,6 +45,9 @@ namespace VrFencing.Drills
             {
                 _dummy = FindFirstObjectByType<DummyBehaviour>();
             }
+
+            var cameraRig = FindFirstObjectByType<OVRCameraRig>();
+            _distanceKeeper = new DistanceKeeperDriver(_dummy, _strip, cameraRig != null ? cameraRig.centerEyeAnchor : null);
         }
 
         private void OnEnable()
@@ -65,6 +71,10 @@ namespace VrFencing.Drills
         private void Update()
         {
             Runner.Tick();
+            if (Runner.IsRunning && !Runner.IsPaused)
+            {
+                _distanceKeeper.Step(Time.timeAsDouble, Time.deltaTime);
+            }
         }
 
         private void OnDisable()
@@ -99,12 +109,22 @@ namespace VrFencing.Drills
             _dummy.SetDistance(distance);
             var variant = Runner.IsShrunk ? " (shortened)" : string.Empty;
             Debug.Log($"[Drills] {Runner.Drill.Name}{variant} started: Dummy at {distance} distance, {_dummy.DistanceMeters:0.00} m.");
+            var difficulty = Runner.Drill.GetDummyDifficulty(0);
+            if (difficulty.HasValue)
+            {
+                _distanceKeeper.Begin(difficulty.Value);
+            }
         }
 
         // Distance choice: the Dummy appearing at the Rep's distance is the cue. Rest separates it from the last Touch,
         // so it does not jump under a lunge in progress; the Blade restarts its sweep when the Dummy moves.
         private void OnRepCued(RepCue cue)
         {
+            if (cue.DummyDifficulty.HasValue)
+            {
+                _distanceKeeper.SetDifficulty(cue.DummyDifficulty.Value, cue.RepIndex);
+            }
+
             if (_dummy == null || Runner.Drill.RepDummyDistances == null)
             {
                 return;
@@ -116,6 +136,7 @@ namespace VrFencing.Drills
 
         private void OnRunFinished(DrillRunSummary summary)
         {
+            _distanceKeeper.End();
             if (_dummy != null)
             {
                 _dummy.ResetDistance();

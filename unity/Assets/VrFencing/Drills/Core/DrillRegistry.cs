@@ -68,8 +68,8 @@ namespace VrFencing.Drills
     /// <summary>
     /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38), 4 to 6 (PER-39), then the Armed Dummy's Parry
     /// Drills 7 to 9 (PER-100) and its Beat, Stop Hit and lunge Drills 10 to 12 (PER-101). Development builds also
-    /// list two test Drills after the real ones: one that never fits, to show a greyed-out row, and the Armed Dummy
-    /// feel test (PER-95).
+    /// list three test Drills after the real ones: one that never fits, to show a greyed-out row, the Armed Dummy
+    /// feel test (PER-95), and the moving Dummy's distance keeper (PER-105).
     ///
     /// Strip lengths are end to end, rear run-back included, as <c>StripGeometry.LengthMeters</c> measures them.
     /// The shortest Strip that can be placed is about 2 m end to end, so a 1 m requirement always fits.
@@ -84,6 +84,7 @@ namespace VrFencing.Drills
         public const string FootworkCallsDrillId = "footwork-calls";
         public const string FullPisteTestDrillId = "test-full-piste";
         public const string ArmedDummyTestDrillId = "test-armed-dummy";
+        public const string DistanceKeeperTestDrillId = "test-distance-keeper";
         public const string SlowParryDrillId = "parry-six-four-slow";
         public const string FastParryDrillId = "parry-six-four-fast";
         public const string LowParryDrillId = "parry-eight-seven";
@@ -265,6 +266,28 @@ namespace VrFencing.Drills
 
         public const string ArmedDummyTestTaskLine = "Test: parry the thrust, then riposte to the body.";
 
+        public const string DistanceKeeperTestTaskLine = "Test: Dummy keeps distance. Easy, Medium, Hard.";
+
+        /// <summary>
+        /// The distance keeper's feel test (PER-105): its difficulties in turn by Rep, so one run compares all three.
+        /// </summary>
+        public static readonly IReadOnlyList<DummyDifficulty> DistanceKeeperTestDifficulties = new[]
+        {
+            DummyDifficulty.Easy, DummyDifficulty.Medium, DummyDifficulty.Hard,
+        };
+
+        /// <summary>
+        /// The distance keeper's feel test: time from the cue to the Touch. Longer than a named zone's 3 s, as the Dummy
+        /// keeps its distance and the Fencer has to work in to lunge distance and beat its reaction.
+        /// </summary>
+        public const float DistanceKeeperTestWindowSeconds = 6.0f;
+
+        /// <summary>
+        /// The distance keeper's feel test: Drill 2's lunge room plus about one advance and one retreat each way, so
+        /// the Dummy has room to back away before it reaches the far end (as Drills 5 and 6).
+        /// </summary>
+        public const float DistanceKeeperTestStripLengthMeters = 3.0f;
+
         public const string SlowParryTaskLine = "Parry 6 or 4, then riposte within 1 s.";
 
         public const string SlowParryOnlyTaskLine = "Parry 6 or 4 slow thrusts. No riposte.";
@@ -311,6 +334,7 @@ namespace VrFencing.Drills
             {
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
                 registry.Register(ArmedDummyTestDrillId, CreateArmedDummyTestDrill);
+                registry.Register(DistanceKeeperTestDrillId, CreateDistanceKeeperTestDrill);
             }
 
             return registry;
@@ -618,6 +642,33 @@ namespace VrFencing.Drills
                 taskLine: ArmedDummyTestTaskLine,
                 requiresRiposte: true,
                 attacks: AttackScript.EveryTargetAndSpeed);
+        }
+
+        /// <summary>
+        /// The moving Dummy's feel test (PER-105, development builds only): Drill 2 with a Dummy that keeps lunge
+        /// distance. It slides along the Strip as the Fencer advances and retreats, one reaction delay late (Easy, Medium
+        /// and Hard in turn by Rep), and stops at the Strip's far end. The named zone is also lit, to find it on a moving
+        /// Dummy; a point-first Touch on it within the window is the success.
+        /// </summary>
+        public static DrillDefinition CreateDistanceKeeperTestDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                DistanceKeeperTestDrillId,
+                "Test: Dummy keeps distance",
+                TestDrillOrder + 2,
+                requiredStripLengthMeters: DistanceKeeperTestStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: DistanceKeeperTestWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.NamedTargetZone,
+                SuccessRule.PointFirstTouchOnTargetZone,
+                AllTargetZones,
+                DummyDistance.Lunge,
+                taskLine: DistanceKeeperTestTaskLine,
+                lightsNamedZone: true,
+                dummyDifficulties: DistanceKeeperTestDifficulties);
         }
 
         /// <summary>

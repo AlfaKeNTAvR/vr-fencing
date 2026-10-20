@@ -88,7 +88,8 @@ namespace VrFencing.Drills
             TargetZone? secondTargetZone = null,
             FootworkAction? footworkCall = null,
             AttackTarget? attackTarget = null,
-            AttackSpeed? attackSpeed = null)
+            AttackSpeed? attackSpeed = null,
+            DummyDifficulty? dummyDifficulty = null)
         {
             RepIndex = repIndex;
             TargetZone = targetZone;
@@ -98,10 +99,16 @@ namespace VrFencing.Drills
             FootworkCall = footworkCall;
             AttackTarget = attackTarget;
             AttackSpeed = attackSpeed;
+            DummyDifficulty = dummyDifficulty;
         }
 
         /// <summary>Zero-based.</summary>
         public int RepIndex { get; }
+
+        /// <summary>
+        /// A Drill whose Dummy keeps its distance (PER-105): how fast it reacts this Rep; null when the Dummy stands still.
+        /// </summary>
+        public DummyDifficulty? DummyDifficulty { get; }
 
         /// <summary>The zone to Touch (a compound's first one); null for a footwork call and the Armed Dummy's attack cue.</summary>
         public TargetZone? TargetZone { get; }
@@ -154,9 +161,11 @@ namespace VrFencing.Drills
             AttackTarget? attackTarget = null,
             AttackSpeed? attackSpeed = null,
             double? touchAfterBeatSeconds = null,
-            float? beatOutOfLineMeters = null)
+            float? beatOutOfLineMeters = null,
+            DummyDifficulty? dummyDifficulty = null)
         {
             DrillId = drillId;
+            DummyDifficulty = dummyDifficulty;
             TouchAfterBeatSeconds = touchAfterBeatSeconds;
             BeatOutOfLineMeters = beatOutOfLineMeters;
             AttackTarget = attackTarget;
@@ -246,6 +255,9 @@ namespace VrFencing.Drills
 
         /// <summary>Beat Drills: how far the Beat knocked the Dummy's point off its line; null without a Beat.</summary>
         public float? BeatOutOfLineMeters { get; }
+
+        /// <summary>A Drill whose Dummy keeps its distance (PER-105): how fast it reacted this Rep; null when it stood still.</summary>
+        public DummyDifficulty? DummyDifficulty { get; }
     }
 
     /// <summary>How a run ended: every judged Rep in order, and whether the Fencer cancelled.</summary>
