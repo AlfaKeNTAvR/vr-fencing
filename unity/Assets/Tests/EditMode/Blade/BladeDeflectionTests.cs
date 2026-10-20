@@ -1,8 +1,10 @@
 // The Armed Dummy's point knocked off its line (PER-116): a firm beat opens the line long enough to attack, a light
 // touch comes straight back, a press yields by where each blade is pressed, the recovery grows with the deflection and
 // never passes the 60 cm cap, and a big knock carries the whole arm (its Target Zones within the Blade's 5 cm a frame)
-// with the drawn blade staying in the Dummy's hand. Meters, seconds, Strip frame.
+// with the drawn blade staying in the Dummy's hand, also when a hard press near its guard pushes the point far aside at
+// once (PER-119). Meters, seconds, Strip frame.
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using NUnit.Framework;
 using VrFencing.Blade;
@@ -321,6 +323,68 @@ namespace VrFencing.Tests.Blade
 
             Assert.That(farthestKnock, Is.GreaterThan(0.1f), "The hand was knocked well aside, the way it was pushed.");
             Assert.That(blade.Deflection.TipOffset.Length(), Is.LessThan(0.001f), "Back in line after 2 s.");
+        }
+
+        [Test]
+        public void AHardPressNearTheGuardKeepsTheArmZonesUnderFiveCentimetersAFrame(
+            [Values(1.5f, 2.1f)] float height,
+            [Values(Hand.Right, Hand.Left)] Hand hand)
+        {
+            // PER-119: the Fencer's blade comes down at 3 m/s across the Dummy's, a tenth of the way from its guard, to
+            // 30 cm past its line. The solid push turns the Dummy's point far aside at once (a short lever), but only the
+            // wrist share is instant: the arm follows at its limit, so its Target Zones stay within the Blade's 5 cm.
+            const float distance = 3.0f;
+            const float pressFraction = 0.1f;
+            const float pressMetersPerSecond = 3.0f;
+            const float pressDepthMeters = 0.30f;
+            var layout = DummyLayout.Create(height, hand);
+            var enGarde = SwordArmReach.PoseEnGarde(height, BladePose.BladeLengthMeters);
+            var blade = new ArmedDummyBlade();
+            var fencer = new DrawnBlade();
+            var settings = new BladeSettings();
+            var obstacles = new List<BladeObstacle>();
+            var zones = new[] { TargetZone.Hand, TargetZone.Wrist, TargetZone.Forearm, TargetZone.UpperArm };
+            Capsule[] last = null;
+            var above = 0.10f;
+            var mostPointMoved = 0.0f;
+
+            for (var frame = 0; frame < 144; frame++)
+            {
+                layout.PoseArm(enGarde);
+                var forte = new BladeSegment(
+                    DummyLayout.DummyToStrip(layout.Arm.GetGuardPosition(), distance),
+                    DummyLayout.DummyToStrip(layout.Arm.GetBladePoint(BladePose.BladeLengthMeters), distance));
+                var shoulder = DummyLayout.DummyToStrip(layout.Arm.GetPose(ArmJoint.Shoulder).Position, distance);
+                above = Math.Max(-pressDepthMeters, above - (pressMetersPerSecond * FrameSeconds));
+                var crossing = Vector3.Lerp(forte.GuardPosition, forte.TipPosition, pressFraction) + new Vector3(0.0f, above, 0.0f);
+                var fencerHand = new BladeSegment(crossing - (0.3f * Vector3.UnitX), crossing + ((BladePose.BladeLengthMeters - 0.3f) * Vector3.UnitX));
+
+                var pointBefore = blade.Deflection.TipOffset;
+                blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, fencerHand, fencer, FrameSeconds);
+                mostPointMoved = Math.Max(mostPointMoved, Vector3.Distance(blade.Deflection.TipOffset, pointBefore));
+                obstacles.Clear();
+                obstacles.Add(BladeObstacle.Floor);
+                blade.AddObstacles(obstacles);
+                fencer.Step(fencerHand, obstacles, Vector3.UnitY, FrameSeconds);
+                blade.UpdateSide(fencerHand, fencer);
+
+                layout.PoseArm(blade.GetKnockedArmPose(enGarde, hand));
+                var guard = DummyLayout.DummyToStrip(layout.Arm.GetGuardPosition(), distance);
+                Assert.That(Vector3.Distance(guard, blade.Chord.GuardPosition), Is.LessThan(0.001f), $"Frame {frame}: the blade stays in the knocked hand.");
+
+                var now = Array.ConvertAll(zones, zone => layout.GetZone(zone));
+                for (var index = 0; last != null && index < now.Length; index++)
+                {
+                    var moved = Math.Max(Vector3.Distance(now[index].Start, last[index].Start), Vector3.Distance(now[index].End, last[index].End));
+                    Assert.That(moved, Is.LessThan(0.05f), $"Frame {frame}: the {zones[index]} moved {moved * 100.0f:0.0} cm.");
+                }
+
+                last = now;
+            }
+
+            Assert.That(blade.IsPressed, Is.True, "Setup: the Fencer's hand presses past the Dummy's line.");
+            Assert.That(mostPointMoved, Is.GreaterThan(0.05f), "Setup: the solid push moved the point more than 5 cm in one frame.");
+            Assert.That(blade.Deflection.ArmOffset.Length(), Is.GreaterThan(0.1f), "Setup: the arm went with the press.");
         }
 
         [Test]
