@@ -49,6 +49,9 @@ namespace VrFencing.Tests.Settings
             settings.DummyLook.ZoneOpacity = 0.7f;
             settings.DummyLook.BodyOpacity = 0.2f;
             settings.DummyLook.ZoneThicknessFraction = 0.4f;
+            settings.ArmedDummy.RiposteInSlowParries = false;
+            settings.ArmedDummy.RiposteInFastParries = false;
+            settings.ArmedDummy.RiposteInLowParries = false;
 
             Assert.That(SettingsLeaves.Read(settings.Clone()), Is.EqualTo(SettingsLeaves.Read(settings)));
         }
@@ -62,10 +65,12 @@ namespace VrFencing.Tests.Settings
             clone.TimeWindows.ReactionSeconds = 3.0f;
             clone.WarningZone.OffStripToleranceMeters = 0.4f;
             clone.Blade.SavedAngles.French.PitchDegrees = 30.0f;
+            clone.ArmedDummy.RiposteInLowParries = false;
 
             Assert.That(settings.TimeWindows.ReactionSeconds, Is.EqualTo(new TrainerSettings().TimeWindows.ReactionSeconds));
             Assert.That(settings.WarningZone.OffStripToleranceMeters, Is.EqualTo(0.0f));
             Assert.That(settings.Blade.SavedAngles.French.PitchDegrees, Is.Null);
+            Assert.That(settings.ArmedDummy.RiposteInLowParries, Is.True);
         }
     }
 }

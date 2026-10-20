@@ -16,6 +16,12 @@ namespace VrFencing.Drills
 
         /// <summary>The app calls a footwork action ("Advance") above the Dummy; no zone is cued (footwork calls).</summary>
         FootworkCall,
+
+        /// <summary>
+        /// The Armed Dummy's attack is the cue (PER-100): nothing is named or lit, and the Riposte may land on any of the
+        /// Drill's Target Zones (in épée the whole body is target).
+        /// </summary>
+        ArmedDummyAttack,
     }
 
     /// <summary>How a Rep is judged.</summary>
@@ -43,9 +49,10 @@ namespace VrFencing.Drills
         FootworkCall,
 
         /// <summary>
-        /// The Armed Dummy attacks and the Fencer must Parry it (<see cref="DrillRunner.ReportParry"/>, PER-97): a contact
-        /// that deflects its point off the body and passes the Parry rule. With
-        /// <see cref="DrillDefinition.RequiresRiposte"/>, a point-first Touch on the cued zone must follow within
+        /// The Armed Dummy attacks (<see cref="DrillDefinition.Attacks"/>) and the Fencer must Parry it
+        /// (<see cref="DrillRunner.ReportParry"/>, PER-97): a contact that deflects its point off the body and passes the
+        /// Parry rule. With <see cref="DrillDefinition.RequiresRiposte"/>, a point-first Touch on the cued zone (with the
+        /// <see cref="CueType.ArmedDummyAttack"/> cue, any of the Drill's zones) must follow within
         /// <see cref="DrillDefinition.RiposteWindowSeconds"/> of the Parry. Contacts with the Dummy before the Parry are
         /// ignored; an attack that lands unparried fails the Rep.
         /// </summary>
@@ -99,7 +106,8 @@ namespace VrFencing.Drills
             IReadOnlyList<FootworkAction> footworkCalls = null,
             string taskLine = null,
             bool lightsNamedZone = false,
-            bool requiresRiposte = false)
+            bool requiresRiposte = false,
+            AttackScript attacks = null)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -182,6 +190,16 @@ namespace VrFencing.Drills
                 throw new ArgumentException("Only a Parry Drill can require a Riposte.", nameof(requiresRiposte));
             }
 
+            if (attacks != null && successRule != SuccessRule.Parry)
+            {
+                throw new ArgumentException("Only a Parry Drill has an attack script.", nameof(attacks));
+            }
+
+            if ((cueType == CueType.ArmedDummyAttack) && successRule != SuccessRule.Parry)
+            {
+                throw new ArgumentException("Only a Parry Drill is cued by the Armed Dummy's attack.", nameof(cueType));
+            }
+
             if (lightsNamedZone && cueType != CueType.NamedTargetZone)
             {
                 throw new ArgumentException("Only a Drill that names its Target Zone can also light it.", nameof(lightsNamedZone));
@@ -221,6 +239,7 @@ namespace VrFencing.Drills
             TaskLine = taskLine ?? string.Empty;
             LightsNamedZone = lightsNamedZone;
             RequiresRiposte = requiresRiposte;
+            Attacks = successRule == SuccessRule.Parry ? attacks ?? AttackScript.EveryTargetAndSpeed : null;
         }
 
         /// <summary>A Riposte must land within this of the Parry (PER-23: 1 s).</summary>
@@ -234,6 +253,12 @@ namespace VrFencing.Drills
 
         /// <summary>The Armed Dummy holds a blade and attacks in this Drill (<see cref="SuccessRule.Parry"/>).</summary>
         public bool UsesArmedDummy => SuccessRule == SuccessRule.Parry;
+
+        /// <summary>
+        /// The Armed Dummy's targets and speeds (PER-100); <see cref="AttackScript.EveryTargetAndSpeed"/> for a Parry Drill
+        /// built without one, null when the Drill does not use the Armed Dummy.
+        /// </summary>
+        public AttackScript Attacks { get; }
 
         /// <summary>
         /// One line saying what the Fencer does (PER-92), e.g. "Extend and Touch the named zone. Arm only, no step.". The
@@ -283,7 +308,10 @@ namespace VrFencing.Drills
 
         public SuccessRule SuccessRule { get; }
 
-        /// <summary>The Target Zones a Rep may cue; each Rep picks one at random. Empty for footwork calls and compounds.</summary>
+        /// <summary>
+        /// The Target Zones a Rep may cue; each Rep picks one at random. With the <see cref="CueType.ArmedDummyAttack"/>
+        /// cue, the zones a Riposte may land on, none cued. Empty for footwork calls and compounds.
+        /// </summary>
         public IReadOnlyList<TargetZone> TargetZones { get; }
 
         /// <summary>The ordered zone pairs a compound Rep may cue; each Rep picks one at random. Empty for other Drills.</summary>

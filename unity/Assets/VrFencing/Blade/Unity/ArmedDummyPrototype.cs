@@ -11,11 +11,12 @@ namespace VrFencing.Blade
 {
     /// <summary>
     /// The Armed Dummy (PER-95 prototype), live only while a Drill that uses it runs
-    /// (<see cref="DrillDefinition.UsesArmedDummy"/>; today the development Drill
-    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/>), so the MVP Drills never see it. The Dummy holds an épée
+    /// (<see cref="DrillDefinition.UsesArmedDummy"/>: the Parry Drills 7 to 9, PER-100, and the development Drill
+    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/>), so the other Drills never see it. The Dummy holds an épée
     /// drawn and bent like the Fencer's (<see cref="DrawnBlade"/>, <see cref="BladeVisual"/>). On every Rep's cue it
-    /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the Fencer's hand, forearm, chest or thigh, at slow,
-    /// medium and real speed in turn. When the Fencer's blade meets its blade (<see cref="BladeClashDetector"/>) a spark
+    /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the target and speed the cue names
+    /// (<see cref="RepCue.AttackTarget"/>, <see cref="RepCue.AttackSpeed"/>, from the Drill's <see cref="AttackScript"/>),
+    /// standing further back for a thrust at the arm (<see cref="RepCue.DummyStandBackMeters"/>). When the Fencer's blade meets its blade (<see cref="BladeClashDetector"/>) a spark
     /// shows at the contact, the clash buzz plays on the sword hand, and its blade swings away and recovers
     /// (<see cref="BladeSwing"/>). The two blades are solid against each other (<see cref="ArmedDummyBlade"/>,
     /// PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives way to a press and springs back.
@@ -306,14 +307,15 @@ namespace VrFencing.Blade
 
         private void OnRepCued(RepCue cue)
         {
-            if (!IsTestDrillRunning() || _dummy.Layout == null)
+            if (!IsTestDrillRunning() || _dummy.Layout == null || !cue.AttackTarget.HasValue || !cue.AttackSpeed.HasValue)
             {
                 return;
             }
 
             var layout = _dummy.Layout;
-            var speed = (AttackSpeed)(cue.RepIndex % 3);
-            var target = AttackAim.DrawTarget(_random);
+            var speed = cue.AttackSpeed.Value;
+            var target = cue.AttackTarget.Value;
+            StandForAttack(cue);
             var delay = ArmedDummyAttack.DrawDelaySeconds(_random);
             // Chest and thigh aim at the Fencer's body as tracked (the Dummy frame is the Strip frame turned and moved, its
             // own inverse); hand and forearm, or no body, by the stand-in.
@@ -327,8 +329,24 @@ namespace VrFencing.Blade
             _hasReportedLanding = false;
             var missMeters = System.Numerics.Vector3.Distance(_attack.Path.AimPoint, aim);
             Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
+                $"Dummy at {_dummy.DistanceMeters:0.00} m ({cue.DummyStandBackMeters:0.00} m back), " +
                 $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms over {_attack.Path.LengthMeters * 100.0f:0} cm" +
                 (missMeters > 0.01f ? $", lands {missMeters * 100.0f:0} cm off the aim (out of the arm's reach)." : "."));
+        }
+
+        /// <summary>
+        /// Stands the Dummy at the Rep's Dummy Distance, further back by <see cref="RepCue.DummyStandBackMeters"/> for a
+        /// thrust at the arm (PER-100), so every Rep starts from its own distance. The Blade restarts its sweeps on the jump.
+        /// </summary>
+        private void StandForAttack(RepCue cue)
+        {
+            _dummy.SetDistance(cue.DummyDistance);
+            if (cue.DummyStandBackMeters > 0.0f)
+            {
+                _dummy.SetDistanceMeters(_dummy.DistanceMeters + cue.DummyStandBackMeters);
+            }
+
+            Restart();
         }
 
         private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)

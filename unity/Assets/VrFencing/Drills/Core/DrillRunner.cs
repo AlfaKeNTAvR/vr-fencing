@@ -417,7 +417,10 @@ namespace VrFencing.Drills
                 return RepOutcome.FlatContact;
             }
 
-            if (contact.Zone != CurrentTargetZone)
+            var isOnTarget = Drill.CueType == CueType.ArmedDummyAttack
+                ? ContainsZone(Drill.TargetZones, contact.Zone)
+                : contact.Zone == CurrentTargetZone;
+            if (!isOnTarget)
             {
                 return RepOutcome.WrongZone;
             }
@@ -427,6 +430,19 @@ namespace VrFencing.Drills
                 && _latestFootwork.HasValue
                 && !FootworkJudging.SuitsDistance(CurrentCue.DummyDistance, _latestFootwork.Value.Action);
             return isWrongFootwork ? RepOutcome.WrongFootwork : RepOutcome.Success;
+        }
+
+        private static bool ContainsZone(IReadOnlyList<TargetZone> zones, TargetZone zone)
+        {
+            foreach (var candidate in zones)
+            {
+                if (candidate == zone)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>A footwork call when its window ends: the latest reading must answer the call; no movement is a timeout.</summary>
@@ -471,7 +487,9 @@ namespace VrFencing.Drills
                 CurrentCue.DummyDistance,
                 _parry?.Line,
                 riposteSeconds,
-                fencerHit);
+                fencerHit,
+                CurrentCue.AttackTarget,
+                CurrentCue.AttackSpeed);
         }
 
         private void AdvanceDueTransitions()
@@ -608,6 +626,19 @@ namespace VrFencing.Drills
                 case SuccessRule.TwoTouchesInOrder:
                     var pair = Drill.ZonePairs[_random.Next(Drill.ZonePairs.Count)];
                     return new RepCue(CurrentRepIndex, pair.First, Drill.CueType, distance, secondTargetZone: pair.Second);
+
+                case SuccessRule.Parry:
+                    var attacks = Drill.Attacks;
+                    var riposteZone = Drill.CueType == CueType.ArmedDummyAttack
+                        ? (TargetZone?)null
+                        : Drill.TargetZones[_random.Next(Drill.TargetZones.Count)];
+                    return new RepCue(
+                        CurrentRepIndex,
+                        riposteZone,
+                        Drill.CueType,
+                        distance,
+                        attackTarget: attacks.DrawTarget(_random),
+                        attackSpeed: attacks.GetSpeed(CurrentRepIndex));
 
                 default:
                     return new RepCue(CurrentRepIndex, Drill.TargetZones[_random.Next(Drill.TargetZones.Count)], Drill.CueType, distance);

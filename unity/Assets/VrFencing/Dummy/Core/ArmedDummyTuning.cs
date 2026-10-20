@@ -57,6 +57,18 @@ namespace VrFencing.Dummy
         /// <summary>The forearm aim: this far behind the front of the Fencer's guard, about the forearm's middle.</summary>
         public const float ForearmBehindGuardMeters = 0.2f;
 
+        // ---- Distance ----
+
+        /// <summary>
+        /// For a thrust at the hand the Dummy stands this much further back than the Drill's Dummy Distance (PER-100,
+        /// Nikita's call: 0.6 to 0.75 m, as real fencers attack the arm from further away). At extension distance the
+        /// hand is nearer than the arm and a straight-wristed 90 cm blade can fold, so the thrust would end past it.
+        /// </summary>
+        public const float HandAttackStandBackMeters = 0.75f;
+
+        /// <summary>As <see cref="HandAttackStandBackMeters"/>, for a thrust at the forearm, which sits a little further back.</summary>
+        public const float ForearmAttackStandBackMeters = 0.6f;
+
         // ---- Joint limits ----
 
         /// <summary>The elbow bends from straight (0) up to this, never past straight.</summary>

@@ -134,6 +134,28 @@ namespace VrFencing.Dummy
             return body;
         }
 
+        /// <summary>
+        /// How much further back than the Drill's Dummy Distance the Dummy stands to thrust at <paramref name="target"/>
+        /// (PER-100): <see cref="ArmedDummyTuning.HandAttackStandBackMeters"/> or
+        /// <see cref="ArmedDummyTuning.ForearmAttackStandBackMeters"/> for the arm, none for the chest and thigh.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="target"/> is not a target.</exception>
+        public static float GetStandBackMeters(AttackTarget target)
+        {
+            switch (target)
+            {
+                case AttackTarget.Hand:
+                    return ArmedDummyTuning.HandAttackStandBackMeters;
+                case AttackTarget.Forearm:
+                    return ArmedDummyTuning.ForearmAttackStandBackMeters;
+                case AttackTarget.Chest:
+                case AttackTarget.Thigh:
+                    return 0.0f;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(target), target, "Not an attack target.");
+            }
+        }
+
         /// <summary>A random target, each of the four equally likely.</summary>
         public static AttackTarget DrawTarget(Random random)
         {

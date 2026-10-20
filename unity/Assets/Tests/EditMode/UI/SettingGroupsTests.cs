@@ -47,9 +47,11 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
-        public void TheGroupsAreTheSixNikitaChoseInHisOrder()
+        public void TheGroupsAreTheSixNikitaChoseInHisOrderThenTheArmedDummy()
         {
-            Assert.That(SettingGroups.All.Select(SettingGroups.GetLabel), Is.EqualTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics" }));
+            Assert.That(
+                SettingGroups.All.Select(SettingGroups.GetLabel),
+                Is.EqualTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy" }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.You), Is.EqualTo(new[] { SettingId.Hand, SettingId.FencerHeight, SettingId.LaserTilt }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Drills), Is.EqualTo(new[]
             {
@@ -64,11 +66,11 @@ namespace VrFencing.Tests.UI
                 SettingId.DoubleWindow,
             }));
 
-            // PER-102: the Dummy's look joins Touch, the group about the Target Zones.
+            // PER-102: the Dummy's look joins Touch, the group about the Target Zones. PER-100 moved the Parry rule to the Armed Dummy.
             Assert.That(SettingGroups.GetSettings(SettingGroup.Touch), Is.EqualTo(new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity, SettingId.ParryRule,
+                SettingId.BodyOpacity,
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]
             {
@@ -78,6 +80,12 @@ namespace VrFencing.Tests.UI
             {
                 SettingId.TouchHaptic, SettingId.FlatHaptic, SettingId.GlanceHaptic, SettingId.HapticFloor, SettingId.HapticFullStrengthSpeed,
                 SettingId.ClashHaptic, SettingId.ClashHapticFloor,
+            }));
+
+            // PER-100: the Parry rule and each Parry Drill's Riposte switch.
+            Assert.That(SettingGroups.GetSettings(SettingGroup.ArmedDummy), Is.EqualTo(new[]
+            {
+                SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
             }));
         }
 
