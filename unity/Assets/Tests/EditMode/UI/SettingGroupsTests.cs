@@ -72,7 +72,7 @@ namespace VrFencing.Tests.UI
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]
             {
-                SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex,
+                SettingId.BladeMount, SettingId.PistolGripShape, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex,
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Haptics), Is.EqualTo(new[]
             {

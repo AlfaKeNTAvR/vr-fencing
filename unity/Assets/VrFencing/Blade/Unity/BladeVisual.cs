@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using VrFencing.Settings;
 using VrFencing.Strip;
@@ -6,80 +7,124 @@ using VrFencing.Strip;
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// Draws the épée on its mount transform (front of the guard at the origin, blade along +z): grip and pommel behind
-    /// the guard, the bell guard, a tapering blade of triangular section (like a real épée's, flat face up on the grip)
-    /// drawn as one mesh along the drawn centerline so it can bend (<see cref="DrawnBlade"/>), and a red
-    /// point that flashes on a Touch or glance. While the drawn blade lags the hand (bent as far as it goes, or held off
-    /// a body), the hilt is drawn where the blade stops and a faint ghost hilt shows where the hand really is. Primitives get the URP material from Resources; the default primitive
-    /// material is not URP and renders magenta and doubled per eye on the Quest.
+    /// Draws the épée on its mount transform (front of the guard at the origin, blade along +z): the hilt for the chosen
+    /// grip (PER-41: a bell, grip and pommel modelled by <c>tools/models/build_models.py</c>, loaded from Resources as
+    /// <c>Hilts/EpeeHilt*</c>; a French grip, or a Visconti or Belgian pistol grip, mirrored for the left hand), a
+    /// tapering blade of épée section (a V with a fuller along its top face, flat face up on the grip) drawn as one mesh
+    /// along the drawn centerline so it can bend (<see cref="DrawnBlade"/>), and a red point that flashes on a Touch or
+    /// glance. While the drawn blade lags the hand (bent as far as it goes, or held off a body), the hilt is drawn where
+    /// the blade stops and a faint ghost hilt shows where the hand really is. Everything gets a URP material from
+    /// Resources; the importer makes none (<c>ModelImportSettings</c>) and the default primitive material renders
+    /// magenta and doubled per eye on the Quest.
     /// </summary>
     internal sealed class BladeVisual : IDisposable
     {
         private const string MaterialResourcePath = "VrFencingBlade";
+        private const string GripMaterialResourcePath = "VrFencingGrip";
         private const string GhostMaterialResourcePath = "VrFencingBladeGhost";
+        private const string HiltResourceFolder = "Hilts/";
         private const int BladePieceCount = DrawnBlade.SampleCount;
-        // The triangle's side at the guard and at the point: an épée blade is about 1 cm across at the forte and a few
+        // The section's width at the guard and at the point: an épée blade is about 1 cm across at the forte and a few
         // millimeters at the point.
         private const float BladeBaseSideMeters = 0.011f;
         private const float BladePointSideMeters = 0.004f;
-        private const int CrossSectionCorners = 3;
-        private const float PointDiameterMeters = 0.009f;
-        private const float PointLengthMeters = 0.015f;
-        private const float GripDiameterMeters = 0.024f;
-        private const float GripLengthMeters = 0.12f;
-        private const float PommelDiameterMeters = 0.032f;
+        private const float PointDiameterMeters = 0.008f;
+        private const float PointLengthMeters = 0.014f;
         private const float FlashSeconds = 0.35f;
 
-        private static readonly Color BladeColor = new Color(0.78f, 0.8f, 0.84f);
-        private static readonly Color GuardColor = new Color(0.62f, 0.64f, 0.68f);
-        private static readonly Color GripColor = new Color(0.12f, 0.12f, 0.14f);
+        // The blade's section, as (side, up) offsets in units of its width: a V with a shallow fuller along the top face,
+        // the bottom edge below. Corner `i` and corner `i + 1` bound face `i`.
+        private static readonly Vector2[] SectionCorners =
+        {
+            new Vector2(-0.5f, 0.25f),
+            new Vector2(0.0f, 0.10f),
+            new Vector2(0.5f, 0.25f),
+            new Vector2(0.0f, -0.50f),
+        };
+
+        private static readonly Color BladeColor = new Color(0.80f, 0.82f, 0.86f);
         private static readonly Color PointColor = new Color(0.9f, 0.12f, 0.12f);
         private static readonly Color TouchColor = new Color(0.1f, 0.95f, 0.2f);
         private static readonly Color GlanceColor = new Color(0.3f, 0.5f, 1.0f);
         private static readonly Color GhostColor = new Color(0.85f, 0.9f, 1.0f, 0.25f);
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
+        // The hilt model's parts that are steel; the rest (grip, prong, pad) is the grip's rubber and leather.
+        private static readonly HashSet<string> SteelParts = new HashSet<string> { "Bell", "Pommel", "Collar" };
+
         private readonly Transform _mount;
         private readonly Transform _hilt;
         private readonly GameObject _ghost;
+        private readonly Material _material;
+        private readonly Material _gripMaterial;
+        private readonly Material _ghostMaterial;
         private readonly Mesh _bladeMesh;
-        private readonly Vector3[] _bladeVertices = new Vector3[(BladePieceCount + 1) * CrossSectionCorners * 2];
+        private readonly Vector3[] _bladeVertices = new Vector3[(BladePieceCount + 1) * SectionCorners.Length * 2];
         private readonly Vector3[] _centerline = new Vector3[BladePieceCount + 1];
         private readonly Transform _point;
         private readonly Renderer _pointRenderer;
         private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
         private float _flashEndsAt = float.NegativeInfinity;
+        private (BladeMount Mount, PistolGripShape PistolGrip, Hand Hand)? _grip;
 
         public BladeVisual(Transform mount)
         {
             _mount = mount;
-            var material = Resources.Load<Material>(MaterialResourcePath);
-            if (material == null)
-            {
-                Debug.LogError($"[Blade] Material 'Resources/{MaterialResourcePath}' is missing; the blade is not drawn.");
-            }
+            _material = LoadMaterial(MaterialResourcePath, "the blade is not drawn");
+            _gripMaterial = LoadMaterial(GripMaterialResourcePath, "the grip is not drawn");
+            _ghostMaterial = LoadMaterial(GhostMaterialResourcePath, "the hand's ghost hilt is not drawn");
 
             // The drawn hilt sits at the drawn guard, which lags the hand when it pushes past the most bow (PER-48).
             _hilt = new GameObject("Hilt").transform;
             _hilt.SetParent(_mount, false);
-            CreateHilt(_hilt, material, GuardColor, GripColor);
 
             // A faint hilt where the hand really is, shown only while the drawn blade lags it.
-            var ghostMaterial = Resources.Load<Material>(GhostMaterialResourcePath);
-            if (ghostMaterial == null)
-            {
-                Debug.LogError($"[Blade] Material 'Resources/{GhostMaterialResourcePath}' is missing; the hand's ghost hilt is not drawn.");
-            }
-
             _ghost = new GameObject("Hand Ghost");
             _ghost.transform.SetParent(_mount, false);
-            CreateHilt(_ghost.transform, ghostMaterial, GhostColor, GhostColor);
             _ghost.SetActive(false);
 
-            _bladeMesh = CreateBladeMesh(_mount, material);
+            SetGrip(new BladeSettings().Mount, new BladeSettings().PistolGrip, Hand.Right);
 
-            _pointRenderer = CreatePart(PrimitiveType.Cylinder, "Point", _mount, material, PointColor, Vector3.zero, Quaternion.identity, Vector3.one);
+            _bladeMesh = CreateBladeMesh(_mount, _material);
+
+            _pointRenderer = CreatePart(PrimitiveType.Cylinder, "Point", _mount, _material, PointColor);
             _point = _pointRenderer.transform;
+        }
+
+        /// <summary>The hilt model drawn for a grip: the French grip for both French mounts, the chosen pistol grip for the Pistol and Center mounts.</summary>
+        public static string GetHiltResourcePath(BladeMount mount, PistolGripShape pistolGrip)
+        {
+            switch (mount)
+            {
+                case BladeMount.French:
+                case BladeMount.FrenchPosted:
+                    return HiltResourceFolder + "EpeeHiltFrench";
+                default:
+                    return HiltResourceFolder + (pistolGrip == PistolGripShape.Belgian ? "EpeeHiltBelgian" : "EpeeHiltVisconti");
+            }
+        }
+
+        /// <summary>
+        /// Draws the hilt of <paramref name="mount"/> (<paramref name="pistolGrip"/> for the pistol and Center mounts),
+        /// mirrored for the left <paramref name="hand"/>. Nothing happens when the grip is unchanged.
+        /// </summary>
+        public void SetGrip(BladeMount mount, PistolGripShape pistolGrip, Hand hand)
+        {
+            if (_grip.HasValue && _grip.Value == (mount, pistolGrip, hand))
+            {
+                return;
+            }
+
+            _grip = (mount, pistolGrip, hand);
+            var resourcePath = GetHiltResourcePath(mount, pistolGrip);
+            var model = Resources.Load<GameObject>(resourcePath);
+            if (model == null)
+            {
+                Debug.LogError($"[Blade] Hilt model 'Resources/{resourcePath}' is missing; the hilt is not drawn.");
+            }
+
+            BuildHilt(_hilt, model, hand, isGhost: false);
+            BuildHilt(_ghost.transform, model, hand, isGhost: true);
         }
 
         public void Flash(BladeEventType eventType, float nowSeconds)
@@ -138,13 +183,24 @@ namespace VrFencing.Blade
         {
             if (_bladeMesh != null)
             {
-                UnityEngine.Object.Destroy(_bladeMesh);
+                DestroyObject(_bladeMesh);
             }
 
             if (_mount != null)
             {
-                UnityEngine.Object.Destroy(_mount.gameObject);
+                DestroyObject(_mount.gameObject);
             }
+        }
+
+        private static Material LoadMaterial(string resourcePath, string consequence)
+        {
+            var material = Resources.Load<Material>(resourcePath);
+            if (material == null)
+            {
+                Debug.LogError($"[Blade] Material 'Resources/{resourcePath}' is missing; {consequence}.");
+            }
+
+            return material;
         }
 
         private Vector3 ToMount(TrackedPose stripInRoom, System.Numerics.Vector3 pointInStrip)
@@ -163,8 +219,8 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// The blade's mesh: a triangle around every centerline point, its flat face toward the mount's up, tapering to
-        /// the point. Each face has its own vertices so it shades flat, like the blade's faces.
+        /// The blade's mesh: the épée section around every centerline point, its top face toward the mount's up, tapering
+        /// to the point. Each face has its own vertices so it shades flat, like the blade's ground faces.
         /// </summary>
         private Mesh CreateBladeMesh(Transform parent, Material material)
         {
@@ -173,11 +229,11 @@ namespace VrFencing.Blade
             var mesh = new Mesh { name = "Blade" };
             mesh.MarkDynamic();
             mesh.vertices = _bladeVertices;
-            var triangles = new int[BladePieceCount * CrossSectionCorners * 6];
+            var triangles = new int[BladePieceCount * SectionCorners.Length * 6];
             var cursor = 0;
             for (var piece = 0; piece < BladePieceCount; piece++)
             {
-                for (var face = 0; face < CrossSectionCorners; face++)
+                for (var face = 0; face < SectionCorners.Length; face++)
                 {
                     // Face `face` runs from corner `face` to the next; vertex (ring, face, 0 or 1) at FaceVertex.
                     var a = FaceVertex(piece, face, 0);
@@ -197,24 +253,14 @@ namespace VrFencing.Blade
             mesh.triangles = triangles;
             blade.AddComponent<MeshFilter>().sharedMesh = mesh;
             var bladeRenderer = blade.AddComponent<MeshRenderer>();
-            if (material != null)
-            {
-                bladeRenderer.sharedMaterial = material;
-            }
-            else
-            {
-                bladeRenderer.enabled = false;
-            }
-
-            bladeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            bladeRenderer.receiveShadows = false;
+            AssignMaterial(bladeRenderer, material);
             SetColor(bladeRenderer, BladeColor);
             return mesh;
         }
 
         private static int FaceVertex(int ring, int face, int end)
         {
-            return (((ring * CrossSectionCorners) + face) * 2) + end;
+            return (((ring * SectionCorners.Length) + face) * 2) + end;
         }
 
         private void UpdateBladeMesh()
@@ -229,15 +275,13 @@ namespace VrFencing.Blade
                 up = up.sqrMagnitude > 1e-8f ? up.normalized : Vector3.ProjectOnPlane(Vector3.right, tangent).normalized;
                 var side = Vector3.Cross(up, tangent);
 
-                // An equilateral triangle: a flat face on top (two upper corners), the third corner below.
-                var sideLength = Mathf.Lerp(BladeBaseSideMeters, BladePointSideMeters, (float)ring / BladePieceCount);
-                var circumradius = sideLength / Mathf.Sqrt(3.0f);
-                for (var corner = 0; corner < CrossSectionCorners; corner++)
+                var width = Mathf.Lerp(BladeBaseSideMeters, BladePointSideMeters, (float)ring / BladePieceCount);
+                for (var corner = 0; corner < SectionCorners.Length; corner++)
                 {
-                    var angle = (90.0f + 60.0f + (corner * 120.0f)) * Mathf.Deg2Rad;
-                    var position = _centerline[ring] + (((Mathf.Cos(angle) * side) + (Mathf.Sin(angle) * up)) * circumradius);
+                    var offset = SectionCorners[corner] * width;
+                    var position = _centerline[ring] + (offset.x * side) + (offset.y * up);
                     _bladeVertices[FaceVertex(ring, corner, 0)] = position;
-                    _bladeVertices[FaceVertex(ring, (corner + CrossSectionCorners - 1) % CrossSectionCorners, 1)] = position;
+                    _bladeVertices[FaceVertex(ring, (corner + SectionCorners.Length - 1) % SectionCorners.Length, 1)] = position;
                 }
             }
 
@@ -246,35 +290,65 @@ namespace VrFencing.Blade
             _bladeMesh.RecalculateBounds();
         }
 
-        /// <summary>Guard, grip and pommel behind the guard's front at <paramref name="parent"/>'s origin, the blade along +z.</summary>
-        private void CreateHilt(Transform parent, Material material, Color guardColor, Color gripColor)
+        /// <summary>
+        /// The hilt model under <paramref name="parent"/>: the model's parts with the steel or grip material (the ghost
+        /// material for the ghost), mirrored across the blade's vertical plane for the left hand. Replaces any hilt there.
+        /// </summary>
+        private void BuildHilt(Transform parent, GameObject model, Hand hand, bool isGhost)
         {
-            // Unity's cylinder primitive is 2 m tall along its local y; turned onto z, the blade axis.
-            var alongBlade = Quaternion.Euler(90.0f, 0.0f, 0.0f);
-            CreatePart(PrimitiveType.Cylinder, "Guard", parent, material, guardColor, new Vector3(0.0f, 0.0f, -BladePose.GuardDepthMeters * 0.5f), alongBlade,
-                new Vector3(BladePose.GuardDiameterMeters, BladePose.GuardDepthMeters * 0.5f, BladePose.GuardDiameterMeters));
-            var gripCenter = -BladePose.GuardDepthMeters - (GripLengthMeters * 0.5f);
-            CreatePart(PrimitiveType.Cylinder, "Grip", parent, material, gripColor, new Vector3(0.0f, 0.0f, gripCenter), alongBlade,
-                new Vector3(GripDiameterMeters, GripLengthMeters * 0.5f, GripDiameterMeters));
-            CreatePart(PrimitiveType.Sphere, "Pommel", parent, material, guardColor, new Vector3(0.0f, 0.0f, gripCenter - (GripLengthMeters * 0.5f)), Quaternion.identity,
-                Vector3.one * PommelDiameterMeters);
+            for (var child = parent.childCount - 1; child >= 0; child--)
+            {
+                DestroyObject(parent.GetChild(child).gameObject);
+            }
+
+            if (model == null)
+            {
+                return;
+            }
+
+            var hilt = UnityEngine.Object.Instantiate(model, parent, false);
+            hilt.name = model.name;
+            hilt.transform.localPosition = Vector3.zero;
+            hilt.transform.localRotation = Quaternion.identity;
+            hilt.transform.localScale = new Vector3(hand == Hand.Left ? -1.0f : 1.0f, 1.0f, 1.0f);
+            foreach (var partRenderer in hilt.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var material = isGhost ? _ghostMaterial : SteelParts.Contains(partRenderer.name) ? _material : _gripMaterial;
+                AssignMaterial(partRenderer, material);
+                if (isGhost)
+                {
+                    SetColor(partRenderer, GhostColor);
+                }
+            }
         }
 
-        private Renderer CreatePart(PrimitiveType type, string partName, Transform parent, Material material, Color color, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        private Renderer CreatePart(PrimitiveType type, string partName, Transform parent, Material material, Color color)
         {
             var part = GameObject.CreatePrimitive(type);
             part.name = partName;
 
             // Touches are judged on the Core blade segment, not by physics.
-            UnityEngine.Object.Destroy(part.GetComponent<Collider>());
+            DestroyObject(part.GetComponent<Collider>());
             part.transform.SetParent(parent, false);
-            part.transform.SetLocalPositionAndRotation(localPosition, localRotation);
-            part.transform.localScale = localScale;
 
             var partRenderer = part.GetComponent<MeshRenderer>();
+            AssignMaterial(partRenderer, material);
+            SetColor(partRenderer, color);
+            return partRenderer;
+        }
+
+        /// <summary>Every slot of the renderer gets <paramref name="material"/>; without one the part is not drawn at all.</summary>
+        private static void AssignMaterial(Renderer partRenderer, Material material)
+        {
             if (material != null)
             {
-                partRenderer.sharedMaterial = material;
+                var materials = new Material[Mathf.Max(1, partRenderer.sharedMaterials.Length)];
+                for (var slot = 0; slot < materials.Length; slot++)
+                {
+                    materials[slot] = material;
+                }
+
+                partRenderer.sharedMaterials = materials;
             }
             else
             {
@@ -283,14 +357,25 @@ namespace VrFencing.Blade
 
             partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             partRenderer.receiveShadows = false;
-            SetColor(partRenderer, color);
-            return partRenderer;
         }
 
         private void SetColor(Renderer partRenderer, Color color)
         {
             _propertyBlock.SetColor(BaseColorId, color);
             partRenderer.SetPropertyBlock(_propertyBlock);
+        }
+
+        private static void DestroyObject(UnityEngine.Object target)
+        {
+            // Edit-mode tests and the editor's model snapshots draw the blade outside Play mode, where Destroy is not allowed.
+            if (Application.isPlaying)
+            {
+                UnityEngine.Object.Destroy(target);
+            }
+            else
+            {
+                UnityEngine.Object.DestroyImmediate(target);
+            }
         }
     }
 }

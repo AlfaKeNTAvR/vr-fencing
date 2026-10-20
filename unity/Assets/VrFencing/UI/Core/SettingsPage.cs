@@ -45,6 +45,7 @@ namespace VrFencing.UI
         DoubleWindow,
         ClashHaptic,
         ClashHapticFloor,
+        PistolGripShape,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -174,6 +175,7 @@ namespace VrFencing.UI
                 case SettingId.DoubleWindow: return "Bout double window (host)";
                 case SettingId.ClashHaptic: return "Haptic: blade clash";
                 case SettingId.ClashHapticFloor: return "Clash strength when light";
+                case SettingId.PistolGripShape: return "Pistol grip shape";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -202,6 +204,8 @@ namespace VrFencing.UI
                     return settings.Blade.Flex.ToString();
                 case SettingId.BladeMount:
                     return FormatMount(settings.Blade.Mount);
+                case SettingId.PistolGripShape:
+                    return settings.Blade.PistolGrip.ToString();
                 case SettingId.TouchHaptic:
                     return FormatHaptic(settings.Blade.TouchHaptic);
                 case SettingId.FlatHaptic:
@@ -252,6 +256,7 @@ namespace VrFencing.UI
                 case SettingId.HapticFullStrengthSpeed:
                 case SettingId.ClashHaptic:
                 case SettingId.ClashHapticFloor:
+                case SettingId.PistolGripShape:
                     return SettingImpact.Blade;
                 case SettingId.LaserTilt:
                     // The menu reads it every frame.
@@ -312,6 +317,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.BladeMount:
                     changed.Blade.Mount = Cycle(settings.Blade.Mount, direction);
+                    break;
+                case SettingId.PistolGripShape:
+                    changed.Blade.PistolGrip = Cycle(settings.Blade.PistolGrip, direction);
                     break;
                 case SettingId.TouchHaptic:
                     changed.Blade.TouchHaptic = Cycle(settings.Blade.TouchHaptic, direction);

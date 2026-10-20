@@ -24,12 +24,13 @@ namespace VrFencing.Tests.Dummy
         }
 
         [Test]
-        public void MaterialIsUrpUnlitAndTransparent()
+        public void MaterialIsUrpLitAndTransparent()
         {
             var material = Resources.Load<Material>(MaterialResourcePath);
 
             Assert.That(material, Is.Not.Null);
-            Assert.That(material.shader.name, Is.EqualTo("Universal Render Pipeline/Unlit"));
+            // Lit since PER-41, so the suit and mask shade like the épée's bell.
+            Assert.That(material.shader.name, Is.EqualTo("Universal Render Pipeline/Lit"));
             Assert.That(material.GetFloat("_Surface"), Is.EqualTo(1.0f), "1 is URP's transparent surface type.");
             Assert.That(material.renderQueue, Is.EqualTo((int)UnityEngine.Rendering.RenderQueue.Transparent));
         }

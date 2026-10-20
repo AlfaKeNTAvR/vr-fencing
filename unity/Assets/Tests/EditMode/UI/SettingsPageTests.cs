@@ -207,6 +207,21 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void ThePistolGripShapeIsAChoiceThatOnlyChangesTheBlade()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.PistolGripShape), Is.EqualTo("Visconti"));
+            var belgian = SettingsPage.Change(settings, SettingId.PistolGripShape, 1);
+            Assert.That(belgian.Blade.PistolGrip, Is.EqualTo(PistolGripShape.Belgian));
+            Assert.That(SettingsPage.FormatValue(belgian, SettingId.PistolGripShape), Is.EqualTo("Belgian"));
+            Assert.That(SettingsPage.Change(belgian, SettingId.PistolGripShape, 1).Blade.PistolGrip, Is.EqualTo(PistolGripShape.Visconti), "Only two choices.");
+            Assert.That(settings.Blade.PistolGrip, Is.EqualTo(PistolGripShape.Visconti), "The settings passed in are untouched.");
+            Assert.That(SettingsPage.GetImpact(SettingId.PistolGripShape), Is.EqualTo(SettingImpact.Blade), "Look only: the grip's angles and reach stay.");
+            Assert.That(SettingsPage.GetLabel(SettingId.PistolGripShape), Is.EqualTo("Pistol grip shape"));
+        }
+
+        [Test]
         public void TheBoutDoubleWindowStepsFrom50To150Milliseconds()
         {
             var settings = new TrainerSettings();

@@ -11,6 +11,12 @@ namespace VrFencing.Dummy
         Arms,
 
         Legs,
+
+        /// <summary>The fencing mask's wire front and cloth back (PER-41).</summary>
+        Mask,
+
+        /// <summary>The mask's bib over the throat.</summary>
+        Bib,
     }
 
     /// <summary>
@@ -32,10 +38,23 @@ namespace VrFencing.Dummy
 
         public RigMeshPart Part { get; }
 
-        /// <summary>The part a model material (or mesh) name stands for: "Arm" or "Leg" in it, else the body.</summary>
+        /// <summary>
+        /// The part a model material (or mesh) name stands for: "Arm" or "Leg" in it, the mask model's "MaskBib" and
+        /// "Mask", else the body.
+        /// </summary>
         public static RigMeshPart GetPart(string name)
         {
             var lower = (name ?? string.Empty).ToLowerInvariant();
+            if (lower.StartsWith("maskbib"))
+            {
+                return RigMeshPart.Bib;
+            }
+
+            if (lower.StartsWith("mask"))
+            {
+                return RigMeshPart.Mask;
+            }
+
             if (lower.Contains("arm") && !lower.Contains("armature"))
             {
                 return RigMeshPart.Arms;

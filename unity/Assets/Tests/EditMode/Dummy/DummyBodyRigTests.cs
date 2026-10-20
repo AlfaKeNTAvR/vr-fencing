@@ -1,6 +1,7 @@
 // The Dummy's rigged Humanoid body (PER-78): Movement SDK's Armature.fbx imports as a valid Humanoid, its bones
 // are posed on the Dummy's en garde joints (the sword arm on the sword hand's side), it is drawn with the URP
 // Dummy material instead of the capsule silhouette, and the Target Zones stay where the Core judges them.
+using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -51,7 +52,8 @@ namespace VrFencing.Tests.Dummy
             dummy.Configure(Height, hand);
 
             var material = Resources.Load<Material>(MaterialResourcePath);
-            Assert.That(_dummyObject.GetComponentsInChildren<MeshRenderer>(), Has.Length.EqualTo(dummy.Layout.Zones.Count), "Only the Target Zones stay capsules.");
+            var capsules = _dummyObject.GetComponentsInChildren<MeshRenderer>().Where(part => part.GetComponentInParent<SkinnedMeshRenderer>() == null && !IsMaskPart(part)).ToArray();
+            Assert.That(capsules, Has.Length.EqualTo(dummy.Layout.Zones.Count), "Only the Target Zones stay capsules.");
             var bodyRenderers = _dummyObject.GetComponentsInChildren<SkinnedMeshRenderer>();
             Assert.That(bodyRenderers, Is.Not.Empty);
             foreach (var bodyRenderer in bodyRenderers)
@@ -60,6 +62,43 @@ namespace VrFencing.Tests.Dummy
             }
 
             Assert.That(_dummyObject.GetComponentsInChildren<Collider>(), Is.Empty);
+        }
+
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void TheMaskSitsOnTheHeadFacingTheFencerInTheDummyMaterial(Hand hand)
+        {
+            var dummy = CreateDummyWithBody();
+            dummy.Configure(Height, hand);
+            dummy.SetDistanceMeters(2.0f);
+
+            var mask = FindChild("Mask");
+            Assert.That(mask, Is.Not.Null, "The mask model (Resources/FencingMask) hangs under the head bone.");
+            Assert.That(mask.GetComponentInParent<Animator>(), Is.Not.Null, "The mask is part of the rig, so it follows the head.");
+            var maskParts = mask.GetComponentsInChildren<MeshRenderer>();
+            Assert.That(maskParts.Select(part => part.name), Is.EquivalentTo(new[] { "MaskMesh", "MaskBack", "MaskBib" }));
+            var material = Resources.Load<Material>(MaterialResourcePath);
+            foreach (var part in maskParts)
+            {
+                Assert.That(part.sharedMaterials, Has.All.SameAs(material), $"{part.name} is translucent like the body.");
+            }
+
+            // Around the head's center, facing the Dummy frame's +z (toward the Fencer), head-sized: about 25 cm tall.
+            Assert.That(Vector3.Distance(mask.position, JointInWorld(dummy, SkeletonJoint.HeadCenter)), Is.LessThan(0.01f));
+            Assert.That(Vector3.Angle(mask.forward, dummy.transform.forward), Is.LessThan(1.0f));
+            var bounds = maskParts[0].bounds;
+            foreach (var part in maskParts)
+            {
+                bounds.Encapsulate(part.bounds);
+            }
+
+            Assert.That(bounds.size.y, Is.InRange(0.30f, 0.42f), "Mask and bib together, scaled to the Dummy's height.");
+            Assert.That(bounds.size.x, Is.InRange(0.18f, 0.28f));
+        }
+
+        private static bool IsMaskPart(Component part)
+        {
+            return part.name.StartsWith("Mask");
         }
 
         [TestCase(Hand.Right)]

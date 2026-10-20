@@ -80,6 +80,8 @@ namespace VrFencing.Blade
         {
             _settings = settings.Clone();
             _blade.Drawn.Flex.SetSoftness(_settings.Blade.Flex);
+            // The Dummy holds a club épée: a Visconti grip in its sword hand, which is the Fencer's hand (DummyLayout).
+            _visual.SetGrip(BladeMount.Pistol, PistolGripShape.Visconti, _settings.Hand);
         }
 
         /// <summary>The Strip jumped or the blade lost tracking: no sweep across the gap.</summary>

@@ -70,6 +70,26 @@ namespace VrFencing.Tests.Strip
         }
 
         [Test]
+        public void ThePisteSurfaceIsTranslucentUnderEverythingAndTheZonesAreHatched()
+        {
+            var renderers = BuildMarkings();
+            var surface = renderers.Single(slab => slab.name == "Piste Surface");
+            var zones = renderers.Where(slab => slab.name.StartsWith("Warning Zone")).ToArray();
+
+            Assert.That(surface.sharedMaterial.renderQueue, Is.GreaterThanOrEqualTo(3000), "The real floor shows through the surface.");
+            Assert.That(surface.transform.localScale.x, Is.EqualTo(StripGeometry.WidthMeters).Within(1e-4f));
+            var lowestOther = renderers.Where(slab => slab != surface).Min(slab => slab.transform.localPosition.y - (slab.transform.localScale.y * 0.5f));
+            Assert.That(surface.transform.localPosition.y + (surface.transform.localScale.y * 0.5f), Is.LessThanOrEqualTo(lowestOther));
+            foreach (var zone in zones)
+            {
+                Assert.That(zone.sharedMaterial.mainTexture, Is.Not.Null, $"{zone.name} carries the hatch (PER-41).");
+                var block = new MaterialPropertyBlock();
+                zone.GetPropertyBlock(block);
+                Assert.That(block.GetVector("_BaseMap_ST").y, Is.GreaterThan(1.0f), "The hatch repeats along the zone, not stretched over it.");
+            }
+        }
+
+        [Test]
         public void BothEnGardeLinesAreDrawnWhereThePlacementPointsWere()
         {
             var renderers = BuildMarkings();

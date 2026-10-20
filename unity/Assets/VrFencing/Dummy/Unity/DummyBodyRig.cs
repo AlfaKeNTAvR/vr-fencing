@@ -18,6 +18,11 @@ namespace VrFencing.Dummy
     ///
     /// Side: the sword arm and the front leg are the anatomical right for a right-handed Dummy and the left for a
     /// left-handed one, so a mirrored Dummy is a real left-hander, not a right-hander turned inside out.
+    ///
+    /// Look (PER-41): the body is drawn as a white fencing suit, with the fencing mask (<c>FencingMask.fbx</c> from
+    /// Resources, built by <c>tools/models/build_models.py</c>) hung on the head bone around the head's center, facing
+    /// where the head faces. Every part is one <see cref="RigMeshSlot"/> colored by <see cref="GetPartColor"/> at the
+    /// opacity <see cref="SetOpacity"/> gives, so the whole body stays translucent in passthrough.
     /// </summary>
     internal sealed class DummyBodyRig
     {
@@ -26,6 +31,16 @@ namespace VrFencing.Dummy
         /// the head joint is about 3.4 cm below the eyes at 1.8 m, at the base of the skull.
         /// </summary>
         private const float HeadJointBelowHeadCenterPerHeight = 0.02f;
+
+        private const string MaskResourcePath = "FencingMask";
+
+        /// <summary>The mask model is sized for a 1.65 m Dummy's head and scaled with the height.</summary>
+        private const float MaskReferenceHeightMeters = 1.65f;
+
+        private static readonly Color SuitColor = new Color(0.96f, 0.96f, 0.97f);
+        private static readonly Color MaskColor = new Color(0.16f, 0.17f, 0.19f);
+        private static readonly Color BibColor = new Color(0.97f, 0.97f, 0.97f);
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         private static readonly HumanBodyBones[] RequiredBones =
         {
@@ -57,23 +72,55 @@ namespace VrFencing.Dummy
         private readonly Transform _partsRoot;
         private readonly Dictionary<HumanBodyBones, Transform> _bones;
         private readonly Dictionary<HumanBodyBones, Pose> _restPoses = new Dictionary<HumanBodyBones, Pose>();
+        private readonly List<Renderer> _renderers = new List<Renderer>();
+        private readonly List<RigMeshSlot> _meshSlots = new List<RigMeshSlot>();
+        private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
+        private Transform _mask;
+        private float _heightMeters;
 
-        private DummyBodyRig(GameObject instance, Transform partsRoot, Dictionary<HumanBodyBones, Transform> bones, Renderer[] renderers)
+        private DummyBodyRig(GameObject instance, Transform partsRoot, Dictionary<HumanBodyBones, Transform> bones)
         {
             Instance = instance;
             _partsRoot = partsRoot;
             _bones = bones;
-            Renderers = renderers;
         }
 
         /// <summary>The model's instance under the parts root.</summary>
         public GameObject Instance { get; }
 
-        /// <summary>The body's skinned meshes, all drawn with the Dummy material.</summary>
-        public IReadOnlyList<Renderer> Renderers { get; }
+        /// <summary>The body's skinned meshes and the mask's meshes, all drawn with the Dummy material.</summary>
+        public IReadOnlyList<Renderer> Renderers => _renderers;
 
-        /// <summary>Every material slot of every skinned mesh, with the body part it draws.</summary>
-        public IReadOnlyList<RigMeshSlot> MeshSlots { get; private set; } = new RigMeshSlot[0];
+        /// <summary>Every material slot of every mesh (the body's skinned meshes and the mask's), with the part it draws.</summary>
+        public IReadOnlyList<RigMeshSlot> MeshSlots => _meshSlots;
+
+        /// <summary>The mask's transform under the head bone, or null when the mask model is missing.</summary>
+        public Transform Mask => _mask;
+
+        /// <summary>The color a part is drawn in: a white suit, a dark wire mask with a white bib.</summary>
+        public static Color GetPartColor(RigMeshPart part)
+        {
+            switch (part)
+            {
+                case RigMeshPart.Mask:
+                    return MaskColor;
+                case RigMeshPart.Bib:
+                    return BibColor;
+                default:
+                    return SuitColor;
+            }
+        }
+
+        /// <summary>Draws every part in its own color (<see cref="GetPartColor"/>) at <paramref name="opacity"/> (the Dummy look's body opacity).</summary>
+        public void SetOpacity(float opacity)
+        {
+            foreach (var slot in _meshSlots)
+            {
+                var color = GetPartColor(slot.Part);
+                _propertyBlock.SetColor(BaseColorId, new Color(color.r, color.g, color.b, Mathf.Clamp01(opacity)));
+                slot.Renderer.SetPropertyBlock(_propertyBlock, slot.MaterialIndex);
+            }
+        }
 
         /// <summary>
         /// Instantiates <paramref name="model"/> under <paramref name="partsRoot"/>, draws it with
@@ -107,7 +154,7 @@ namespace VrFencing.Dummy
             var animator = instance.GetComponent<Animator>();
             animator.enabled = false;
 
-            var meshSlots = new List<RigMeshSlot>();
+            var rig = new DummyBodyRig(instance, partsRoot, bones);
             foreach (var skinnedRenderer in renderers)
             {
                 // The model's own materials name its parts (Armature.fbx: M_Body, M_Arms, M_Legs); keep them before
@@ -115,21 +162,64 @@ namespace VrFencing.Dummy
                 var modelMaterials = skinnedRenderer.sharedMaterials;
                 for (var slot = 0; slot < modelMaterials.Length; slot++)
                 {
-                    meshSlots.Add(new RigMeshSlot(skinnedRenderer, slot, RigMeshSlot.GetPart(modelMaterials[slot] != null ? modelMaterials[slot].name : skinnedRenderer.name)));
+                    rig._meshSlots.Add(new RigMeshSlot(skinnedRenderer, slot, RigMeshSlot.GetPart(modelMaterials[slot] != null ? modelMaterials[slot].name : skinnedRenderer.name)));
                 }
 
-                skinnedRenderer.sharedMaterials =Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
-                skinnedRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                skinnedRenderer.receiveShadows = false;
+                rig.DrawWith(skinnedRenderer, material);
 
                 // The en garde pose reaches outside the rest pose's bounds; without this the Quest culls the body early.
                 skinnedRenderer.updateWhenOffscreen = true;
             }
 
-            var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToArray()) { MeshSlots = meshSlots };
             rig.ScaleToHeight(layout.HeightMeters);
+            rig.AttachMask(material);
             rig.Pose(layout);
+            rig.SetOpacity(material.color.a);
             return rig;
+        }
+
+        /// <summary>
+        /// The fencing mask under the head bone, every part drawn with the Dummy material (PER-41). Without the model,
+        /// the body is drawn bare and an error is logged.
+        /// </summary>
+        private void AttachMask(Material material)
+        {
+            var model = Resources.Load<GameObject>(MaskResourcePath);
+            if (model == null)
+            {
+                Debug.LogError($"[Dummy] Mask model 'Resources/{MaskResourcePath}' is missing; the Dummy has no mask.");
+                return;
+            }
+
+            var mask = Object.Instantiate(model, GetBone(HumanBodyBones.Head), false);
+            mask.name = "Mask";
+            _mask = mask.transform;
+            foreach (var maskRenderer in mask.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                _meshSlots.Add(new RigMeshSlot(maskRenderer, 0, RigMeshSlot.GetPart(maskRenderer.name)));
+                DrawWith(maskRenderer, material);
+            }
+        }
+
+        private void DrawWith(Renderer partRenderer, Material material)
+        {
+            partRenderer.sharedMaterials = Enumerable.Repeat(material, Mathf.Max(1, partRenderer.sharedMaterials.Length)).ToArray();
+            partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            partRenderer.receiveShadows = false;
+            _renderers.Add(partRenderer);
+        }
+
+        /// <summary>The mask around the head's center, facing where the head faces, sized for the Dummy's height.</summary>
+        private void PlaceMask(Vector3 headCenterInPartsFrame, Quaternion headTurnInPartsFrame)
+        {
+            if (_mask == null)
+            {
+                return;
+            }
+
+            _mask.SetPositionAndRotation(_partsRoot.TransformPoint(headCenterInPartsFrame), _partsRoot.rotation * headTurnInPartsFrame);
+            var parentScale = _mask.parent.lossyScale.x;
+            _mask.localScale = Vector3.one * (parentScale > 1e-6f ? _heightMeters / MaskReferenceHeightMeters / parentScale : 1.0f);
         }
 
         /// <summary>Puts every mapped bone on its joint for <paramref name="layout"/>, e.g. after the sword arm moved.</summary>
@@ -162,6 +252,7 @@ namespace VrFencing.Dummy
 
         private void PoseJoints(Hand hand, float heightMeters, System.Func<SkeletonJoint, Vector3?> getJoint, Vector3? backHandEnd, Quaternion? headRotation)
         {
+            _heightMeters = heightMeters;
             var swordSide = hand == Hand.Left ? BodySide.Left : BodySide.Right;
             var backSide = swordSide == BodySide.Right ? BodySide.Left : BodySide.Right;
 
@@ -187,6 +278,7 @@ namespace VrFencing.Dummy
                 // The head looks where the headset looks; the Dummy's looks at the Fencer: upright, facing the Dummy frame's +z.
                 var turn = headRotation ?? Quaternion.identity;
                 SetBone(HumanBodyBones.Head, headJoint, RotateFrame(HumanBodyBones.Head, RestShouldersRight(), RestSpineUp(), turn * Vector3.right, turn * Vector3.up));
+                PlaceMask(headCenter.Value, turn);
             }
 
             PoseArm(swordSide, swordShoulder, getJoint(SkeletonJoint.SwordElbow), getJoint(SkeletonJoint.SwordWrist), getJoint(SkeletonJoint.SwordHandEnd));

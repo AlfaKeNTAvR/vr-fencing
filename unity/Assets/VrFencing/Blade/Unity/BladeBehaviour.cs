@@ -94,6 +94,7 @@ namespace VrFencing.Blade
             _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
             _armedDummy?.ApplySettings(_settings);
             _mountInController = BladePose.GetMountInController(_settings.Blade, _settings.Hand);
+            _visual?.SetGrip(_settings.Blade.Mount, _settings.Blade.PistolGrip, _settings.Hand);
             AttachToSwordHand();
             RestartMotion();
         }

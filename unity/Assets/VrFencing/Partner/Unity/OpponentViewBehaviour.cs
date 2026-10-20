@@ -32,8 +32,7 @@ namespace VrFencing.Partner
         /// <summary>This Fencer's blade as an obstacle for the opponent's: about the blade's half-width at the forte.</summary>
         private const float MyBladeRadiusMeters = 0.005f;
 
-        // The Dummy's silhouette color (DummyBehaviour), so the opponent reads as the same kind of figure.
-        private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f);
+        // The opponent is colored part by part as the Dummy's rig is (DummyBodyRig.GetPartColor), so it reads as the same kind of figure.
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         [SerializeField]
@@ -250,7 +249,9 @@ namespace VrFencing.Partner
                              * (IsFadedForCorpsACorps ? OpponentFade.CorpsACorpsFactor : 1.0f);
                 var factor = _fades.TryGetValue(part, out var current) ? OpponentFade.StepToward(current, target, deltaSeconds) : target;
                 _fades[part] = factor;
-                _propertyBlock.SetColor(BaseColorId, new Color(SilhouetteColor.r, SilhouetteColor.g, SilhouetteColor.b, Mathf.Clamp01(_settings.DummyLook.BodyOpacity * factor)));
+                // The Dummy's suit and mask colors (PER-41), at this part's faded opacity.
+                var color = DummyBodyRig.GetPartColor(slot.Part);
+                _propertyBlock.SetColor(BaseColorId, new Color(color.r, color.g, color.b, Mathf.Clamp01(_settings.DummyLook.BodyOpacity * factor)));
                 slot.Renderer.SetPropertyBlock(_propertyBlock, slot.MaterialIndex);
             }
         }
@@ -304,6 +305,8 @@ namespace VrFencing.Partner
 
             var grip = view.Grip.Value;
             var blade = grip.ToBladeSettings();
+            // The hilt matches the partner's grip; the pistol grip's shape is not streamed, so it is the default one.
+            _bladeVisual.SetGrip(grip.Mount, PistolGripShape.Visconti, grip.Hand);
             if (_appliedFlex != grip.Flex)
             {
                 _drawnBlade.Flex.SetSoftness(grip.Flex);

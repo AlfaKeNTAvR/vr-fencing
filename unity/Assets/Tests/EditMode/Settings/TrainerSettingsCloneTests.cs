@@ -31,6 +31,7 @@ namespace VrFencing.Tests.Settings
             settings.Blade.ParryRule = ParryRule.Strict;
             settings.Blade.Flex = BladeFlexSoftness.Soft;
             settings.Blade.Mount = BladeMount.FrenchPosted;
+            settings.Blade.PistolGrip = PistolGripShape.Belgian;
             settings.Blade.SavedAngles.Center.PitchDegrees = 1.0f;
             settings.Blade.SavedAngles.Pistol.YawDegrees = 2.0f;
             settings.Blade.SavedAngles.French.PitchDegrees = 3.0f;

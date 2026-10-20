@@ -41,6 +41,8 @@ namespace VrFencing.Tests.Settings
             Assert.That(loaded.LightNamedZones, Is.True);
             Assert.That(loaded.Blade.SavedAngles.French.PitchDegrees, Is.EqualTo(-9.0f));
             Assert.That(loaded.Blade.GetMeasuredReachMeters(), Is.Null, "No reach: the Dummy's distance comes from height.");
+            // PER-41: nor a pistol grip shape.
+            Assert.That(loaded.Blade.PistolGrip, Is.EqualTo(PistolGripShape.Visconti));
         }
 
         [Test]

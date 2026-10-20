@@ -180,10 +180,7 @@ namespace VrFencing.Dummy
                 return;
             }
 
-            foreach (var bodyRenderer in _bodyRenderers)
-            {
-                SetColor(bodyRenderer, GetBodyColor());
-            }
+            ColorBody();
 
             foreach (var zoneRenderer in _zoneRenderers)
             {
@@ -350,6 +347,18 @@ namespace VrFencing.Dummy
                 {
                     _bodyRenderers.Add(CreateCapsuleRenderer("Silhouette", part, part.RadiusMeters, _partsRoot, material));
                 }
+            }
+
+            ColorBody();
+        }
+
+        /// <summary>The rigged body in its suit and mask colors (PER-41), or the capsule silhouette in its one color, at the look's body opacity.</summary>
+        private void ColorBody()
+        {
+            if (_bodyRig != null)
+            {
+                _bodyRig.SetOpacity(_look.BodyOpacity);
+                return;
             }
 
             foreach (var bodyRenderer in _bodyRenderers)

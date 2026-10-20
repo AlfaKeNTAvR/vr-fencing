@@ -5,44 +5,60 @@ namespace VrFencing.Strip
 {
     /// <summary>
     /// Draws the Strip's piste-like floor markings from a Core <see cref="StripGeometry"/>, under a parent transform
-    /// that is the Strip frame (the En Garde Line): side and end lines, the center line, both En Garde Lines, and a
-    /// translucent Warning Zone at each end that glows while the Fencer is in it. Lines are thin flat boxes just above
-    /// the floor, solid (opaque material) and lying fully above the Warning Zones, so the pulsing zones never show
-    /// through or fight with them. All dimensions come from the Core; this only builds and colors renderers.
+    /// that is the Strip frame (the En Garde Line): a faint translucent piste surface (the real floor shows through
+    /// it), side and end lines, the center line, both En Garde Lines, and a hatched translucent Warning Zone at each end
+    /// (PER-41: diagonal stripes, as the last two meters of a piste are marked) that glows while the Fencer is in it.
+    /// Lines are thin flat boxes just above the floor, solid (opaque material) and lying fully above the Warning Zones,
+    /// so the pulsing zones never show through or fight with them. All dimensions come from the Core; this only builds
+    /// and colors renderers.
     /// </summary>
     internal sealed class StripMarkings
     {
-        /// <summary>Translucent material of the Warning Zones.</summary>
+        /// <summary>Translucent material of the piste surface and, with the hatch texture, of the Warning Zones.</summary>
         public const string MaterialResourcePath = "VrFencingStrip";
 
         /// <summary>Opaque material of the lines.</summary>
         public const string LineMaterialResourcePath = "VrFencingStripLine";
 
+        /// <summary>The Warning Zones' diagonal stripes (built by tools/models/build_models.py), tiled every <see cref="HatchTileMeters"/>.</summary>
+        public const string HatchTextureResourcePath = "StripHatch";
+
         /// <summary>Piste lines are 5 cm wide.</summary>
         private const float LineWidthMeters = 0.05f;
 
-        // Lifted off the floor so tracking jitter does not sink the markings into it. The zones fill 1-3 mm above the
-        // floor and the lines 4-8 mm, so a line is always on top of a zone. The En Garde Line sits 1 mm higher still,
-        // where it crosses the side lines.
+        /// <summary>One hatch tile holds four stripes, so a stripe repeats every 10 cm.</summary>
+        private const float HatchTileMeters = 0.4f;
+
+        // Lifted off the floor so tracking jitter does not sink the markings into it. The surface fills the first
+        // millimeter, the zones 1-3 mm above the floor and the lines 4-8 mm, so a line is always on top of a zone. The
+        // En Garde Line sits 1 mm higher still, where it crosses the side lines.
+        private const float SurfaceThicknessMeters = 0.001f;
+        private const float SurfaceHeightMeters = 0.0005f;
         private const float ZoneThicknessMeters = 0.002f;
         private const float ZoneHeightMeters = 0.002f;
         private const float LineThicknessMeters = 0.004f;
         private const float LineHeightMeters = 0.006f;
         private const float EnGardeLineRaiseMeters = 0.001f;
 
+        // The surface draws before the zones and lines in the transparent queue, whatever the distance to the eye.
+        private const int SurfaceSortingOrder = -1;
+
         private const float GlowPulsesPerSecond = 2.0f;
 
         private static readonly Color LineColor = Color.white;
         private static readonly Color EnGardeLineColor = new Color(0.35f, 1.0f, 0.55f, 1.0f);
-        private static readonly Color ZoneColor = new Color(1.0f, 0.45f, 0.1f, 0.18f);
-        private static readonly Color ZoneGlowDimColor = new Color(1.0f, 0.5f, 0.1f, 0.45f);
-        private static readonly Color ZoneGlowBrightColor = new Color(1.0f, 0.6f, 0.15f, 0.75f);
+        private static readonly Color SurfaceColor = new Color(0.55f, 0.6f, 0.68f, 0.2f);
+        private static readonly Color ZoneColor = new Color(1.0f, 0.4f, 0.1f, 0.4f);
+        private static readonly Color ZoneGlowDimColor = new Color(1.0f, 0.5f, 0.1f, 0.65f);
+        private static readonly Color ZoneGlowBrightColor = new Color(1.0f, 0.65f, 0.2f, 0.95f);
 
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int BaseMapTilingId = Shader.PropertyToID("_BaseMap_ST");
 
         private readonly Transform _root;
         private readonly Material _material;
         private readonly Material _lineMaterial;
+        private readonly Material _zoneMaterial;
         private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
         private readonly Dictionary<StripEnd, Renderer> _zoneRenderers = new Dictionary<StripEnd, Renderer>();
         private readonly Dictionary<string, Renderer> _slabs = new Dictionary<string, Renderer>();
@@ -64,7 +80,19 @@ namespace VrFencing.Strip
             {
                 Debug.LogError(
                     $"[Strip] Material 'Resources/{MaterialResourcePath}' or 'Resources/{LineMaterialResourcePath}' is missing; the Strip markings are not drawn.");
+                return;
             }
+
+            // The zones are the translucent material with the hatch on it; without the texture they stay plain.
+            var hatch = Resources.Load<Texture2D>(HatchTextureResourcePath);
+            if (hatch == null)
+            {
+                Debug.LogError($"[Strip] Texture 'Resources/{HatchTextureResourcePath}' is missing; the Warning Zones are drawn plain.");
+                _zoneMaterial = _material;
+                return;
+            }
+
+            _zoneMaterial = new Material(_material) { name = _material.name + " Hatch", mainTexture = hatch };
         }
 
         /// <summary>Lays every marking out for <paramref name="geometry"/>. Cheap enough to call every frame for the placement preview.</summary>
@@ -78,11 +106,16 @@ namespace VrFencing.Strip
             var halfWidth = StripGeometry.WidthMeters * 0.5f;
             var length = geometry.FarEndZ - geometry.RearEndZ;
 
+            var surface = LayOutSlab("Piste Surface", new Vector3(0.0f, SurfaceHeightMeters, geometry.CenterLineZ),
+                new Vector3(StripGeometry.WidthMeters, SurfaceThicknessMeters, length), SurfaceColor, _material);
+            surface.sortingOrder = SurfaceSortingOrder;
+
             foreach (var end in new[] { StripEnd.Rear, StripEnd.Far })
             {
                 var (startZ, endZ) = geometry.GetWarningZoneRange(end);
+                var zoneSize = new Vector3(StripGeometry.WidthMeters, ZoneThicknessMeters, endZ - startZ);
                 _zoneRenderers[end] = LayOutSlab($"Warning Zone {end}", new Vector3(0.0f, ZoneHeightMeters, (startZ + endZ) * 0.5f),
-                    new Vector3(StripGeometry.WidthMeters, ZoneThicknessMeters, endZ - startZ), ZoneColor, _material);
+                    zoneSize, ZoneColor, _zoneMaterial, new Vector2(zoneSize.x, zoneSize.z) / HatchTileMeters);
             }
 
             LayOutSlab("Side Line Left", new Vector3(-halfWidth, LineHeightMeters, geometry.CenterLineZ),
@@ -152,8 +185,11 @@ namespace VrFencing.Strip
                 new Vector3(StripGeometry.WidthMeters + LineWidthMeters, LineThicknessMeters, LineWidthMeters), color, _lineMaterial);
         }
 
-        /// <summary>Places the slab named <paramref name="slabName"/>, creating it the first time.</summary>
-        private Renderer LayOutSlab(string slabName, Vector3 center, Vector3 size, Color color, Material material)
+        /// <summary>
+        /// Places the slab named <paramref name="slabName"/>, creating it the first time. <paramref name="textureTiling"/>
+        /// repeats the material's texture that many times across and along the slab (null: untextured).
+        /// </summary>
+        private Renderer LayOutSlab(string slabName, Vector3 center, Vector3 size, Color color, Material material, Vector2? textureTiling = null)
         {
             if (!_slabs.TryGetValue(slabName, out var slabRenderer))
             {
@@ -171,13 +207,20 @@ namespace VrFencing.Strip
 
             slabRenderer.transform.localPosition = center;
             slabRenderer.transform.localScale = size;
-            SetColor(slabRenderer, color);
+            SetColor(slabRenderer, color, textureTiling);
             return slabRenderer;
         }
 
-        private void SetColor(Renderer slabRenderer, Color color)
+        /// <summary>Colors the slab, keeping the texture tiling it was laid out with unless a new one is given.</summary>
+        private void SetColor(Renderer slabRenderer, Color color, Vector2? textureTiling = null)
         {
+            slabRenderer.GetPropertyBlock(_propertyBlock);
             _propertyBlock.SetColor(BaseColorId, color);
+            if (textureTiling.HasValue)
+            {
+                _propertyBlock.SetVector(BaseMapTilingId, new Vector4(textureTiling.Value.x, textureTiling.Value.y, 0.0f, 0.0f));
+            }
+
             slabRenderer.SetPropertyBlock(_propertyBlock);
         }
 
