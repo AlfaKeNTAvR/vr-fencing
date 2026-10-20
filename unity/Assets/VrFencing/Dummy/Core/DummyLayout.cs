@@ -36,6 +36,9 @@ namespace VrFencing.Dummy
         private readonly ZoneCapsule[] _zones;
         private readonly Capsule[] _silhouetteParts;
 
+        // The upper body's extra turn about the hips (a knocked arm, PER-116); identity unless TurnTorso set it.
+        private Quaternion _torsoTurn = Quaternion.Identity;
+
         private DummyLayout(float heightMeters, SwordArm arm, DummyLegs legs)
         {
             HeightMeters = heightMeters;
@@ -123,6 +126,16 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>
+        /// Turns the upper body further about the hips by <paramref name="turn"/> (Dummy frame, e.g.
+        /// <see cref="DummyTorso.GetKnockedTurn"/>) from the next <see cref="PoseLegs"/> on; identity stands it as the
+        /// legs have it.
+        /// </summary>
+        public void TurnTorso(Quaternion turn)
+        {
+            _torsoTurn = turn;
+        }
+
+        /// <summary>
         /// Moves the legs to <paramref name="legs"/> (in this layout's Dummy frame, already mirrored for its hand), and
         /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110). The upper
         /// body rides on the hips and leans with them (<see cref="DummyTorso"/>, PER-115): the body zone, head, back arm
@@ -131,7 +144,7 @@ namespace VrFencing.Dummy
         public void PoseLegs(DummyLegs legs)
         {
             Legs = legs;
-            Torso = DummyTorso.Pose(HeightMeters, Hand, (legs.Front.Hip + legs.Back.Hip) * 0.5f);
+            Torso = DummyTorso.Pose(HeightMeters, Hand, (legs.Front.Hip + legs.Back.Hip) * 0.5f, _torsoTurn);
             Arm.SetShoulderPosition(Torso.SwordShoulder);
             var hipRadius = EnGardePose.ThighRadius * HeightMeters;
             var shinRadius = EnGardePose.ShinRadius * HeightMeters;

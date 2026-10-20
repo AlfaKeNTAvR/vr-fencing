@@ -51,6 +51,15 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>
+        /// The same pose with the whole arm turned by <paramref name="turn"/> (right-handed Dummy frame) at the shoulder:
+        /// the Armed Dummy's arm knocked aside by the Fencer's blade (PER-116). Elbow and wrist keep their bends.
+        /// </summary>
+        public SwordArmPose TurnedAtShoulder(Quaternion turn)
+        {
+            return new SwordArmPose(Quaternion.Normalize(Quaternion.Concatenate(Shoulder, turn)), Elbow, Wrist);
+        }
+
+        /// <summary>
         /// The pose <paramref name="fraction"/> of the way from <paramref name="from"/> (0) to <paramref name="to"/> (1),
         /// each joint turned along its shortest arc, so an armed Dummy moves smoothly between key poses.
         /// </summary>

@@ -1,5 +1,6 @@
 // The Fencer's blade meeting the Armed Dummy's (PER-40, prototype PER-95): the swept segment-to-segment contact,
-// the clash event it raises (where on each blade, how hard), and the Dummy's blade swinging away and recovering.
+// the clash event it raises (where on each blade, how hard). The Dummy's blade knocked off line is in
+// BladeDeflectionTests.
 // The clash buzz is in ClashHapticsTests.
 using System;
 using System.Numerics;
@@ -105,77 +106,6 @@ namespace VrFencing.Tests.Blade
             Assert.That(clash.HasValue, Is.True);
             Assert.That(clash.Value.RelativeSpeedMetersPerSecond, Is.EqualTo(0.008f * 72.0f).Within(0.02f));
             Assert.That(Vector3.Dot(clash.Value.PushDirection, -Vector3.UnitY), Is.GreaterThan(0.999f));
-        }
-
-        [Test]
-        public void TheDummysBladeSwingsOutToThePlannedPeakAndRecovers()
-        {
-            var swing = new BladeSwing();
-            var clash = new BladeClash(0.0, Vector3.Zero, 0.3f, 1.0f, 2.0f, Vector3.UnitX);
-            var expectedPeak = BladeSwing.GetPeakMeters(2.0f, 1.0f);
-
-            swing.Kick(clash);
-            var peak = 0.0f;
-            var peakAt = 0.0f;
-            for (var step = 1; step <= 1200; step++)
-            {
-                swing.Step(0.001f);
-                if (swing.TipOffset.X > peak)
-                {
-                    peak = swing.TipOffset.X;
-                    peakAt = step * 0.001f;
-                }
-            }
-
-            Assert.That(expectedPeak, Is.EqualTo(0.3f).Within(1e-5f));
-            Assert.That(peak, Is.EqualTo(expectedPeak).Within(expectedPeak * 0.03f));
-            Assert.That(peakAt, Is.LessThan(0.15f), "It swings away at once.");
-            Assert.That(swing.TipOffset.Length(), Is.LessThan(0.005f), "Back in line after a second.");
-        }
-
-        [Test]
-        public void TheSwingIsTheSameAtAnyFrameRate()
-        {
-            var fine = new BladeSwing();
-            var coarse = new BladeSwing();
-            var clash = new BladeClash(0.0, Vector3.Zero, 0.3f, 0.5f, 1.5f, Vector3.UnitY);
-            fine.Kick(clash);
-            coarse.Kick(clash);
-
-            for (var step = 0; step < 72; step++)
-            {
-                coarse.Step(1.0f / 72.0f);
-            }
-
-            for (var step = 0; step < 1000; step++)
-            {
-                fine.Step(0.001f);
-            }
-
-            Assert.That(Vector3.Distance(fine.TipOffset, coarse.TipOffset), Is.LessThan(0.002f));
-        }
-
-        [Test]
-        public void ContactsNearTheDummysPointSwingItFurtherUpToTheLimit()
-        {
-            Assert.That(BladeSwing.GetPeakMeters(1.5f, 1.0f), Is.GreaterThan(BladeSwing.GetPeakMeters(1.5f, 0.2f)));
-            Assert.That(BladeSwing.GetPeakMeters(1.5f, 0.0f), Is.EqualTo(BladeSwing.GetPeakMeters(1.5f, 1.0f) * BladeSwing.GuardLeverage).Within(1e-5f));
-            Assert.That(BladeSwing.GetPeakMeters(20.0f, 1.0f), Is.EqualTo(BladeSwing.MaxPeakMeters));
-            Assert.That(BladeSwing.GetPeakMeters(0.0f, 1.0f), Is.EqualTo(0.0f));
-        }
-
-        [Test]
-        public void TheSwungBladeTurnsAboutItsGuardAndKeepsItsLength()
-        {
-            var swing = new BladeSwing();
-            swing.Kick(new BladeClash(0.0, Vector3.Zero, 0.3f, 1.0f, 2.0f, Vector3.UnitX));
-            swing.Step(0.08f);
-
-            var swung = swing.Apply(Opponent);
-
-            Assert.That(swung.GuardPosition, Is.EqualTo(Opponent.GuardPosition));
-            Assert.That(Vector3.Distance(swung.GuardPosition, swung.TipPosition), Is.EqualTo(0.9f).Within(1e-4f));
-            Assert.That(swung.TipPosition.X, Is.GreaterThan(0.1f), "The point went the way it was pushed.");
         }
     }
 }

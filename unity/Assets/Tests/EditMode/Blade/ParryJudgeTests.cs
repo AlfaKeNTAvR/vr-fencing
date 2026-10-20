@@ -91,14 +91,14 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void AFirmParryIsJudgedAtTheClashBeforeTheSwingGetsThere()
+        public void AFirmParryIsJudgedAtTheClashBeforeThePointGetsThere()
         {
             var report = JudgeOneClash(Clash(Inside, speedMetersPerSecond: 2.0f));
 
             Assert.That(report.HasValue, Is.True);
             Assert.That(report.Value.Line, Is.EqualTo(ParryLine.Four));
             Assert.That(report.Value.CountsAsParry, Is.True);
-            Assert.That(report.Value.DeflectionMeters, Is.EqualTo(BladeSwing.GetPeakMeters(2.0f, 0.8f)).Within(1e-4f));
+            Assert.That(report.Value.DeflectionMeters, Is.EqualTo(BladeDeflection.GetKickMeters(2.0f, 0.8f)).Within(1e-4f));
         }
 
         [Test]

@@ -353,6 +353,23 @@ namespace VrFencing.Tests.Dummy
             return new SwordArm(height, hand, attack.GetPose(nowSeconds)).GetBladePoint(BladeLength);
         }
 
+        [Test]
+        public void AKnockedDummyWaitsUntilItsArmIsBackBeforeWindingUp()
+        {
+            var attack = ArmedDummyAttack.Plan(Start, Delay, Height, Hand.Right, ReachableAim, AttackSpeed.Medium, BladeLength);
+            var plannedThrust = attack.ThrustStartSeconds;
+
+            Assert.That(attack.PostponeWindUp(Start + 1.0, Start + Delay + 0.5), Is.True, "Knocked while waiting: the plan moves.");
+
+            Assert.That(attack.WindUpStartSeconds, Is.EqualTo(Start + Delay + 0.5).Within(1e-9));
+            Assert.That(attack.ThrustStartSeconds, Is.EqualTo(plannedThrust + 0.5).Within(1e-9));
+            Assert.That(attack.Path.StartSeconds, Is.EqualTo(attack.ThrustStartSeconds).Within(1e-9), "The judged path moves with it.");
+            Assert.That(attack.GetPhase(Start + Delay + 0.4), Is.EqualTo(AttackPhase.Waiting));
+            Assert.That(attack.GetPhase(attack.ThrustEndSeconds + (ArmedDummyTuning.HoldSeconds * 0.5)), Is.EqualTo(AttackPhase.Hold), "Hold and recovery move too.");
+            Assert.That(attack.PostponeWindUp(Start + 1.0, Start + 1.5), Is.False, "Ready before the wind-up: nothing changes.");
+            Assert.That(attack.PostponeWindUp(attack.WindUpStartSeconds + 0.01, attack.WindUpStartSeconds + 1.0), Is.False, "Once wound up, the attack goes on.");
+        }
+
         private static IEnumerable<SwordArmPose> SamplePoses(ArmedDummyAttack attack, double from, double to)
         {
             for (var time = from; time <= to; time += 0.005)

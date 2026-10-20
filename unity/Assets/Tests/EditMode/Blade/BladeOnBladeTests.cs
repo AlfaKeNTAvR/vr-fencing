@@ -24,6 +24,9 @@ namespace VrFencing.Tests.Blade
 
         private static readonly BladeSegment DummyForte = new BladeSegment(new Vector3(0.0f, DummyHeight, 1.6f), new Vector3(0.0f, DummyHeight, 0.7f));
 
+        // The Dummy's sword shoulder from its guard: its arm, 0.6 m back along the Strip and 0.3 m up.
+        private static readonly Vector3 DummyArm = new Vector3(0.0f, 0.3f, 0.6f);
+
         [Test]
         public void AFastCrossingAt3MetersPerSecondDoesNotTunnel()
         {
@@ -74,7 +77,7 @@ namespace VrFencing.Tests.Blade
             // The side turns a little as the blades slide on each other, so the start's side is a few millimeters off the
             // kept one: never more than that past the Dummy's axis.
             Assert.That(worst, Is.GreaterThan(-0.005f), "The Fencer's drawn blade never got past the Dummy's.");
-            var isMet = pair.Fencer.IsOnSide || pair.Fencer.IsDecoupled || pair.Fencer.Contact.IsPinned || pair.Dummy.Swing.TipOffset.X < -0.02f;
+            var isMet = pair.Fencer.IsOnSide || pair.Fencer.IsDecoupled || pair.Fencer.Contact.IsPinned || pair.Dummy.Deflection.TipOffset.X < -0.02f;
             Assert.That(isMet, Is.True, "Setup: the beat met the Dummy's blade (bent or held the Fencer's, or knocked the Dummy's aside).");
         }
 
@@ -95,7 +98,7 @@ namespace VrFencing.Tests.Blade
             }
 
             Assert.That(worst, Is.GreaterThan(BladeBind.ContactMeters - ToleranceMeters), "The Dummy's blade never got to or past the Fencer's.");
-            Assert.That(pair.Dummy.Swing.TipOffset.Y, Is.LessThan(-0.05f), "The Dummy's point was pushed down out of the way.");
+            Assert.That(pair.Dummy.Deflection.TipOffset.Y, Is.LessThan(-0.05f), "The Dummy's point was pushed down out of the way.");
         }
 
         [Test]
@@ -113,7 +116,7 @@ namespace VrFencing.Tests.Blade
 
             Assert.That(pair.FindSeparationAlong(Vector3.UnitY), Is.LessThan(BladeBind.ContactMeters + 0.005f), "The blades still touch after 2 s of pressing.");
             Assert.That(pair.Dummy.IsPressed, Is.True);
-            Assert.That(drops[drops.Count - 1], Is.InRange(0.005f, 0.04f), "The Dummy's blade gives way part of the press, the Fencer's bends the rest.");
+            Assert.That(drops[drops.Count - 1], Is.InRange(0.003f, 0.04f), "The Dummy's blade gives way part of the press, the Fencer's bends the rest.");
             Assert.That(Math.Abs(drops[drops.Count - 1] - drops[drops.Count - 10]), Is.LessThan(0.002f), "Settled, not oscillating.");
             Assert.That(pair.Fencer.IsOnSide || pair.Fencer.Contact.IsPinned, Is.True, "The drawn blade lies against the Dummy's.");
         }
@@ -168,7 +171,7 @@ namespace VrFencing.Tests.Blade
             }
 
             Assert.That(pair.Dummy.IsPressed, Is.False);
-            Assert.That(pair.Dummy.Swing.TipOffset.Length(), Is.LessThan(0.005f), "Back in line within 1.5 s.");
+            Assert.That(pair.Dummy.Deflection.TipOffset.Length(), Is.LessThan(0.005f), "Back in line within 1.5 s.");
         }
 
         [Test]
@@ -314,7 +317,7 @@ namespace VrFencing.Tests.Blade
             {
                 _forte = dummyForte ?? DummyForte;
                 DummyWatch.Start();
-                Dummy.Step(_forte, Vector3.UnitY, -Vector3.UnitY, _settings, hand, Fencer, FrameSeconds);
+                Dummy.Step(_forte, _forte.GuardPosition + DummyArm, Vector3.UnitY, -Vector3.UnitY, _settings, hand, Fencer, FrameSeconds);
                 DummyWatch.Stop();
                 _obstacles.Clear();
                 _obstacles.AddRange(_body);
@@ -367,7 +370,7 @@ namespace VrFencing.Tests.Blade
             {
                 var fraction = (_forte.GuardPosition.Z - CrossingZ) / (_forte.GuardPosition.Z - _forte.TipPosition.Z);
                 var line = new ArmedDummyBlade();
-                line.Step(_forte, Vector3.UnitY, -Vector3.UnitY, _settings, new BladeSegment(new Vector3(5, 5, 5), new Vector3(5, 5, 6)), null, FrameSeconds);
+                line.Step(_forte, _forte.GuardPosition + DummyArm, Vector3.UnitY, -Vector3.UnitY, _settings, new BladeSegment(new Vector3(5, 5, 5), new Vector3(5, 5, 6)), null, FrameSeconds);
                 return line.Drawn.GetCenterlinePoint(fraction).Y - Dummy.Drawn.GetCenterlinePoint(fraction).Y;
             }
         }

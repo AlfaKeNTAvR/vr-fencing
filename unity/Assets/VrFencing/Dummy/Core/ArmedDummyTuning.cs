@@ -101,5 +101,16 @@ namespace VrFencing.Dummy
 
         /// <summary>The wrist stays straight; the blade is in line with the forearm.</summary>
         public const float MaximumWristBendDegrees = 0.0f;
+
+        // ---- Knocked arm (PER-116) ----
+
+        /// <summary>
+        /// The upper body turns with a knocked arm this much per meter the arm is knocked aside at the point: a beat that
+        /// carries the arm 40 cm turns the torso 6 degrees, the sword shoulder going a few centimeters with the arm.
+        /// </summary>
+        public const float KnockedTorsoTurnDegreesPerMeter = 15.0f;
+
+        /// <summary>The most a knocked arm turns the upper body.</summary>
+        public const float MaximumKnockedTorsoTurnDegrees = 6.0f;
     }
 }

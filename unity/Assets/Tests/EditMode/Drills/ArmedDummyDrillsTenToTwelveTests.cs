@@ -206,7 +206,7 @@ namespace VrFencing.Tests.Drills
             var judge = new BeatJudge();
 
             judge.ReportClash(Clash(1.0, relativeSpeed: 0.5f));
-            Assert.That(judge.Step(1.0, Vector3.Zero, isInContact: false), Is.Null, "0.5 m/s at the point kicks it about 7 cm.");
+            Assert.That(judge.Step(1.0, Vector3.Zero, isInContact: false), Is.Null, "0.5 m/s is a light touch: at most 5 cm.");
             Assert.That(judge.Step(1.0 + ParryJudge.WatchSeconds + 0.01, Vector3.Zero, isInContact: false), Is.Null);
             Assert.That(judge.IsWatching, Is.False, "The watch closed without a Beat.");
 
