@@ -261,7 +261,9 @@ namespace VrFencing.Blade
         /// <summary>
         /// Moves the point at once by <paramref name="tipOffset"/> (the Fencer's blade in the way, PER-104) and stops its
         /// motion back the other way, as a blade knocked against another does not pass through it. A knocked-out point
-        /// pushed while open or recovering is held open from there.
+        /// pushed while open or recovering is held open from there. Only the wrist takes the push at once: the arm's share
+        /// follows on the next <see cref="Step"/> at its speed limit, so even a hard press near the guard (a short lever,
+        /// a big push at the point) keeps the arm's Target Zones within the Blade's 5 cm a frame (PER-119).
         /// </summary>
         public void Push(Vector3 tipOffset)
         {
