@@ -17,6 +17,7 @@ namespace VrFencing.Blade
         private ClipPlayer _playing;
         private ClipPlayer _pressPlayer;
         private ClipPlayer _clashPlayer;
+        private ClipPlayer _fencerHitPlayer;
         private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
@@ -91,6 +92,29 @@ namespace VrFencing.Blade
             }
         }
 
+        /// <summary>
+        /// The buzz when the Armed Dummy's point lands on the Fencer (<see cref="BladeHaptics.FencerHitBuzz"/>, PER-98), at
+        /// full strength; it replaces whatever is playing.
+        /// </summary>
+        public void PlayFencerHit(Hand swordHand)
+        {
+            if (_hasFailed)
+            {
+                return;
+            }
+
+            try
+            {
+                _fencerHitPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.FencerHitBuzz), BladeHaptics.FencerHitBuzz);
+                StartPlaying(_fencerHitPlayer, 1.0f, swordHand);
+                _eventEndsAt = Time.time + _fencerHitPlayer.DurationSeconds;
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
         private void StartPlaying(ClipPlayer player, float strength, Hand swordHand)
         {
             _playing?.Player.Stop();
@@ -118,6 +142,8 @@ namespace VrFencing.Blade
             _pressPlayer = null;
             _clashPlayer?.Dispose();
             _clashPlayer = null;
+            _fencerHitPlayer?.Dispose();
+            _fencerHitPlayer = null;
             _playing = null;
         }
 

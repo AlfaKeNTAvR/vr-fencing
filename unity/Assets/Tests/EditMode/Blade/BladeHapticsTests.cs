@@ -41,6 +41,41 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void TheHitOnTheFencerBuzzIsLongerAndHasMoreTapsThanAnyTouchPattern()
+        {
+            var hit = BladeHaptics.FencerHitBuzz;
+            var hitTaps = CountPulses(hit);
+            var hitSeconds = hit.Sum(segment => segment.DurationSeconds);
+
+            foreach (var pattern in new[] { HapticPattern.Tick, HapticPattern.Crisp, HapticPattern.Heavy, HapticPattern.DoubleTap })
+            {
+                var touch = BladeHaptics.GetSegments(BladeEventType.Touch, pattern);
+                Assert.That(hitTaps, Is.GreaterThan(CountPulses(touch)), pattern.ToString());
+                Assert.That(hitSeconds, Is.GreaterThan(touch.Sum(segment => segment.DurationSeconds) * 1.5f), pattern.ToString());
+            }
+
+            Assert.That(hit.Max(segment => segment.Amplitude), Is.EqualTo(1.0f), "Sharp: full strength.");
+        }
+
+        private static int CountPulses(System.Collections.Generic.IReadOnlyList<HapticSegment> segments)
+        {
+            var pulses = 0;
+            var wasOn = false;
+            foreach (var segment in segments)
+            {
+                var isOn = segment.Amplitude > 0.0f;
+                if (isOn && !wasOn)
+                {
+                    pulses++;
+                }
+
+                wasOn = isOn;
+            }
+
+            return pulses;
+        }
+
+        [Test]
         public void OffPlaysNothing()
         {
             Assert.That(BladeHaptics.GetSegments(BladeEventType.Touch, HapticPattern.Off), Is.Empty);

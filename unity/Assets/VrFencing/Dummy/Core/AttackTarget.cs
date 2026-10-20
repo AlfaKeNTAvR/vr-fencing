@@ -17,7 +17,8 @@ namespace VrFencing.Dummy
     /// The aim point of a thrust at each <see cref="AttackTarget"/>. The Fencer is taken to stand en garde at the En
     /// Garde Line in the Dummy's own stance and size (the Dummy is the Fencer's height and hand), so chest and thigh
     /// are the fronts of the Dummy's body and thigh zones as seen from the Strip frame; hand and forearm follow the
-    /// Fencer's live blade, behind its guard. IOBT body tracking replaces the stance model later (PER-98).
+    /// Fencer's live blade, behind its guard. On the headset, chest and thigh aim at the
+    /// Fencer's tracked body instead when it is known (the Blade's <c>FencerTarget</c>, PER-98).
     /// </summary>
     public static class AttackAim
     {
@@ -64,33 +65,70 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>
-        /// The Fencer's body that a thrust must be turned off for a Parry (PER-97), in the Strip frame, by the same
-        /// stand-in as the aims: the Dummy's stance and size at the En Garde Line, without its posed sword arm. The
-        /// Fencer's own sword arm is a capsule from the front of their live guard (<paramref name="fencerGuardOnStrip"/>)
-        /// to the stance's sword shoulder, as thick as the upper arm, left out while the blade is unknown. IOBT body tracking replaces this (PER-98).
+        /// The Fencer's body by the same stand-in as the aims, in the Strip frame: the Dummy's stance and size at the En
+        /// Garde Line, without its posed sword arm, each capsule named by its <see cref="BodyPart"/>. The headset
+        /// fallback of the hit judging (PER-98) moves it under the headset.
         /// </summary>
         /// <exception cref="ArgumentNullException"><paramref name="layout"/> is null.</exception>
-        public static IReadOnlyList<Capsule> GetFencerBodyOnStrip(DummyLayout layout, Vector3? fencerGuardOnStrip)
+        public static IReadOnlyList<BodyCapsule> GetFencerStanceOnStrip(DummyLayout layout)
         {
             if (layout == null)
             {
                 throw new ArgumentNullException(nameof(layout));
             }
 
-            var body = new List<Capsule>();
+            var stance = new List<BodyCapsule>();
             foreach (var zone in layout.Zones)
             {
                 if (!SwordArm.IsArmZone(zone.Zone))
                 {
-                    body.Add(zone.Shape);
+                    stance.Add(new BodyCapsule(GetStancePart(zone.Zone), zone.Shape));
                 }
             }
 
-            body.AddRange(layout.SilhouetteParts);
+            for (var index = 0; index < layout.SilhouetteParts.Count; index++)
+            {
+                stance.Add(new BodyCapsule(DummyLayout.SilhouetteBodyParts[index], layout.SilhouetteParts[index]));
+            }
+
+            return stance;
+        }
+
+        /// <summary>
+        /// The Fencer's sword arm in the stand-in: a capsule from the stance's sword shoulder, moved by
+        /// <paramref name="stanceOffset"/>, to the front of the live guard (<paramref name="fencerGuardOnStrip"/>), as
+        /// thick as the upper arm.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="layout"/> is null.</exception>
+        public static Capsule GetFencerSwordArm(DummyLayout layout, Vector3 stanceOffset, Vector3 fencerGuardOnStrip)
+        {
+            if (layout == null)
+            {
+                throw new ArgumentNullException(nameof(layout));
+            }
+
+            var shoulder = layout.Arm.GetPose(ArmJoint.Shoulder).Position + stanceOffset;
+            return new Capsule(fencerGuardOnStrip, shoulder, EnGardePose.UpperArmRadius * layout.HeightMeters);
+        }
+
+        /// <summary>
+        /// The Fencer's body that a thrust must be turned off for a Parry (PER-97), in the Strip frame, by the stand-in
+        /// alone (<see cref="GetFencerStanceOnStrip"/>), plus the sword arm (<see cref="GetFencerSwordArm"/>), left out
+        /// while the blade is unknown. On the headset the Blade's <c>FencerTarget</c> judges against the tracked body
+        /// instead, or this stand-in moved under the headset (PER-98).
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="layout"/> is null.</exception>
+        public static IReadOnlyList<Capsule> GetFencerBodyOnStrip(DummyLayout layout, Vector3? fencerGuardOnStrip)
+        {
+            var body = new List<Capsule>();
+            foreach (var part in GetFencerStanceOnStrip(layout))
+            {
+                body.Add(part.Shape);
+            }
+
             if (fencerGuardOnStrip.HasValue)
             {
-                var shoulder = layout.Arm.GetPose(ArmJoint.Shoulder).Position;
-                body.Add(new Capsule(fencerGuardOnStrip.Value, shoulder, EnGardePose.UpperArmRadius * layout.HeightMeters));
+                body.Add(GetFencerSwordArm(layout, Vector3.Zero, fencerGuardOnStrip.Value));
             }
 
             return body;
@@ -105,6 +143,21 @@ namespace VrFencing.Dummy
             }
 
             return (AttackTarget)random.Next(4);
+        }
+
+        private static BodyPart GetStancePart(TargetZone zone)
+        {
+            switch (zone)
+            {
+                case TargetZone.Body:
+                    return BodyPart.Torso;
+                case TargetZone.Thigh:
+                    return BodyPart.FrontThigh;
+                case TargetZone.Foot:
+                    return BodyPart.FrontLowerLeg;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(zone), zone, "Not a stance Target Zone.");
+            }
         }
 
         /// <summary>The front of a Fencer zone, toward the Dummy (+z in the Strip frame).</summary>

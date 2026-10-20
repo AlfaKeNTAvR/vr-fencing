@@ -3,7 +3,9 @@
     "rootNamespace": "VrFencing.Blade",
     "references": [
         "VrFencing.Settings.Core",
-        "VrFencing.Dummy.Core"
+        "VrFencing.Dummy.Core",
+        "VrFencing.Partner.Core",
+        "VrFencing.Session.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -19,8 +19,11 @@ namespace VrFencing.Blade
     /// (<see cref="BladeSwing"/>). The two blades are solid against each other (<see cref="ArmedDummyBlade"/>,
     /// PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives way to a press and springs back.
     /// A contact during the thrust or its hold is judged (<see cref="ParryJudge"/>, PER-97): once it has turned the point
-    /// off the Fencer's body the thrust is cut short and recovers, and the runner gets the Parry; a thrust that reaches
-    /// the end of its hold unparried is reported as landed.
+    /// off the Fencer's body the thrust is cut short and recovers, and the runner gets the Parry. Unparried, its point is
+    /// judged against the Fencer's body each frame (<see cref="FencerTarget"/>, PER-98: IOBT when confident, else
+    /// capsules from the headset plus the sword arm): when it lands, the thrust stops there, a red flash and the hit buzz
+    /// play, and the runner gets the hit with the body that judged it. A thrust that ends its hold without reaching the
+    /// Fencer is reported too, with no hit.
     /// All rules are in the Core; this only poses, draws, plays and forwards.
     /// </summary>
     internal sealed class ArmedDummyPrototype : IDisposable
@@ -41,7 +44,12 @@ namespace VrFencing.Blade
         private readonly Transform _mount;
         private readonly BladeVisual _visual;
         private readonly Renderer _spark;
+        private readonly FencerBodyReader _bodyReader;
+        private readonly FencerTarget _fencer = new FencerTarget();
+        private readonly HitFlash _hitFlash;
         private TrainerSettings _settings = new TrainerSettings();
+        private System.Numerics.Vector3? _lastDummyPoint;
+        private FencerHitSource? _lastLoggedSource;
         private ArmedDummyAttack _attack;
         private ParryJudge _judge;
         private BladeClash? _lastClash;
@@ -51,11 +59,13 @@ namespace VrFencing.Blade
         private bool _isActive;
         private float _sparkEndsAt = float.NegativeInfinity;
 
-        public ArmedDummyPrototype(DummyBehaviour dummy, DrillRunner runner, BladeHapticPlayer haptics)
+        public ArmedDummyPrototype(DummyBehaviour dummy, DrillRunner runner, BladeHapticPlayer haptics, OVRCameraRig cameraRig)
         {
             _dummy = dummy ?? throw new ArgumentNullException(nameof(dummy));
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _haptics = haptics;
+            _bodyReader = new FencerBodyReader(cameraRig);
+            _hitFlash = new HitFlash(cameraRig != null ? cameraRig.centerEyeAnchor : null);
 
             _mount = new GameObject("Armed Dummy Blade").transform;
             _visual = new BladeVisual(_mount);
@@ -78,6 +88,7 @@ namespace VrFencing.Blade
             _judge?.Reset();
             _lastClash = null;
             _lastFencerBlade = null;
+            _lastDummyPoint = null;
         }
 
         /// <summary>
@@ -87,6 +98,7 @@ namespace VrFencing.Blade
         public void Step(double nowSeconds, float deltaSeconds, BladeSegment fencerBlade, TrackedPose stripInRoom, DrawnBlade fencerDrawn)
         {
             _lastFencerBlade = fencerBlade;
+            _hitFlash.Update();
             var isActive = IsTestDrillRunning() && _dummy.Layout != null;
             if (isActive != _isActive)
             {
@@ -115,7 +127,9 @@ namespace VrFencing.Blade
                 OnClash(clash.Value, nowSeconds, stripInRoom);
             }
 
+            UpdateFencer(stripInRoom, fencerBlade);
             JudgeParry(nowSeconds, clash, fencerBlade);
+            JudgeHit(nowSeconds);
             _visual.Draw(_blade.Drawn, stripInRoom, (float)nowSeconds);
             if (_spark != null && Time.time >= _sparkEndsAt && _spark.enabled)
             {
@@ -145,6 +159,7 @@ namespace VrFencing.Blade
         {
             _runner.RepCued -= OnRepCued;
             _visual.Dispose();
+            _hitFlash.Dispose();
             if (_spark != null)
             {
                 UnityEngine.Object.Destroy(_spark.gameObject);
@@ -162,7 +177,7 @@ namespace VrFencing.Blade
         /// </summary>
         private void JudgeParry(double nowSeconds, BladeClash? clash, BladeSegment fencerBlade)
         {
-            if (_attack == null || _judge == null || _attack.IsParried)
+            if (_attack == null || _judge == null || _attack.IsParried || _attack.HasLanded)
             {
                 return;
             }
@@ -173,7 +188,7 @@ namespace VrFencing.Blade
                 if (!_hasReportedLanding)
                 {
                     _hasReportedLanding = true;
-                    Debug.Log("[ArmedDummy] Thrust landed: not parried.");
+                    Debug.Log("[ArmedDummy] Thrust ended short of the Fencer: not parried, no hit.");
                     _runner.ReportAttackLanded();
                 }
 
@@ -204,7 +219,8 @@ namespace VrFencing.Blade
             }
 
             var line = AttackLine.OnStrip(_attack.Path, _dummy.DistanceMeters, nowSeconds);
-            var body = AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
+            // Without a headset pose there is no tracked Fencer: the stand-in at the En Garde Line keeps the judging fair.
+            var body = _fencer.HasBody ? _fencer.Capsules : AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
             var parry = _judge.Step(nowSeconds, _blade.Swing.TipOffset, isInContact, line, body);
             if (!parry.HasValue)
             {
@@ -218,6 +234,56 @@ namespace VrFencing.Blade
                 $"{(report.IsForteOnFoible ? "forte on foible" : "not forte on foible")}, rule {_settings.Blade.ParryRule}: " +
                 (report.CountsAsParry ? "counts." : "does not count."));
             _runner.ReportParry(report);
+        }
+
+        /// <summary>This frame's Fencer body (IOBT or the headset capsules), logging when the source changes.</summary>
+        private void UpdateFencer(TrackedPose stripInRoom, BladeSegment fencerBlade)
+        {
+            var layout = _dummy.Layout;
+            var headset = _bodyReader.ReadHeadset(stripInRoom);
+            var trackedBody = _bodyReader.ReadBody(stripInRoom, headset, layout.Hand, layout.HeightMeters);
+            _fencer.Update(trackedBody, headset, fencerBlade.GuardPosition, layout);
+            if (_fencer.Source != _lastLoggedSource)
+            {
+                _lastLoggedSource = _fencer.Source;
+                Debug.Log($"[ArmedDummy] Hits on the Fencer judged by {_fencer.Source?.ToString() ?? "nothing (no headset pose)"}" +
+                    $" (body tracking fidelity {trackedBody.Fidelity?.ToString() ?? "none"}).");
+            }
+        }
+
+        /// <summary>
+        /// The unparried point's path this frame against the Fencer's body: on the first contact the thrust stops there,
+        /// the red flash and the hit buzz play, and the runner gets the hit.
+        /// </summary>
+        private void JudgeHit(double nowSeconds)
+        {
+            var pointBefore = _lastDummyPoint;
+            var pointNow = _blade.Chord.TipPosition;
+            _lastDummyPoint = pointNow;
+            if (_attack == null || !pointBefore.HasValue || _attack.IsParried || _attack.HasLanded || _hasReportedLanding)
+            {
+                return;
+            }
+
+            var phase = _attack.GetPhase(nowSeconds);
+            if (phase != AttackPhase.Thrust && phase != AttackPhase.Hold)
+            {
+                return;
+            }
+
+            var hit = _fencer.FindHit(pointBefore.Value, pointNow);
+            if (!hit.HasValue)
+            {
+                return;
+            }
+
+            _attack.ReportLanded(nowSeconds);
+            _hasReportedLanding = true;
+            _hitFlash.Show();
+            _haptics?.PlayFencerHit(_settings.Hand);
+            var landed = hit.Value;
+            Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried.");
+            _runner.ReportAttackLanded(landed);
         }
 
         private void SetActive(bool isActive)
@@ -246,8 +312,12 @@ namespace VrFencing.Blade
             var speed = (AttackSpeed)(cue.RepIndex % 3);
             var target = AttackAim.DrawTarget(_random);
             var delay = ArmedDummyAttack.DrawDelaySeconds(_random);
-            var aim = AttackAim.GetAimInDummyFrame(
-                target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
+            // Chest and thigh aim at the Fencer's body as tracked (the Dummy frame is the Strip frame turned and moved, its
+            // own inverse); hand and forearm, or no body, by the stand-in.
+            var aim = _fencer.TryGetAim(target, out var aimOnStrip)
+                ? DummyLayout.DummyToStrip(aimOnStrip, _dummy.DistanceMeters)
+                : AttackAim.GetAimInDummyFrame(
+                    target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
             _attack = ArmedDummyAttack.Plan(Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters);
             _judge = new ParryJudge(_settings.Blade.ParryRule, _settings.Hand);
             _hasAttackClashed = false;

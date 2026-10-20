@@ -38,7 +38,9 @@ namespace VrFencing.Session
             FootworkLog footwork = null,
             DummyDistance? dummyDistance = null,
             ParryLine? parryLine = null,
-            double? riposteSeconds = null)
+            double? riposteSeconds = null,
+            FencerHitSource? hitSource = null,
+            BodyPart? hitPart = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -76,6 +78,8 @@ namespace VrFencing.Session
             DummyDistance = dummyDistance;
             ParryLine = parryLine;
             RiposteSeconds = riposteSeconds;
+            HitSource = hitSource;
+            HitPart = hitPart;
         }
 
         public int Schema { get; }
@@ -145,6 +149,15 @@ namespace VrFencing.Session
         /// <summary>Parry Drills: from the Parry to the Riposte's contact; null without both.</summary>
         public double? RiposteSeconds { get; }
 
+        /// <summary>
+        /// Parry Drills: which body judged the Armed Dummy's point landing on the Fencer (IOBT or the headset capsules,
+        /// PER-98); null when it did not land, and in older lines.
+        /// </summary>
+        public FencerHitSource? HitSource { get; }
+
+        /// <summary>Parry Drills: the part of the Fencer the Armed Dummy's point landed on; null when it did not land.</summary>
+        public BodyPart? HitPart { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -173,7 +186,9 @@ namespace VrFencing.Session
                 FootworkLog.FromReading(result.Footwork),
                 result.DummyDistance,
                 result.ParryLine,
-                result.RiposteSeconds);
+                result.RiposteSeconds,
+                result.FencerHit?.Source,
+                result.FencerHit?.Part);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -199,7 +214,9 @@ namespace VrFencing.Session
                 Footwork,
                 DummyDistance,
                 ParryLine,
-                RiposteSeconds);
+                RiposteSeconds,
+                HitSource,
+                HitPart);
         }
     }
 

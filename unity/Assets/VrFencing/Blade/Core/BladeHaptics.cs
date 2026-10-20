@@ -115,6 +115,21 @@ namespace VrFencing.Blade
         /// </summary>
         public static IReadOnlyList<HapticSegment> PressPulse { get; } = new[] { new HapticSegment(1.0f, 0.6f, 0.035f) };
 
+        /// <summary>
+        /// The buzz when the Armed Dummy's point lands on the Fencer (PER-23 resolution, PER-98): sharp and unlike any
+        /// Touch pattern (the longest of those is 90 ms of at most two taps). Three hard taps, then a low rumble, about
+        /// 0.2 s in all, always at full strength.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> FencerHitBuzz { get; } = new[]
+        {
+            new HapticSegment(1.0f, 1.0f, 0.020f),
+            new HapticSegment(0.0f, 0.0f, 0.025f),
+            new HapticSegment(1.0f, 1.0f, 0.020f),
+            new HapticSegment(0.0f, 0.0f, 0.025f),
+            new HapticSegment(1.0f, 1.0f, 0.020f),
+            new HapticSegment(1.0f, 0.15f, 0.100f),
+        };
+
         /// <summary>How often the press buzz repeats while pinned.</summary>
         public const float PressPulseIntervalSeconds = 0.06f;
 

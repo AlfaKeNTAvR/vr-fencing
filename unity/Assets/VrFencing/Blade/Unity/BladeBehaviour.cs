@@ -119,7 +119,7 @@ namespace VrFencing.Blade
             if (_dummy != null && _drillRunner != null && _drillRunner.Runner != null)
             {
                 // The Armed Dummy feel test (PER-95): only live while its development Drill runs.
-                _armedDummy = new ArmedDummyPrototype(_dummy, _drillRunner.Runner, _haptics);
+                _armedDummy = new ArmedDummyPrototype(_dummy, _drillRunner.Runner, _haptics, _cameraRig);
             }
 
             ApplySettings(SettingsFile.Load());
