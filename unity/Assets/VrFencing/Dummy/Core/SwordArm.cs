@@ -50,6 +50,18 @@ namespace VrFencing.Dummy
             return new SwordArmPose(Shoulder, Quaternion.CreateFromAxisAngle(-Vector3.UnitX, radians), Wrist);
         }
 
+        /// <summary>
+        /// The pose <paramref name="fraction"/> of the way from <paramref name="from"/> (0) to <paramref name="to"/> (1),
+        /// each joint turned along its shortest arc, so an armed Dummy moves smoothly between key poses.
+        /// </summary>
+        public static SwordArmPose Slerp(SwordArmPose from, SwordArmPose to, float fraction)
+        {
+            return new SwordArmPose(
+                Quaternion.Normalize(Quaternion.Slerp(from.Shoulder, to.Shoulder, fraction)),
+                Quaternion.Normalize(Quaternion.Slerp(from.Elbow, to.Elbow, fraction)),
+                Quaternion.Normalize(Quaternion.Slerp(from.Wrist, to.Wrist, fraction)));
+        }
+
         private static Quaternion RotationFromForwardTo(Vector3 direction)
         {
             var target = Vector3.Normalize(direction);
@@ -68,44 +80,50 @@ namespace VrFencing.Dummy
     /// </summary>
     public sealed class SwordArm
     {
-        private readonly TrackedPose[] _localPoses;
-        private readonly TrackedPose[] _poses;
+        private const int JointCount = 3;
+
+        private readonly TrackedPose[] _localPoses = new TrackedPose[JointCount];
+        private readonly TrackedPose[] _poses = new TrackedPose[JointCount];
         private readonly float _heightMeters;
 
         /// <exception cref="ArgumentException">A rotation in <paramref name="pose"/> is zero (an unset pose).</exception>
         public SwordArm(float heightMeters, Hand hand, SwordArmPose pose)
         {
             DummyLayout.RequirePositiveHeight(heightMeters);
-            RequireRotation(pose.Shoulder, nameof(pose.Shoulder));
-            RequireRotation(pose.Elbow, nameof(pose.Elbow));
-            RequireRotation(pose.Wrist, nameof(pose.Wrist));
-
             _heightMeters = heightMeters;
             Hand = hand;
-            Pose = pose;
-
-            _localPoses = new[]
-            {
-                new TrackedPose(EnGardePose.SwordShoulder * heightMeters, Quaternion.Normalize(pose.Shoulder)),
-                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.UpperArmLength * heightMeters), Quaternion.Normalize(pose.Elbow)),
-                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.ForearmLength * heightMeters), Quaternion.Normalize(pose.Wrist)),
-            };
-            for (var joint = 0; joint < _localPoses.Length; joint++)
-            {
-                _localPoses[joint] = HandMirroring.ForHand(_localPoses[joint], hand);
-            }
-
-            _poses = new TrackedPose[_localPoses.Length];
-            _poses[0] = _localPoses[0];
-            for (var joint = 1; joint < _localPoses.Length; joint++)
-            {
-                _poses[joint] = Compose(_poses[joint - 1], _localPoses[joint]);
-            }
+            SetPose(pose);
         }
 
         public Hand Hand { get; }
 
-        public SwordArmPose Pose { get; }
+        public SwordArmPose Pose { get; private set; }
+
+        /// <summary>
+        /// Moves this arm to <paramref name="pose"/> in place, without allocating: the Armed Dummy re-poses its arm
+        /// every frame (PER-96).
+        /// </summary>
+        /// <exception cref="ArgumentException">A rotation in <paramref name="pose"/> is zero (an unset pose).</exception>
+        internal void SetPose(SwordArmPose pose)
+        {
+            RequireRotation(pose.Shoulder, nameof(pose.Shoulder));
+            RequireRotation(pose.Elbow, nameof(pose.Elbow));
+            RequireRotation(pose.Wrist, nameof(pose.Wrist));
+            Pose = pose;
+
+            _localPoses[(int)ArmJoint.Shoulder] = HandMirroring.ForHand(
+                new TrackedPose(EnGardePose.SwordShoulder * _heightMeters, Quaternion.Normalize(pose.Shoulder)), Hand);
+            _localPoses[(int)ArmJoint.Elbow] = HandMirroring.ForHand(
+                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.UpperArmLength * _heightMeters), Quaternion.Normalize(pose.Elbow)), Hand);
+            _localPoses[(int)ArmJoint.Wrist] = HandMirroring.ForHand(
+                new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.ForearmLength * _heightMeters), Quaternion.Normalize(pose.Wrist)), Hand);
+
+            _poses[0] = _localPoses[0];
+            for (var joint = 1; joint < JointCount; joint++)
+            {
+                _poses[joint] = Compose(_poses[joint - 1], _localPoses[joint]);
+            }
+        }
 
         /// <summary>The joint's pose in its parent's frame (the Dummy frame for the shoulder).</summary>
         public TrackedPose GetLocalPose(ArmJoint joint)
@@ -117,6 +135,28 @@ namespace VrFencing.Dummy
         public TrackedPose GetPose(ArmJoint joint)
         {
             return _poses[(int)joint];
+        }
+
+        /// <summary>
+        /// Where the front of the guard of a blade held in the sword hand is, in the Dummy frame: at the end of the hand
+        /// (the hand grips the handle behind the guard), with the blade along the hand's +z (PER-40).
+        /// </summary>
+        public Vector3 GetGuardPosition()
+        {
+            var wrist = GetPose(ArmJoint.Wrist);
+            return wrist.Position + Vector3.Transform(new Vector3(0.0f, 0.0f, EnGardePose.HandLength * _heightMeters), wrist.Rotation);
+        }
+
+        /// <summary>Unit vector along a blade held in the sword hand, from the guard to the point, in the Dummy frame.</summary>
+        public Vector3 GetBladeDirection()
+        {
+            return Vector3.Transform(Vector3.UnitZ, GetPose(ArmJoint.Wrist).Rotation);
+        }
+
+        /// <summary>The point of a held blade of <paramref name="bladeLengthMeters"/>, in the Dummy frame.</summary>
+        public Vector3 GetBladePoint(float bladeLengthMeters)
+        {
+            return GetGuardPosition() + (GetBladeDirection() * bladeLengthMeters);
         }
 
         /// <summary>Whether <paramref name="zone"/> is on the sword arm (hand, wrist, forearm or upper arm).</summary>

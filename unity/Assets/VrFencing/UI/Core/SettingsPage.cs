@@ -37,6 +37,10 @@ namespace VrFencing.UI
         HapticFloor,
         HapticFullStrengthSpeed,
         LaserTilt,
+        ShowTargetZones,
+        ZoneOpacity,
+        ZoneThickness,
+        BodyOpacity,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -56,6 +60,9 @@ namespace VrFencing.UI
 
         /// <summary>Hand the Blade its new Touch rule, mount, haptics or sword hand.</summary>
         Blade = 8,
+
+        /// <summary>Redraw the Dummy's body and Target Zones with the new look (PER-102), without rebuilding it.</summary>
+        DummyLook = 16,
     }
 
     /// <summary>
@@ -105,6 +112,13 @@ namespace VrFencing.UI
                 (settings, value) => settings.Blade.HapticFullStrengthSpeedMetersPerSecond = value),
             [SettingId.LaserTilt] = new NumberSetting(-30.0f, 60.0f, 5.0f, "+0;-0;0", "deg",
                 settings => settings.LaserTiltDegrees, (settings, value) => settings.LaserTiltDegrees = value),
+            // The Dummy's look (PER-102). The low ends keep a dim zone and the body faintly visible and a zone a thin line.
+            [SettingId.ZoneOpacity] = new NumberSetting(0.1f, 1.0f, 0.1f, "0%", string.Empty,
+                settings => settings.DummyLook.ZoneOpacity, (settings, value) => settings.DummyLook.ZoneOpacity = value),
+            [SettingId.ZoneThickness] = new NumberSetting(0.2f, 1.0f, 0.1f, "0%", string.Empty,
+                settings => settings.DummyLook.ZoneThicknessFraction, (settings, value) => settings.DummyLook.ZoneThicknessFraction = value),
+            [SettingId.BodyOpacity] = new NumberSetting(0.1f, 1.0f, 0.1f, "0%", string.Empty,
+                settings => settings.DummyLook.BodyOpacity, (settings, value) => settings.DummyLook.BodyOpacity = value),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -139,6 +153,10 @@ namespace VrFencing.UI
                 case SettingId.HapticFloor: return "Haptic strength when slow";
                 case SettingId.HapticFullStrengthSpeed: return "Full haptic strength at";
                 case SettingId.LaserTilt: return "Menu laser tilt (down +)";
+                case SettingId.ShowTargetZones: return "Show Target Zones";
+                case SettingId.ZoneOpacity: return "Zone opacity";
+                case SettingId.ZoneThickness: return "Zone thickness (of scoring)";
+                case SettingId.BodyOpacity: return "Dummy body opacity";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -153,6 +171,8 @@ namespace VrFencing.UI
                     return settings.ShrinkDrillsToFit ? "On" : "Off";
                 case SettingId.LightNamedZones:
                     return settings.LightNamedZones ? "On" : "Off";
+                case SettingId.ShowTargetZones:
+                    return settings.DummyLook.ShowTargetZones ? "On" : "Off";
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
@@ -208,6 +228,11 @@ namespace VrFencing.UI
                 case SettingId.LaserTilt:
                     // The menu reads it every frame.
                     return SettingImpact.None;
+                case SettingId.ShowTargetZones:
+                case SettingId.ZoneOpacity:
+                case SettingId.ZoneThickness:
+                case SettingId.BodyOpacity:
+                    return SettingImpact.DummyLook;
                 default:
                     return SettingImpact.Drills;
             }
@@ -238,6 +263,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.LightNamedZones:
                     changed.LightNamedZones = !settings.LightNamedZones;
+                    break;
+                case SettingId.ShowTargetZones:
+                    changed.DummyLook.ShowTargetZones = !settings.DummyLook.ShowTargetZones;
                     break;
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);

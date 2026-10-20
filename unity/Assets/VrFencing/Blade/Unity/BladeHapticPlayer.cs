@@ -16,6 +16,7 @@ namespace VrFencing.Blade
         private readonly Dictionary<(BladeEventType, HapticPattern), ClipPlayer> _players = new Dictionary<(BladeEventType, HapticPattern), ClipPlayer>();
         private ClipPlayer _playing;
         private ClipPlayer _pressPlayer;
+        private ClipPlayer _clashPlayer;
         private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
@@ -67,6 +68,29 @@ namespace VrFencing.Blade
             }
         }
 
+        /// <summary>
+        /// The clash buzz (<see cref="BladeClashDetector.HapticSegments"/>) when the Fencer's blade meets the Armed
+        /// Dummy's (PER-95), at <paramref name="strength"/>; it replaces whatever is playing.
+        /// </summary>
+        public void PlayClash(float strength, Hand swordHand)
+        {
+            if (_hasFailed)
+            {
+                return;
+            }
+
+            try
+            {
+                _clashPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeClashDetector.HapticSegments), BladeClashDetector.HapticSegments);
+                StartPlaying(_clashPlayer, strength, swordHand);
+                _eventEndsAt = Time.time + _clashPlayer.DurationSeconds;
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
         private void StartPlaying(ClipPlayer player, float strength, Hand swordHand)
         {
             _playing?.Player.Stop();
@@ -92,6 +116,8 @@ namespace VrFencing.Blade
             _players.Clear();
             _pressPlayer?.Dispose();
             _pressPlayer = null;
+            _clashPlayer?.Dispose();
+            _clashPlayer = null;
             _playing = null;
         }
 

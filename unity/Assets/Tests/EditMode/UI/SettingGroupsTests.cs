@@ -62,7 +62,13 @@ namespace VrFencing.Tests.UI
             {
                 SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
             }));
-            Assert.That(SettingGroups.GetSettings(SettingGroup.Touch), Is.EqualTo(new[] { SettingId.TouchRule, SettingId.TouchPressure }));
+
+            // PER-102: the Dummy's look joins Touch, the group about the Target Zones.
+            Assert.That(SettingGroups.GetSettings(SettingGroup.Touch), Is.EqualTo(new[]
+            {
+                SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
+                SettingId.BodyOpacity,
+            }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]
             {
                 SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex,

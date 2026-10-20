@@ -67,7 +67,8 @@ namespace VrFencing.Drills
 
     /// <summary>
     /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38) and 4 to 6 (PER-39). Development builds also
-    /// list a test Drill after the real ones that never fits, to show a greyed-out row.
+    /// list two test Drills after the real ones: one that never fits, to show a greyed-out row, and the Armed Dummy
+    /// feel test (PER-95).
     ///
     /// Strip lengths are end to end, rear run-back included, as <c>StripGeometry.LengthMeters</c> measures them.
     /// The shortest Strip that can be placed is about 2 m end to end, so a 1 m requirement always fits.
@@ -81,6 +82,7 @@ namespace VrFencing.Drills
         public const string CompoundDrillId = "compound-sequence";
         public const string FootworkCallsDrillId = "footwork-calls";
         public const string FullPisteTestDrillId = "test-full-piste";
+        public const string ArmedDummyTestDrillId = "test-armed-dummy";
 
         /// <summary>
         /// Drill 4 at step-lunge distance: an advance (0.2 of the height) and a lunge (0.6) forward of the En Garde Line
@@ -192,13 +194,21 @@ namespace VrFencing.Drills
 
         public const string FullPisteTestTaskLine = "Test only: shows a Drill that needs a long Strip.";
 
+        public const string ArmedDummyTestTaskLine = "Test: parry the thrust, then riposte to the body.";
+
+        /// <summary>
+        /// The Armed Dummy feel test's window (PER-95): its random 1 to 3 s delay, the wind-up, a slow thrust (about 1.5 s)
+        /// and its hold, then time to riposte.
+        /// </summary>
+        public const float ArmedDummyTestWindowSeconds = 8.0f;
+
         /// <summary>Test Drills sort after every real Drill.</summary>
         private const int TestDrillOrder = 1000;
 
         /// <summary>Cue time of the test Drills: long enough to see the cue before the window opens.</summary>
         private const float TestCueSeconds = 1.0f;
 
-        /// <param name="includeTestDrills">Adds the test Drill; pass true only in development builds.</param>
+        /// <param name="includeTestDrills">Adds the test Drills; pass true only in development builds.</param>
         public static DrillRegistry CreateDefault(bool includeTestDrills)
         {
             var registry = new DrillRegistry();
@@ -211,6 +221,7 @@ namespace VrFencing.Drills
             if (includeTestDrills)
             {
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
+                registry.Register(ArmedDummyTestDrillId, CreateArmedDummyTestDrill);
             }
 
             return registry;
@@ -384,6 +395,31 @@ namespace VrFencing.Drills
                 SuccessRule.PointFirstTouchOnTargetZone,
                 new[] { TargetZone.Body },
                 taskLine: FullPisteTestTaskLine);
+        }
+
+        /// <summary>
+        /// The Armed Dummy feel test (PER-95, development builds only): the Dummy stands at extension distance holding a
+        /// blade and, on each Rep's cue, makes one scripted thrust after a random delay. The Fencer parries it and
+        /// ripostes to the body; a Touch on the body is the Rep's success. Its speed cycles slow, medium, real by Rep
+        /// (the Blade module's Armed Dummy runs it). Nothing here judges the Parry yet (PER-97).
+        /// </summary>
+        public static DrillDefinition CreateArmedDummyTestDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                ArmedDummyTestDrillId,
+                "Test: Armed Dummy parry feel",
+                TestDrillOrder + 1,
+                requiredStripLengthMeters: PointControlStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: ArmedDummyTestWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.NamedTargetZone,
+                SuccessRule.PointFirstTouchOnTargetZone,
+                new[] { TargetZone.Body },
+                DummyDistance.Extension,
+                taskLine: ArmedDummyTestTaskLine);
         }
     }
 }

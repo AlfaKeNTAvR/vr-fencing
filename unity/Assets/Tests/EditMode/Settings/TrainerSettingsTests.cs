@@ -44,6 +44,45 @@ namespace VrFencing.Tests.Settings
         }
 
         [Test]
+        public void AFileFromBeforeTheDummyLookLoadsWithItsDefaults()
+        {
+            // PER-102: an older settings.json has no DummyLook.
+            File.WriteAllText(_settingsPath, "{ \"Hand\": \"Left\", \"LightNamedZones\": false, \"LaserTiltDegrees\": 10.0 }");
+
+            var loaded = SettingsStorage.Load(_settingsPath);
+
+            Assert.That(loaded.Hand, Is.EqualTo(Hand.Left));
+            Assert.That(loaded.LightNamedZones, Is.False);
+            Assert.That(SettingsLeaves.Read(loaded.DummyLook), Is.EqualTo(SettingsLeaves.Read(new DummyLookSettings())));
+        }
+
+        [Test]
+        public void TheDummyLookDefaultsShowThinnerZonesOnAMoreSolidBody()
+        {
+            var look = new TrainerSettings().DummyLook;
+
+            Assert.That(look.ShowTargetZones, Is.True);
+            Assert.That(look.ZoneThicknessFraction, Is.EqualTo(0.6f));
+            Assert.That(look.BodyOpacity, Is.EqualTo(0.6f));
+            Assert.That(look.ZoneOpacity, Is.EqualTo(0.3f), "The dim zones' opacity before PER-102.");
+        }
+
+        [Test]
+        public void TheDummyLookSavesAndLoads()
+        {
+            var saved = new TrainerSettings();
+            saved.DummyLook.ShowTargetZones = false;
+            saved.DummyLook.ZoneOpacity = 0.5f;
+            saved.DummyLook.BodyOpacity = 0.9f;
+            saved.DummyLook.ZoneThicknessFraction = 0.3f;
+
+            SettingsStorage.Save(saved, _settingsPath);
+            var loaded = SettingsStorage.Load(_settingsPath);
+
+            Assert.That(SettingsLeaves.Read(loaded.DummyLook), Is.EqualTo(SettingsLeaves.Read(saved.DummyLook)));
+        }
+
+        [Test]
         public void TheMeasuredReachAndTheLightSaveAndLoad()
         {
             var saved = new TrainerSettings { LightNamedZones = false };

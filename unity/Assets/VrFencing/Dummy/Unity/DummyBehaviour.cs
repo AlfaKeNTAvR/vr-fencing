@@ -26,18 +26,25 @@ namespace VrFencing.Dummy
     /// color; the Target Zones stay capsules on top of it, so they light and flash as before. Without a model, or if
     /// the model is not a usable Humanoid, the capsule silhouette is drawn. Touches are judged on the Core capsules
     /// either way, never on the mesh.
+    ///
+    /// Look (PER-102): <see cref="SetLook"/> sets the body's opacity, the dim zones' opacity, whether dim zones are
+    /// drawn at all, and how thick the zones are drawn as a fraction of their judged radius. Lit and flashing zones
+    /// are always drawn, at their own brighter colors, and on top of the body so a cue or a hit always shows.
     /// </summary>
     public sealed class DummyBehaviour : MonoBehaviour
     {
         private const string MaterialResourcePath = "VrFencingDummy";
 
-        // Translucent so the room stays visible through the Dummy; lit zones bright amber, a Touch flashes white.
-        private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f, 0.15f);
-        private static readonly Color DimZoneColor = new Color(0.55f, 0.8f, 1.0f, 0.3f);
+        // Lit zones bright amber, a Touch flashes white. The body's and dim zones' opacity come from the look.
+        private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f);
+        private static readonly Color DimZoneColor = new Color(0.55f, 0.8f, 1.0f);
         private static readonly Color LitZoneColor = new Color(1.0f, 0.75f, 0.1f, 0.8f);
         private static readonly Color FlashZoneColor = new Color(1.0f, 1.0f, 1.0f, 0.95f);
 
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+        // The material writes no depth, so transparent parts draw in sort order: zones after the body stay on top of it.
+        private const int ZoneSortingOrder = 1;
 
         [SerializeField]
         [Tooltip("Distance used until a Drill sets one.")]
@@ -51,6 +58,7 @@ namespace VrFencing.Dummy
         private readonly Dictionary<TargetZone, Renderer> _zoneRenderers = new Dictionary<TargetZone, Renderer>();
         private readonly Dictionary<TargetZone, ZoneLight> _shownLights = new Dictionary<TargetZone, ZoneLight>();
         private readonly Dictionary<ArmJoint, Transform> _jointTransforms = new Dictionary<ArmJoint, Transform>();
+        private readonly List<Renderer> _bodyRenderers = new List<Renderer>();
 
         // The serialized preset as the scene set it, kept the first time anything moves the Dummy.
         private DummyDistance? _sceneDistancePreset;
@@ -59,6 +67,8 @@ namespace VrFencing.Dummy
         private MaterialPropertyBlock _propertyBlock;
         private Transform _partsRoot;
         private DummyBodyRig _bodyRig;
+        private DummyLookSettings _look = new DummyLookSettings();
+        private bool _isLookSet;
 
         /// <summary>The Dummy's shape, in its own frame. Null until configured.</summary>
         public DummyLayout Layout { get; private set; }
@@ -131,7 +141,8 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the sword arm, and with it the hand, wrist, forearm and upper arm zones, by turning the joint
-        /// transforms. Nothing is rebuilt. The MVP Dummy stays in <see cref="SwordArmPose.ArmInLine"/>.
+        /// transforms. Nothing is rebuilt and nothing is allocated: the layout's arm moves in place, as the Armed Dummy
+        /// re-poses it every frame. The MVP Dummy stays in <see cref="SwordArmPose.ArmInLine"/>.
         /// </summary>
         /// <exception cref="InvalidOperationException">The Dummy is not configured yet.</exception>
         public void SetArmPose(SwordArmPose armPose)
@@ -141,7 +152,7 @@ namespace VrFencing.Dummy
                 throw new InvalidOperationException("Configure the Dummy before posing its arm.");
             }
 
-            Layout = Layout.WithArmPose(armPose);
+            Layout.PoseArm(armPose);
             PoseJoints();
         }
 
@@ -149,6 +160,38 @@ namespace VrFencing.Dummy
         public Transform GetJointTransform(ArmJoint joint)
         {
             return _jointTransforms.TryGetValue(joint, out var jointTransform) ? jointTransform : null;
+        }
+
+        /// <summary>
+        /// Redraws the body and Target Zones with <paramref name="look"/> (PER-102), without rebuilding: posed joints
+        /// and anything hung on them stay. Only the drawing changes; the zones Touches are judged on do not.
+        /// </summary>
+        public void SetLook(DummyLookSettings look)
+        {
+            if (look == null)
+            {
+                throw new ArgumentNullException(nameof(look));
+            }
+
+            _look = look.Clone();
+            _isLookSet = true;
+            if (Layout == null)
+            {
+                return;
+            }
+
+            foreach (var bodyRenderer in _bodyRenderers)
+            {
+                SetColor(bodyRenderer, GetBodyColor());
+            }
+
+            foreach (var zoneRenderer in _zoneRenderers)
+            {
+                FitCapsule(zoneRenderer.Value.transform, GetZoneInParentFrame(zoneRenderer.Key), GetZoneDrawnRadius(zoneRenderer.Key));
+            }
+
+            _shownLights.Clear();
+            ShowZoneLights(Time.timeAsDouble);
         }
 
         public void LightZone(TargetZone zone)
@@ -174,9 +217,19 @@ namespace VrFencing.Dummy
 
         private void Start()
         {
+            if (Layout != null && _isLookSet)
+            {
+                return;
+            }
+
+            var settings = SettingsFile.Load();
+            if (!_isLookSet)
+            {
+                SetLook(settings.DummyLook);
+            }
+
             if (Layout == null)
             {
-                var settings = SettingsFile.Load();
                 Configure(settings.FencerHeightMeters, settings.Hand, settings.Blade.GetMeasuredReachMeters());
             }
         }
@@ -202,12 +255,14 @@ namespace VrFencing.Dummy
                     continue;
                 }
 
+                // Hiding the zones hides only dim ones: a cue or a hit still shows.
+                zoneRenderer.Value.enabled = zoneLight != ZoneLight.Dim || _look.ShowTargetZones;
                 SetColor(zoneRenderer.Value, ColorFor(zoneLight));
                 _shownLights[zoneRenderer.Key] = zoneLight;
             }
         }
 
-        private static Color ColorFor(ZoneLight light)
+        private Color ColorFor(ZoneLight light)
         {
             switch (light)
             {
@@ -216,8 +271,43 @@ namespace VrFencing.Dummy
                 case ZoneLight.Flash:
                     return FlashZoneColor;
                 default:
-                    return DimZoneColor;
+                    return WithAlpha(DimZoneColor, _look.ZoneOpacity);
             }
+        }
+
+        private Color GetBodyColor()
+        {
+            return WithAlpha(SilhouetteColor, _look.BodyOpacity);
+        }
+
+        private static Color WithAlpha(Color color, float alpha)
+        {
+            return new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
+        }
+
+        /// <summary>The zone's capsule in the frame of the transform its part hangs under: its arm joint, or the parts root.</summary>
+        private Capsule GetZoneInParentFrame(TargetZone zone)
+        {
+            if (SwordArm.IsArmZone(zone))
+            {
+                return Layout.Arm.GetZoneInJointFrame(zone);
+            }
+
+            foreach (var zoneCapsule in Layout.Zones)
+            {
+                if (zoneCapsule.Zone == zone)
+                {
+                    return zoneCapsule.Shape;
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(zone), zone, "The Dummy has no such Target Zone.");
+        }
+
+        /// <summary>The radius the zone is drawn at: a fraction of the radius it is judged on, never more.</summary>
+        private float GetZoneDrawnRadius(TargetZone zone)
+        {
+            return GetZoneInParentFrame(zone).RadiusMeters * Mathf.Clamp01(_look.ZoneThicknessFraction);
         }
 
         private void BuildRenderers()
@@ -240,10 +330,11 @@ namespace VrFencing.Dummy
             foreach (var zone in Layout.Zones)
             {
                 // Arm zones ride on their joint, so posing the arm moves them; the others stay with the stance.
-                var zoneRenderer = SwordArm.IsArmZone(zone.Zone)
-                    ? CreateCapsuleRenderer($"Zone {zone.Zone}", Layout.Arm.GetZoneInJointFrame(zone.Zone), _jointTransforms[SwordArm.GetAttachedJoint(zone.Zone)], material)
-                    : CreateCapsuleRenderer($"Zone {zone.Zone}", zone.Shape, _partsRoot, material);
-                SetColor(zoneRenderer, DimZoneColor);
+                var parent = SwordArm.IsArmZone(zone.Zone) ? _jointTransforms[SwordArm.GetAttachedJoint(zone.Zone)] : _partsRoot;
+                var zoneRenderer = CreateCapsuleRenderer($"Zone {zone.Zone}", GetZoneInParentFrame(zone.Zone), GetZoneDrawnRadius(zone.Zone), parent, material);
+                zoneRenderer.sortingOrder = ZoneSortingOrder;
+                zoneRenderer.enabled = _look.ShowTargetZones;
+                SetColor(zoneRenderer, ColorFor(ZoneLight.Dim));
                 _zoneRenderers[zone.Zone] = zoneRenderer;
                 _shownLights[zone.Zone] = ZoneLight.Dim;
             }
@@ -251,17 +342,19 @@ namespace VrFencing.Dummy
             _bodyRig = _bodyModel != null ? DummyBodyRig.TryCreate(_bodyModel, _partsRoot, material, Layout) : null;
             if (_bodyRig != null)
             {
-                foreach (var bodyRenderer in _bodyRig.Renderers)
+                _bodyRenderers.AddRange(_bodyRig.Renderers);
+            }
+            else
+            {
+                foreach (var part in Layout.SilhouetteParts)
                 {
-                    SetColor(bodyRenderer, SilhouetteColor);
+                    _bodyRenderers.Add(CreateCapsuleRenderer("Silhouette", part, part.RadiusMeters, _partsRoot, material));
                 }
-
-                return;
             }
 
-            foreach (var part in Layout.SilhouetteParts)
+            foreach (var bodyRenderer in _bodyRenderers)
             {
-                SetColor(CreateCapsuleRenderer("Silhouette", part, _partsRoot, material), SilhouetteColor);
+                SetColor(bodyRenderer, GetBodyColor());
             }
         }
 
@@ -296,6 +389,7 @@ namespace VrFencing.Dummy
             _zoneRenderers.Clear();
             _shownLights.Clear();
             _jointTransforms.Clear();
+            _bodyRenderers.Clear();
             _bodyRig = null;
             if (_partsRoot != null)
             {
@@ -304,12 +398,8 @@ namespace VrFencing.Dummy
             }
         }
 
-        /// <summary>
-        /// Unity's capsule primitive is 2 m tall and 1 m wide along its local y; it is stretched so its axis runs
-        /// from the capsule's start to its end and its width matches the radius. Rounded ends squash slightly on
-        /// short capsules, which is fine for a silhouette.
-        /// </summary>
-        private Renderer CreateCapsuleRenderer(string partName, Capsule capsule, Transform parent, Material material)
+        /// <summary>A capsule part along <paramref name="capsule"/>'s axis, <paramref name="radiusMeters"/> wide (see <see cref="FitCapsule"/>).</summary>
+        private Renderer CreateCapsuleRenderer(string partName, Capsule capsule, float radiusMeters, Transform parent, Material material)
         {
             var part = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             part.name = partName;
@@ -317,22 +407,32 @@ namespace VrFencing.Dummy
             // Touches are judged on the Core capsules, not by physics.
             DestroyPart(part.GetComponent<Collider>());
 
-            var start = capsule.Start.ToUnity();
-            var end = capsule.End.ToUnity();
-            var axis = end - start;
-            var segmentLength = axis.magnitude;
-            var diameter = capsule.RadiusMeters * 2.0f;
-
             part.transform.SetParent(parent, false);
-            part.transform.localPosition = (start + end) * 0.5f;
-            part.transform.localRotation = segmentLength > 1e-5f ? Quaternion.FromToRotation(Vector3.up, axis / segmentLength) : Quaternion.identity;
-            part.transform.localScale = new Vector3(diameter, (segmentLength + diameter) * 0.5f, diameter);
+            FitCapsule(part.transform, capsule, radiusMeters);
 
             var partRenderer = part.GetComponent<MeshRenderer>();
             partRenderer.sharedMaterial = material;
             partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             partRenderer.receiveShadows = false;
             return partRenderer;
+        }
+
+        /// <summary>
+        /// Unity's capsule primitive is 2 m tall and 1 m wide along its local y; it is stretched so its axis runs
+        /// from the capsule's start to its end and its width is <paramref name="radiusMeters"/> (the capsule's own,
+        /// or less to draw a zone thinner). Rounded ends squash slightly on short capsules, which is fine for a silhouette.
+        /// </summary>
+        private static void FitCapsule(Transform part, Capsule capsule, float radiusMeters)
+        {
+            var start = capsule.Start.ToUnity();
+            var end = capsule.End.ToUnity();
+            var axis = end - start;
+            var segmentLength = axis.magnitude;
+            var diameter = radiusMeters * 2.0f;
+
+            part.localPosition = (start + end) * 0.5f;
+            part.localRotation = segmentLength > 1e-5f ? Quaternion.FromToRotation(Vector3.up, axis / segmentLength) : Quaternion.identity;
+            part.localScale = new Vector3(diameter, (segmentLength + diameter) * 0.5f, diameter);
         }
 
         private void SetColor(Renderer partRenderer, Color color)
