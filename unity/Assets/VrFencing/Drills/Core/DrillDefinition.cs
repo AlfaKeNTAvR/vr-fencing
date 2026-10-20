@@ -128,7 +128,8 @@ namespace VrFencing.Drills
             string taskLine = null,
             bool lightsNamedZone = false,
             bool requiresRiposte = false,
-            AttackScript attacks = null)
+            AttackScript attacks = null,
+            IReadOnlyList<DummyDifficulty> dummyDifficulties = null)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -250,6 +251,23 @@ namespace VrFencing.Drills
                     nameof(repDummyDistances));
             }
 
+            if (dummyDifficulties != null)
+            {
+                if (dummyDifficulties.Count == 0)
+                {
+                    throw new ArgumentException("A Drill whose Dummy keeps its distance needs at least one difficulty.", nameof(dummyDifficulties));
+                }
+
+                // The Armed Dummy plans its thrusts from where it stands, and distance choice moves it per Rep: neither
+                // follows the Fencer yet (PER-44 stage 2 merges the keeper with the Armed Dummy).
+                if (successRule == SuccessRule.Parry || successRule == SuccessRule.StopHit || successRule == SuccessRule.BeatThenTouch
+                    || repDummyDistances != null)
+                {
+                    throw new ArgumentException(
+                        "Only a Drill whose Dummy is unarmed and stands at one distance can keep that distance.", nameof(dummyDifficulties));
+                }
+            }
+
             Id = id;
             Name = name;
             Order = order;
@@ -272,6 +290,29 @@ namespace VrFencing.Drills
             LightsNamedZone = lightsNamedZone;
             RequiresRiposte = requiresRiposte;
             Attacks = isAttackRule ? attacks ?? AttackScript.EveryTargetAndSpeed : null;
+            DummyDifficulties = dummyDifficulties?.ToArray();
+        }
+
+        /// <summary>
+        /// When set, the Dummy keeps its Dummy Distance as the Fencer advances and retreats (PER-105, the moving Dummy's
+        /// distance keeper), reacting at these difficulties in turn by Rep, then again from the first. Null when the Dummy
+        /// stands still, as in every Armed Dummy Drill.
+        /// </summary>
+        public IReadOnlyList<DummyDifficulty> DummyDifficulties { get; }
+
+        /// <summary>The Dummy keeps its distance from the Fencer in this Drill (<see cref="DummyDifficulties"/>).</summary>
+        public bool KeepsDistance => DummyDifficulties != null;
+
+        /// <summary>The keeper's difficulty for the Rep at <paramref name="repIndex"/> (zero-based); null when the Dummy stands still.</summary>
+        /// <exception cref="ArgumentOutOfRangeException">The index is negative.</exception>
+        public DummyDifficulty? GetDummyDifficulty(int repIndex)
+        {
+            if (repIndex < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(repIndex), repIndex, "Must not be negative.");
+            }
+
+            return DummyDifficulties?[repIndex % DummyDifficulties.Count];
         }
 
         /// <summary>A Riposte must land within this of the Parry (PER-23: 1 s).</summary>

@@ -44,7 +44,8 @@ namespace VrFencing.Session
             AttackTarget? attackTarget = null,
             AttackSpeed? attackSpeed = null,
             double? touchAfterBeatSeconds = null,
-            float? beatOutOfLineMeters = null)
+            float? beatOutOfLineMeters = null,
+            DummyDifficulty? dummyDifficulty = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -88,6 +89,7 @@ namespace VrFencing.Session
             AttackSpeed = attackSpeed;
             TouchAfterBeatSeconds = touchAfterBeatSeconds;
             BeatOutOfLineMeters = beatOutOfLineMeters;
+            DummyDifficulty = dummyDifficulty;
         }
 
         public int Schema { get; }
@@ -178,6 +180,12 @@ namespace VrFencing.Session
         /// <summary>Beat Drills: how far the Beat knocked the Dummy's point off its line; null without a Beat.</summary>
         public float? BeatOutOfLineMeters { get; }
 
+        /// <summary>
+        /// A Drill whose Dummy keeps its distance (PER-105): the keeper's difficulty that Rep; null when the Dummy stood
+        /// still, and in older lines.
+        /// </summary>
+        public DummyDifficulty? DummyDifficulty { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -212,7 +220,8 @@ namespace VrFencing.Session
                 result.AttackTarget,
                 result.AttackSpeed,
                 result.TouchAfterBeatSeconds,
-                result.BeatOutOfLineMeters);
+                result.BeatOutOfLineMeters,
+                result.DummyDifficulty);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -244,7 +253,8 @@ namespace VrFencing.Session
                 AttackTarget,
                 AttackSpeed,
                 TouchAfterBeatSeconds,
-                BeatOutOfLineMeters);
+                BeatOutOfLineMeters,
+                DummyDifficulty);
         }
     }
 

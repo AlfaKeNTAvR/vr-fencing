@@ -6,7 +6,11 @@
         "VrFencing.Dummy.Core",
         "VrFencing.Dummy.Unity",
         "VrFencing.Strip.Core",
-        "VrFencing.Strip.Unity"
+        "VrFencing.Strip.Unity",
+        "VrFencing.Settings.Core",
+        "VrFencing.Settings.Unity",
+        "VrFencing.Tracking.Core",
+        "Oculus.VR"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
