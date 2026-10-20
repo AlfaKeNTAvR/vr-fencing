@@ -7,8 +7,10 @@ namespace VrFencing.Tracking
     /// The Start Mark (PER-89): the mark on the floor at the En Garde Line where the Fencer's front foot stands between
     /// Reps of a Drill where the Fencer moves. The headset sees the head, not the foot, so the Fencer counts as back
     /// when the head is within <see cref="ToleranceMeters"/> along the Strip of where it is in en garde with the front
-    /// foot on the mark, and still. Only the distance along the Strip counts: drift happens along it, and the head's
-    /// side position depends on the stance.
+    /// foot on the mark, within a generous side tolerance of the Strip's center line (a Setting, PER-117: 45 cm by
+    /// default), and still. Along the Strip the check is tight, since drift happens along it; across it, it is loose,
+    /// since the head's side position depends on the stance, and it only keeps a Fencer standing well off to one side
+    /// from counting as back.
     /// </summary>
     public static class StartMark
     {
@@ -84,15 +86,29 @@ namespace VrFencing.Tracking
         }
 
         /// <summary>
-        /// The head has been within <see cref="StartMark.ToleranceMeters"/> of its place at the mark, and still, for the
-        /// last <see cref="StartMark.StillSeconds"/>.
+        /// Signed distance across the Strip from its center line to the head now (Strip-frame x); null with no sample yet.
         /// </summary>
-        /// <exception cref="ArgumentOutOfRangeException">The height is not a positive number.</exception>
-        public bool IsBackAndStill(float fencerHeightMeters)
+        public float? MeasureSideOffsetMeters()
+        {
+            return _samples.Count == 0 ? (float?)null : _samples[_samples.Count - 1].HeadInStrip.X;
+        }
+
+        /// <summary>
+        /// The head has been within <see cref="StartMark.ToleranceMeters"/> along the Strip of its place at the mark,
+        /// within <paramref name="sideToleranceMeters"/> of the Strip's center line, and still, for the last
+        /// <see cref="StartMark.StillSeconds"/>.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">The height is not positive, or the side tolerance is negative.</exception>
+        public bool IsBackAndStill(float fencerHeightMeters, float sideToleranceMeters)
         {
             if (!(fencerHeightMeters > 0.0f))
             {
                 throw new ArgumentOutOfRangeException(nameof(fencerHeightMeters), fencerHeightMeters, "Must be positive.");
+            }
+
+            if (!(sideToleranceMeters >= 0.0f))
+            {
+                throw new ArgumentOutOfRangeException(nameof(sideToleranceMeters), sideToleranceMeters, "Must not be negative.");
             }
 
             if (_samples.Count < 2 || _samples[_samples.Count - 1].TimeSeconds - _samples[0].TimeSeconds < StartMark.StillSeconds)
@@ -105,7 +121,7 @@ namespace VrFencing.Tracking
             var highestZ = float.MinValue;
             foreach (var sample in _samples)
             {
-                if (Math.Abs(sample.HeadInStrip.Z - headZ) > StartMark.ToleranceMeters)
+                if (Math.Abs(sample.HeadInStrip.Z - headZ) > StartMark.ToleranceMeters || Math.Abs(sample.HeadInStrip.X) > sideToleranceMeters)
                 {
                     return false;
                 }

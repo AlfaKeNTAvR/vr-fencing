@@ -38,10 +38,11 @@ namespace VrFencing.UI
 
             // "Shrink Drills to fit" moved here from Drills (PER-92) to make room for "Light named zones": it is about the Strip's length.
             // The bout's double window (PER-82) is here because Touch is full (7): the Strip group is the one about the shared bout.
+            // The Start Mark's side tolerance (PER-117) is here because Drills is full (7), and the mark is on the Strip.
             [SettingGroup.Strip] = new[]
             {
                 SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
-                SettingId.DoubleWindow,
+                SettingId.DoubleWindow, SettingId.StartMarkSideTolerance,
             },
 
             // The Dummy's look (PER-102) is here: Touch is the group about the Target Zones, and it has room for all four.
@@ -59,10 +60,11 @@ namespace VrFencing.UI
             },
 
             // The Armed Dummy's Parry Drills (PER-100): the Parry rule moved here from Touch, beside each Drill's Riposte switch.
+            // PER-117 adds one switch for the blade in the Drills where the Dummy does not attack (6 of 7).
             [SettingGroup.ArmedDummy] = new[]
             {
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
-                SettingId.RiposteInLungeParries,
+                SettingId.RiposteInLungeParries, SettingId.DummyBladeInEveryDrill,
             },
         };
 

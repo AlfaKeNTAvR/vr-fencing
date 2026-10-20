@@ -18,6 +18,7 @@ namespace VrFencing.Tests.Settings
                 ShrinkDrillsToFit = true,
                 LightNamedZones = false,
                 BoutDoubleWindowSeconds = 0.125f,
+                StartMarkSideToleranceMeters = 0.3f,
             };
             settings.TimeWindows.ReactionSeconds = 1.1f;
             settings.TimeWindows.CompoundSecondTouchSeconds = 1.2f;
@@ -53,6 +54,7 @@ namespace VrFencing.Tests.Settings
             settings.ArmedDummy.RiposteInFastParries = false;
             settings.ArmedDummy.RiposteInLowParries = false;
             settings.ArmedDummy.RiposteInLungeParries = false;
+            settings.ArmedDummy.BladeInEveryDrill = false;
 
             Assert.That(SettingsLeaves.Read(settings.Clone()), Is.EqualTo(SettingsLeaves.Read(settings)));
         }
