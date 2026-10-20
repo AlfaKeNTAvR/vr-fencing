@@ -24,6 +24,11 @@ namespace VrFencing.Dummy
     /// Legs (PER-110): <see cref="SetLegs"/> moves the legs, and the thigh and foot zones and the drawn legs with them,
     /// as the stepping Dummy's footwork poses them every frame. Nothing is rebuilt.
     ///
+    /// Footwork (PER-111): the Dummy owns its <see cref="Footwork"/>, the one source of where its body and legs are.
+    /// Whoever moves the Dummy (the distance keeper, the Armed Dummy's lunge, the footwork test Drill) steps it and
+    /// calls <see cref="ApplyFootwork"/>; in a frame nobody does, the Dummy holds its pose, breathing and shifting its
+    /// weight while it stands. Placing the Dummy (<see cref="SetDistance"/> and the like) stands it in en garde there.
+    ///
     /// Body (PER-78): with a Humanoid body model set (the scene's is Movement SDK's <c>Armature.fbx</c>), the rest of
     /// the silhouette is that rigged body, posed on the same en garde joints and drawn in the translucent silhouette
     /// color; the Target Zones stay capsules on top of it, so they light and flash as before. Without a model, or if
@@ -76,8 +81,14 @@ namespace VrFencing.Dummy
         private DummyLookSettings _look = new DummyLookSettings();
         private bool _isLookSet;
 
+        // Set when a mover applied the footwork this frame; otherwise LateUpdate lets the Dummy breathe in place.
+        private bool _isFootworkApplied;
+
         /// <summary>The Dummy's shape, in its own frame. Null until configured.</summary>
         public DummyLayout Layout { get; private set; }
+
+        /// <summary>The Dummy's footwork: where its body is along the Strip and how its legs stand. Null until configured.</summary>
+        public DummyFootwork Footwork { get; private set; }
 
         /// <summary>Front foot to front foot along the Strip.</summary>
         public float DistanceMeters =>
@@ -104,6 +115,7 @@ namespace VrFencing.Dummy
 
             BuildRenderers();
             PlaceOnStrip();
+            Footwork = new DummyFootwork(Layout.HeightMeters, Layout.Hand, DistanceMeters, new System.Random());
         }
 
         /// <summary>Stands the Dummy at a preset distance, scaled to its height.</summary>
@@ -113,6 +125,7 @@ namespace VrFencing.Dummy
             _distancePreset = preset;
             _customDistanceMeters = null;
             PlaceOnStrip();
+            StandFootworkHere();
         }
 
         /// <summary>Stands the Dummy back at the scene's preset distance, e.g. when a Drill run ends.</summary>
@@ -131,6 +144,25 @@ namespace VrFencing.Dummy
 
             _customDistanceMeters = distanceMeters;
             PlaceOnStrip();
+            StandFootworkHere();
+        }
+
+        /// <summary>
+        /// Poses the Dummy where its <see cref="Footwork"/> has it now, body and legs, and the Target Zones with it. Call
+        /// it every frame after stepping the footwork; nothing is rebuilt.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">The Dummy is not configured yet.</exception>
+        public void ApplyFootwork()
+        {
+            if (Footwork == null)
+            {
+                throw new InvalidOperationException("Configure the Dummy before moving it.");
+            }
+
+            _customDistanceMeters = Footwork.DistanceMeters;
+            PlaceOnStrip();
+            SetLegs(Footwork.Legs);
+            _isFootworkApplied = true;
         }
 
         /// <summary>The Target Zones in the Strip frame at the current distance, for the Blade's Touch detector.</summary>
@@ -178,6 +210,7 @@ namespace VrFencing.Dummy
             Layout.PoseLegs(legs);
             FitStanceZone(TargetZone.Thigh);
             FitStanceZone(TargetZone.Foot);
+            FitStanceZone(TargetZone.Body);
             for (var index = 0; index < _silhouetteTransforms.Count; index++)
             {
                 var part = Layout.SilhouetteParts[index];
@@ -268,6 +301,32 @@ namespace VrFencing.Dummy
         private void Update()
         {
             ShowZoneLights(Time.timeAsDouble);
+        }
+
+        private void LateUpdate()
+        {
+            if (Footwork != null && !_isFootworkApplied)
+            {
+                Footwork.Hold(Time.deltaTime);
+                SetLegs(Footwork.Legs);
+            }
+
+            _isFootworkApplied = false;
+        }
+
+        /// <summary>
+        /// The Dummy was placed: its footwork stands in en garde there, ending any move, and the legs stand in the exact
+        /// en garde stance until the next frame's breathing moves the hips (a centimeter or two at most).
+        /// </summary>
+        private void StandFootworkHere()
+        {
+            if (Footwork == null)
+            {
+                return;
+            }
+
+            Footwork.PlaceAt(DistanceMeters);
+            SetLegs(DummyLegs.EnGarde(Layout.HeightMeters, Layout.Hand));
         }
 
         private void PlaceOnStrip()

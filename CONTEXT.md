@@ -73,7 +73,7 @@ A virtual object the Fencer aims Touches at.
 _Avoid_: goal
 
 **Dummy**:
-A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does), and stands still unless a Drill makes it keep its Dummy Distance, stepping along the Strip (advancing and retreating on planted feet) as the Fencer advances and retreats, a reaction delay late.
+A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does). It stands in en garde, breathing and shifting its weight on planted feet, unless a Drill makes it keep its Dummy Distance, stepping along the Strip (advancing and retreating on planted feet) as the Fencer advances and retreats, a reaction delay late. Its head and sword arm stay level whatever its legs do.
 _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 
 **Target Zone**:
@@ -85,7 +85,7 @@ How far the Dummy stands from the Fencer along the Strip, front foot to front fo
 _Avoid_: Range, measure
 
 **Armed Dummy**:
-The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills. For a thrust at the hand or forearm it stands 0.6 to 0.75 m further back, as real fencers attack the arm from further away.
+The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills, where it lunges on its legs: the front foot kicks out and lands, the back foot stays (dragging a little at full length) and the hips drop. For a thrust at the hand or forearm it stands 0.6 to 0.75 m further back, as real fencers attack the arm from further away.
 _Avoid_: Floating blade, bot, enemy sword, opponent (reserved for a full virtual fencer)
 
 **Parry**:

@@ -1,6 +1,6 @@
 // The layout's legs (PER-110): posing them moves the thigh and foot Target Zones, the leg silhouette and the
-// skeleton's leg joints, in place, while the body and arm zones stay; a copy made for another arm pose keeps the legs
-// and does not move with the original.
+// skeleton's leg joints, in place, and the body zone's bottom with the hips (PER-111), while its top, the arm zones and
+// the head stay; a copy made for another arm pose keeps the legs and does not move with the original.
 using System.Numerics;
 using NUnit.Framework;
 using VrFencing.Dummy;
@@ -42,9 +42,38 @@ namespace VrFencing.Tests.Dummy
             AssertNear(layout.GetZone(TargetZone.Foot).End, legs.Front.Toe);
             AssertNear(layout.SilhouetteParts[3].Start, legs.Front.Ankle);
             AssertNear(layout.SilhouetteParts[6].Start, legs.Back.Heel);
-            AssertNear(layout.GetZone(TargetZone.Body).Start, bodyBefore.Start);
+            var rest = DummyLegs.EnGarde(Height, Hand.Right);
+            var hipShift = ((legs.Front.Hip + legs.Back.Hip) * 0.5f) - ((rest.Front.Hip + rest.Back.Hip) * 0.5f);
+            AssertNear(layout.GetZone(TargetZone.Body).Start, bodyBefore.Start + hipShift);
+            AssertNear(layout.GetZone(TargetZone.Body).End, bodyBefore.End);
             AssertNear(layout.GetZone(TargetZone.Hand).Start, handBefore.Start);
             AssertNear(layout.SilhouetteParts[0].Start, headBefore.Start);
+        }
+
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void LungingHipsTiltTheBodyZoneButLeaveTheShouldersAndHead(Hand hand)
+        {
+            var layout = DummyLayout.Create(Height, hand);
+            var bodyBefore = layout.GetZone(TargetZone.Body);
+            var shoulderBefore = DummySkeleton.GetJointPosition(layout, SkeletonJoint.SwordShoulder);
+            var headBefore = DummySkeleton.GetJointPosition(layout, SkeletonJoint.HeadCenter);
+            var footwork = new DummyFootwork(Height, hand, 3.0f, new System.Random(1), isAlive: false);
+            var lunge = ArmedDummyAttack.GetLungeMeters(Height);
+            for (var frame = 1; frame <= 72; frame++)
+            {
+                footwork.StepLunge(lunge * frame / 72.0f, lunge, 1.0f / 72.0f);
+            }
+
+            layout.PoseLegs(footwork.Legs);
+
+            var body = layout.GetZone(TargetZone.Body);
+            Assert.That(body.Start.Y, Is.LessThan(bodyBefore.Start.Y - (0.1f * Height)), "The pelvis drops.");
+            Assert.That(body.Start.Z, Is.LessThan(bodyBefore.Start.Z - (0.1f * Height)), "The pelvis stays behind.");
+            AssertNear(body.End, bodyBefore.End);
+            AssertNear(DummySkeleton.GetJointPosition(layout, SkeletonJoint.SwordShoulder), shoulderBefore);
+            AssertNear(DummySkeleton.GetJointPosition(layout, SkeletonJoint.HeadCenter), headBefore);
+            AssertNear(DummySkeleton.GetJointPosition(layout, SkeletonJoint.HipCenter), (footwork.Legs.Front.Hip + footwork.Legs.Back.Hip) * 0.5f);
         }
 
         [Test]
@@ -95,7 +124,7 @@ namespace VrFencing.Tests.Dummy
         /// <summary>The legs a few frames into an advance, when the front foot is up and forward.</summary>
         private static DummyLegs SteppedLegs(Hand hand = Hand.Right)
         {
-            var footwork = new DummyFootwork(Height, hand, 2.0f, new System.Random(1));
+            var footwork = new DummyFootwork(Height, hand, 2.0f, new System.Random(1), isAlive: false);
             for (var frame = 0; frame < 10; frame++)
             {
                 footwork.Step(1.6f, 1.0f / 72.0f);

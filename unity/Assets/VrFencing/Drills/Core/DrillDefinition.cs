@@ -129,7 +129,8 @@ namespace VrFencing.Drills
             bool lightsNamedZone = false,
             bool requiresRiposte = false,
             AttackScript attacks = null,
-            IReadOnlyList<DummyDifficulty> dummyDifficulties = null)
+            IReadOnlyList<DummyDifficulty> dummyDifficulties = null,
+            bool showsFootwork = false)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -291,7 +292,14 @@ namespace VrFencing.Drills
             RequiresRiposte = requiresRiposte;
             Attacks = isAttackRule ? attacks ?? AttackScript.EveryTargetAndSpeed : null;
             DummyDifficulties = dummyDifficulties?.ToArray();
+            ShowsFootwork = showsFootwork;
         }
+
+        /// <summary>
+        /// The Dummy runs through every footwork move it has, over and over, for watching them (PER-111, the footwork
+        /// feel test): advances, retreats, a lunge and recovery, a fleche, and breathing in between.
+        /// </summary>
+        public bool ShowsFootwork { get; }
 
         /// <summary>
         /// When set, the Dummy keeps its Dummy Distance as the Fencer advances and retreats (PER-105, the moving Dummy's

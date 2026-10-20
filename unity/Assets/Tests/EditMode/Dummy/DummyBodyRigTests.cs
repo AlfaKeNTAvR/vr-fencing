@@ -150,20 +150,31 @@ namespace VrFencing.Tests.Dummy
         {
             var dummy = CreateDummyWithBody();
             dummy.Configure(Height, Hand.Right);
-            var footwork = new DummyFootwork(Height, Hand.Right, 2.0f, new System.Random(1));
+            dummy.SetDistanceMeters(2.0f);
+            var footwork = dummy.Footwork;
+            var lunge = ArmedDummyAttack.GetLungeMeters(Height);
             const int frames = 2000;
 
+            // Steps back and forth, then lunges and recovers, as the distance keeper and the Armed Dummy drive it.
             var watch = System.Diagnostics.Stopwatch.StartNew();
             for (var frame = 0; frame < frames; frame++)
             {
-                footwork.Step((frame / 40) % 2 == 0 ? 1.5f : 2.5f, 1.0f / 72.0f);
-                dummy.SetDistanceMeters(footwork.DistanceMeters);
-                dummy.SetLegs(footwork.Legs);
+                if (frame < frames / 2)
+                {
+                    footwork.Step((frame / 40) % 2 == 0 ? 1.5f : 2.5f, 1.0f / 72.0f);
+                }
+                else
+                {
+                    var phase = (frame % 144) / 72.0f;
+                    footwork.StepLunge(lunge * (phase < 1.0f ? phase : 2.0f - phase), lunge, 1.0f / 72.0f);
+                }
+
+                dummy.ApplyFootwork();
             }
 
             watch.Stop();
             var microsecondsPerFrame = watch.Elapsed.TotalMilliseconds * 1000.0 / frames;
-            TestContext.WriteLine($"Footwork plus Dummy posing (body rig): {microsecondsPerFrame:0.0} us per frame.");
+            TestContext.WriteLine($"Footwork plus Dummy posing (body rig), steps and lunges: {microsecondsPerFrame:0.0} us per frame.");
             Debug.Log($"[Dummy] Footwork plus Dummy posing (body rig): {microsecondsPerFrame:0.0} us per frame in the Editor.");
 
             // A 72 Hz frame is 13.9 ms. Loose: the Editor is slower than a build, the Quest slower than this laptop.
