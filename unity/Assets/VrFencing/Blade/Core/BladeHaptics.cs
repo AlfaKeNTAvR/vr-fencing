@@ -115,6 +115,17 @@ namespace VrFencing.Blade
         /// </summary>
         public static IReadOnlyList<HapticSegment> PressPulse { get; } = new[] { new HapticSegment(1.0f, 0.6f, 0.035f) };
 
+        /// <summary>
+        /// Being touched in a bout (PER-82, decided in PER-74): a short buzz on both controllers, unlike any blade event
+        /// (those play on the sword hand only): a low rumble, a gap, and a sharp pulse, 0.2 s in all.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> BeingTouched { get; } = new[]
+        {
+            new HapticSegment(1.0f, 0.2f, 0.090f),
+            new HapticSegment(0.0f, 0.0f, 0.040f),
+            new HapticSegment(1.0f, 1.0f, 0.070f),
+        };
+
         /// <summary>How often the press buzz repeats while pinned.</summary>
         public const float PressPulseIntervalSeconds = 0.06f;
 

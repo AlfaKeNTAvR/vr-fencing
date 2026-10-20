@@ -185,6 +185,20 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void ThePartnerObjectJudgesTheBout()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var partner = Object.FindFirstObjectByType<VrFencing.Partner.PartnerSessionBehaviour>();
+            var bout = partner.GetComponent<VrFencing.Partner.BoutBehaviour>();
+
+            Assert.That(bout, Is.Not.Null, "The Partner object judges Touches and shows the scoring box (PER-82).");
+            var serializedBout = new SerializedObject(bout);
+            Assert.That(serializedBout.FindProperty("_blade").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Blade.BladeBehaviour>()));
+            Assert.That(serializedBout.FindProperty("_strip").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>()));
+        }
+
+        [Test]
         public void CameraRigAsksForTheBodyTrackingPermission()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
