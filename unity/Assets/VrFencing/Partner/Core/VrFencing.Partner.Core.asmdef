@@ -5,7 +5,8 @@
         "VrFencing.Settings.Core",
         "VrFencing.Strip.Core",
         "VrFencing.Dummy.Core",
-        "VrFencing.Session.Core"
+        "VrFencing.Session.Core",
+        "VrFencing.Blade.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
