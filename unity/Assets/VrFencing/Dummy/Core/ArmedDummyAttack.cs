@@ -38,7 +38,8 @@ namespace VrFencing.Dummy
     /// One scripted straight thrust of the Armed Dummy (PER-96, from the PER-95 prototype), as sword arm poses over
     /// time: en garde with the blade in line (<see cref="SwordArmReach.PoseEnGarde"/>) for a random delay, a short
     /// wind-up, the thrust, a short hold, then back to en garde. A Parry (<see cref="ReportParried"/>) cuts the thrust
-    /// or hold short and recovers from where the arm is. Only the arm moves; the feet stay planted.
+    /// or hold short and recovers from where the arm is; landing on the Fencer (<see cref="ReportLanded"/>) stops the
+    /// thrust where it is and holds there. Only the arm moves; the feet stay planted.
     ///
     /// The thrust moves the point along a straight line from the wind-up to the aim (<see cref="Path"/>), the arm
     /// posed by <see cref="SwordArmReach.PoseToReach"/> at each instant, so every pose is within the joint limits and
@@ -58,6 +59,8 @@ namespace VrFencing.Dummy
         private readonly Vector3 _rightHandedAim;
         private double _recoverStartSeconds;
         private SwordArmPose _recoverFrom;
+        private double _holdStartSeconds;
+        private SwordArmPose _holdPose;
 
         private ArmedDummyAttack(
             double startSeconds, float delaySeconds, float heightMeters, Hand hand, Vector3 rightHandedAim, AttackSpeed speed, float bladeLengthMeters)
@@ -79,6 +82,8 @@ namespace VrFencing.Dummy
                 ArmedDummyTuning.MinimumThrustSeconds, AttackPath.MinimumJerkPeakFactor * lengthMeters / GetPeakPointSpeed(speed));
             Path = new AttackPath(ToHand(_rightHandedStart, hand), ToHand(_rightHandedAim, hand), ThrustStartSeconds, ThrustSeconds);
 
+            _holdStartSeconds = ThrustEndSeconds;
+            _holdPose = _thrust;
             _recoverStartSeconds = ThrustEndSeconds + ArmedDummyTuning.HoldSeconds;
             _recoverFrom = _thrust;
         }
@@ -106,6 +111,9 @@ namespace VrFencing.Dummy
 
         /// <summary>True once a Parry cut the thrust or the hold short.</summary>
         public bool IsParried { get; private set; }
+
+        /// <summary>True once the point landed on the Fencer (<see cref="ReportLanded"/>).</summary>
+        public bool HasLanded { get; private set; }
 
         /// <summary>The point's peak speed for a speed level (<see cref="ArmedDummyTuning"/>).</summary>
         /// <exception cref="ArgumentOutOfRangeException">Not a speed level.</exception>
@@ -182,7 +190,7 @@ namespace VrFencing.Dummy
                 return AttackPhase.WindUp;
             }
 
-            return nowSeconds < ThrustEndSeconds ? AttackPhase.Thrust : AttackPhase.Hold;
+            return nowSeconds < _holdStartSeconds ? AttackPhase.Thrust : AttackPhase.Hold;
         }
 
         /// <summary>The right-handed arm pose at <paramref name="nowSeconds"/> (<see cref="SwordArm"/> mirrors it for a left hand).</summary>
@@ -196,7 +204,7 @@ namespace VrFencing.Dummy
                     var point = Vector3.Lerp(_rightHandedStart, _rightHandedAim, Path.GetProgress(nowSeconds));
                     return SwordArmReach.PoseToReach(_heightMeters, point, _bladeLengthMeters);
                 case AttackPhase.Hold:
-                    return _thrust;
+                    return _holdPose;
                 case AttackPhase.Recover:
                     return SwordArmPose.Slerp(
                         _recoverFrom, _guard, AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds)));
@@ -221,6 +229,32 @@ namespace VrFencing.Dummy
             _recoverFrom = GetPose(nowSeconds);
             _recoverStartSeconds = nowSeconds;
             IsParried = true;
+            return true;
+        }
+
+        /// <summary>
+        /// The point landed on the Fencer (PER-98) during the thrust: the arm stops where it is, holds there for
+        /// <see cref="ArmedDummyTuning.HoldSeconds"/> and recovers, so the point does not run on through the body. During
+        /// the hold it only marks the landing; the hold ends as planned.
+        /// </summary>
+        /// <returns>True if this was the landing (the thrust or hold, not parried, not landed before).</returns>
+        public bool ReportLanded(double nowSeconds)
+        {
+            var phase = GetPhase(nowSeconds);
+            if (IsParried || HasLanded || (phase != AttackPhase.Thrust && phase != AttackPhase.Hold))
+            {
+                return false;
+            }
+
+            HasLanded = true;
+            if (phase == AttackPhase.Thrust)
+            {
+                _holdPose = GetPose(nowSeconds);
+                _holdStartSeconds = nowSeconds;
+                _recoverFrom = _holdPose;
+                _recoverStartSeconds = nowSeconds + ArmedDummyTuning.HoldSeconds;
+            }
+
             return true;
         }
 

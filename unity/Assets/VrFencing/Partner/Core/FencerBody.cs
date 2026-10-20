@@ -221,11 +221,36 @@ namespace VrFencing.Partner
         /// <summary>Head, torso, two upper arms, two forearms, two hands, two thighs, two shins, two feet.</summary>
         public const int CapsuleCount = 14;
 
+        /// <summary>The body part of each capsule <see cref="GetCapsules"/> gives, in the same order.</summary>
+        public static IReadOnlyList<BodyPart> CapsuleParts { get; } = new[]
+        {
+            BodyPart.Head,
+            BodyPart.Torso,
+            BodyPart.SwordArm,
+            BodyPart.BackArm,
+            BodyPart.SwordArm,
+            BodyPart.BackArm,
+            BodyPart.SwordHand,
+            BodyPart.BackArm,
+            BodyPart.FrontThigh,
+            BodyPart.BackLeg,
+            BodyPart.FrontLowerLeg,
+            BodyPart.BackLeg,
+            BodyPart.FrontLowerLeg,
+            BodyPart.BackLeg,
+        };
+
         /// <summary>Where a missing part is parked: far below the floor.</summary>
         public static readonly Vector3 ParkedPosition = new Vector3(0.0f, -100.0f, 0.0f);
 
         /// <summary>A capsule nothing can touch, standing in for a missing part.</summary>
         public static Capsule Parked => new Capsule(ParkedPosition, ParkedPosition, 0.0f);
+
+        /// <summary>True for <see cref="Parked"/>: a part whose joints were missing.</summary>
+        public static bool IsParked(Capsule capsule)
+        {
+            return capsule.Start == ParkedPosition && capsule.End == ParkedPosition && capsule.RadiusMeters == 0.0f;
+        }
 
         /// <summary>Fills <paramref name="capsules"/> (cleared first) with the body's <see cref="CapsuleCount"/> capsules.</summary>
         public static void GetCapsules(FencerBody body, float fencerHeightMeters, List<Capsule> capsules)

@@ -275,10 +275,12 @@ namespace VrFencing.Drills
         }
 
         /// <summary>
-        /// Parry Drills: the Armed Dummy's attack reached its aim with no Parry (the Blade's Parry judge saw no deflecting
-        /// contact). Fails the open Rep; ignored once it was parried, and outside an open window.
+        /// Parry Drills: the Armed Dummy's attack got through with no Parry (the Blade's Parry judge saw no deflecting
+        /// contact): its point landed on the Fencer (<paramref name="hit"/>, PER-98), or, with no hit, it ended its hold
+        /// without reaching them. Fails the open Rep as <see cref="RepOutcome.NotParried"/>, with the hit; ignored once it
+        /// was parried, and outside an open window.
         /// </summary>
-        public void ReportAttackLanded()
+        public void ReportAttackLanded(FencerHit? hit = null)
         {
             if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.Parry)
             {
@@ -292,7 +294,9 @@ namespace VrFencing.Drills
             }
 
             var landedAtActiveSeconds = ActiveSeconds();
-            FinishRep(CreateResult(RepOutcome.NotParried, contact: null, reactionSeconds: null, secondTouchSeconds: null), landedAtActiveSeconds);
+            FinishRep(
+                CreateResult(RepOutcome.NotParried, contact: null, reactionSeconds: null, secondTouchSeconds: null, fencerHit: hit),
+                landedAtActiveSeconds);
             AdvanceDueTransitions();
         }
 
@@ -443,7 +447,12 @@ namespace VrFencing.Drills
         }
 
         private RepResult CreateResult(
-            RepOutcome outcome, BladeContact? contact, double? reactionSeconds, double? secondTouchSeconds, double? riposteSeconds = null)
+            RepOutcome outcome,
+            BladeContact? contact,
+            double? reactionSeconds,
+            double? secondTouchSeconds,
+            double? riposteSeconds = null,
+            FencerHit? fencerHit = null)
         {
             return new RepResult(
                 Drill.Id,
@@ -461,7 +470,8 @@ namespace VrFencing.Drills
                 Drill.UsesFootwork ? _latestFootwork : null,
                 CurrentCue.DummyDistance,
                 _parry?.Line,
-                riposteSeconds);
+                riposteSeconds,
+                fencerHit);
         }
 
         private void AdvanceDueTransitions()
