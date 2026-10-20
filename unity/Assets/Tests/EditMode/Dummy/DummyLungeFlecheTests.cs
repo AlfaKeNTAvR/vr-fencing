@@ -138,8 +138,7 @@ namespace VrFencing.Tests.Dummy
         }
 
         // The arm zones are left out: they move with the Armed Dummy's arm and body as before PER-111. The legs' parts may
-        // move no more than 5 cm a frame, or than the whole Dummy moves that frame if that is more: in the 0.6 s recovery
-        // of a 2.1 m Dummy's real-speed lunge the Armed Dummy itself carries the body about 5.1 cm a frame.
+        // move no more than 5 cm a frame (PER-114 slowed a tall Dummy's recovery to keep the body under that).
         [TestCase(AttackTarget.Chest, AttackSpeed.Real, Hand.Right, 2.1f)]
         [TestCase(AttackTarget.Thigh, AttackSpeed.Real, Hand.Left, 2.1f)]
         [TestCase(AttackTarget.Chest, AttackSpeed.Medium, Hand.Right, 1.5f)]
@@ -166,7 +165,7 @@ namespace VrFencing.Tests.Dummy
                 layout.PoseArm(attack.GetPose(now));
                 layout.PoseLegs(footwork.Legs);
                 AssertNoJump(
-                    before, layout.GetBodyOnStrip(footwork.DistanceMeters), $"t {now:0.000}", (int)TargetZone.Thigh, Math.Max(BladeJumpMeters, bodyMove + 0.002f));
+                    before, layout.GetBodyOnStrip(footwork.DistanceMeters), $"t {now:0.000}", (int)TargetZone.Thigh);
                 before = layout.GetBodyOnStrip(footwork.DistanceMeters);
                 AssertLegsReach(footwork.Legs, rest, $"t {now:0.000}");
                 AssertOnOrAboveFloor(footwork.Legs, floor, $"t {now:0.000}");

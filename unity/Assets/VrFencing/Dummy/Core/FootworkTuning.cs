@@ -142,8 +142,8 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// The front foot rises this much at mid-recovery (about 2 cm at 1.8 m), a low push back into en garde. Low on
-        /// purpose: the Armed Dummy's recovery carries the body back at up to about 4.9 cm a frame for a 2.1 m Dummy, so a
-        /// higher swing would move the foot zone past the Blade's 5 cm sweep.
+        /// purpose: the Armed Dummy's recovery carries the body back at up to 4.5 cm a frame
+        /// (<see cref="ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond"/>), so a higher swing would move the foot zone past the Blade's 5 cm sweep.
         /// </summary>
         public const float RecoveryFootLiftPerHeight = 0.012f;
 

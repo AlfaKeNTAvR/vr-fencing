@@ -45,8 +45,8 @@ namespace VrFencing.Dummy
         public const float LungeHoldSeconds = 0.4f;
 
         /// <summary>
-        /// The showcase recovery: a little slower than the Armed Dummy's 0.6 s (<see cref="ArmedDummyTuning.RecoverSeconds"/>),
-        /// which carries a 2.1 m Dummy back at about 5 cm a frame, right at the Blade's sweep.
+        /// The showcase recovery: a little slower than the Armed Dummy's 0.6 s (<see cref="ArmedDummyTuning.RecoverSeconds"/>,
+        /// stretched to 0.73 s for a 2.1 m Dummy so it comes back at no more than 4.5 cm a frame).
         /// </summary>
         public const float LungeBackSeconds = 0.8f;
 
