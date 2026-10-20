@@ -61,6 +61,7 @@ namespace VrFencing.Dummy
         private readonly Vector3 _rightHandedAim;
         private double _recoverStartSeconds;
         private float _recoverFromLungeMeters;
+        private float _recoverSeconds;
         private float _holdLungeMeters;
         private SwordArmPose _recoverFrom;
         private double _holdStartSeconds;
@@ -101,6 +102,7 @@ namespace VrFencing.Dummy
             _recoverFrom = _thrust;
             _holdLungeMeters = lungeMeters;
             _recoverFromLungeMeters = lungeMeters;
+            _recoverSeconds = GetRecoverSeconds(lungeMeters);
         }
 
         public float DelaySeconds { get; }
@@ -131,7 +133,7 @@ namespace VrFencing.Dummy
         public double ThrustEndSeconds => ThrustStartSeconds + ThrustSeconds;
 
         /// <summary>When the recovery is over and the arm is en garde again.</summary>
-        public double DoneSeconds => _recoverStartSeconds + ArmedDummyTuning.RecoverSeconds;
+        public double DoneSeconds => _recoverStartSeconds + _recoverSeconds;
 
         /// <summary>True once a Parry cut the thrust or the hold short.</summary>
         public bool IsParried { get; private set; }
@@ -254,7 +256,7 @@ namespace VrFencing.Dummy
                     return _holdPose;
                 case AttackPhase.Recover:
                     return SwordArmPose.Slerp(
-                        _recoverFrom, _guard, AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds)));
+                        _recoverFrom, _guard, AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, _recoverSeconds)));
                 default:
                     return _guard;
             }
@@ -274,7 +276,7 @@ namespace VrFencing.Dummy
                 case AttackPhase.Hold:
                     return _holdLungeMeters;
                 case AttackPhase.Recover:
-                    var back = AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, ArmedDummyTuning.RecoverSeconds));
+                    var back = AttackPath.MinimumJerk(Fraction(nowSeconds, _recoverStartSeconds, _recoverSeconds));
                     return _recoverFromLungeMeters * (1.0f - back);
                 default:
                     return 0.0f;
@@ -296,6 +298,7 @@ namespace VrFencing.Dummy
 
             _recoverFrom = GetPose(nowSeconds);
             _recoverFromLungeMeters = GetLungeOffsetMeters(nowSeconds);
+            _recoverSeconds = GetRecoverSeconds(_recoverFromLungeMeters);
             _recoverStartSeconds = nowSeconds;
             IsParried = true;
             return true;
@@ -321,12 +324,25 @@ namespace VrFencing.Dummy
                 _holdPose = GetPose(nowSeconds);
                 _holdLungeMeters = GetLungeOffsetMeters(nowSeconds);
                 _recoverFromLungeMeters = _holdLungeMeters;
+                _recoverSeconds = GetRecoverSeconds(_holdLungeMeters);
                 _holdStartSeconds = nowSeconds;
                 _recoverFrom = _holdPose;
                 _recoverStartSeconds = nowSeconds + ArmedDummyTuning.HoldSeconds;
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// How long the recovery from <paramref name="lungeMeters"/> forward takes: <see cref="ArmedDummyTuning.RecoverSeconds"/>,
+        /// or longer for a long lunge (a tall Dummy's), so the body comes back no faster than
+        /// <see cref="ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond"/> (PER-114).
+        /// </summary>
+        private static float GetRecoverSeconds(float lungeMeters)
+        {
+            return Math.Max(
+                ArmedDummyTuning.RecoverSeconds,
+                AttackPath.MinimumJerkPeakFactor * lungeMeters / ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond);
         }
 
         /// <summary>The Dummy frame's move for a lunge of <paramref name="meters"/>: forward, toward the Fencer (+z).</summary>
