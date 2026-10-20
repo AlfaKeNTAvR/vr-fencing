@@ -12,7 +12,9 @@ namespace VrFencing.Blade
     /// <summary>
     /// The Armed Dummy (PER-95 prototype), live only while a Drill that uses it runs
     /// (<see cref="DrillDefinition.UsesArmedDummy"/>: the Parry Drills 7 to 9, PER-100, and the development Drill
-    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/>), so the other Drills never see it. The Dummy holds an épée
+    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/>), and in every other Drill too while the "Dummy blade in every
+    /// Drill" Setting is on (<see cref="DrillDefinition.HoldsDummyBlade"/>, PER-117): there it only holds its en garde
+    /// line, since no cue names an attack, and its blade is as solid as in the attack Drills. The Dummy holds an épée
     /// drawn and bent like the Fencer's (<see cref="DrawnBlade"/>, <see cref="BladeVisual"/>). On every Rep's cue it
     /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the target and speed the cue names
     /// (<see cref="RepCue.AttackTarget"/>, <see cref="RepCue.AttackSpeed"/>, from the Drill's <see cref="AttackScript"/>),
@@ -185,9 +187,13 @@ namespace VrFencing.Blade
             }
         }
 
+        // Armed in the Drills where it attacks, and in every other Drill with the "Dummy blade in every Drill" Setting on
+        // (PER-117). There no cue names an attack or a blade in line, so the blade only holds its en garde line, still
+        // solid against the Fencer's (PER-104).
         private bool IsTestDrillRunning()
         {
-            return _runner.IsRunning && !_runner.IsPaused && _runner.Drill != null && _runner.Drill.UsesArmedDummy;
+            return _runner.IsRunning && !_runner.IsPaused && _runner.Drill != null
+                && _runner.Drill.HoldsDummyBlade(_settings.ArmedDummy.BladeInEveryDrill);
         }
 
         /// <summary>
@@ -334,7 +340,11 @@ namespace VrFencing.Blade
                 _dummy.SetArmPose(SwordArmPose.ArmInLine);
             }
 
-            Debug.Log(isActive ? "[ArmedDummy] Armed: the Dummy holds a blade." : "[ArmedDummy] Disarmed.");
+            Debug.Log(!isActive
+                ? "[ArmedDummy] Disarmed."
+                : _runner.Drill.UsesArmedDummy
+                    ? "[ArmedDummy] Armed: the Dummy holds a blade."
+                    : "[ArmedDummy] Armed: the Dummy holds its blade in line, no attacks (Dummy blade in every Drill).");
         }
 
         private void OnRepCued(RepCue cue)

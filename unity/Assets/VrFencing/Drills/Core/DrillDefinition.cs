@@ -341,9 +341,23 @@ namespace VrFencing.Drills
         /// </summary>
         public bool RequiresRiposte { get; }
 
-        /// <summary>The Armed Dummy holds a blade and attacks in this Drill (<see cref="SuccessRule.Parry"/>).</summary>
+        /// <summary>
+        /// The Armed Dummy attacks in this Drill, or holds its blade in line for a Beat (Parry, Stop Hit and Beat Drills):
+        /// its blade is always on here, whatever the Settings.
+        /// </summary>
         public bool UsesArmedDummy =>
             SuccessRule == SuccessRule.Parry || SuccessRule == SuccessRule.StopHit || SuccessRule == SuccessRule.BeatThenTouch;
+
+        /// <summary>
+        /// The Dummy holds a blade in a run of this Drill (PER-117): always where it attacks or holds its blade for a Beat
+        /// (<see cref="UsesArmedDummy"/>), and in every other Drill too while <paramref name="isBladeInEveryDrill"/> (the
+        /// "Dummy blade in every Drill" Setting) is on. In those other Drills the blade only holds its line: no cue makes
+        /// it attack.
+        /// </summary>
+        public bool HoldsDummyBlade(bool isBladeInEveryDrill)
+        {
+            return UsesArmedDummy || isBladeInEveryDrill;
+        }
 
         /// <summary>
         /// The Touch may land on any of <see cref="TargetZones"/>, none cued: the Armed Dummy's attack or its blade in
