@@ -43,6 +43,8 @@ namespace VrFencing.UI
         BodyOpacity,
         ParryRule,
         DoubleWindow,
+        ClashHaptic,
+        ClashHapticFloor,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -115,6 +117,9 @@ namespace VrFencing.UI
             [SettingId.HapticFullStrengthSpeed] = new NumberSetting(0.5f, 6.0f, 0.5f, "0.0", "m/s",
                 settings => settings.Blade.HapticFullStrengthSpeedMetersPerSecond,
                 (settings, value) => settings.Blade.HapticFullStrengthSpeedMetersPerSecond = value),
+            // The clash buzz's floor (PER-99) in 5% steps, so the prototype's 35% default sits on the grid.
+            [SettingId.ClashHapticFloor] = new NumberSetting(0.0f, 1.0f, 0.05f, "0%", string.Empty,
+                settings => settings.Blade.ClashHapticFloor, (settings, value) => settings.Blade.ClashHapticFloor = value),
             [SettingId.LaserTilt] = new NumberSetting(-30.0f, 60.0f, 5.0f, "+0;-0;0", "deg",
                 settings => settings.LaserTiltDegrees, (settings, value) => settings.LaserTiltDegrees = value),
             // The Dummy's look (PER-102). The low ends keep a dim zone and the body faintly visible and a zone a thin line.
@@ -167,6 +172,8 @@ namespace VrFencing.UI
                 case SettingId.BodyOpacity: return "Dummy body opacity";
                 case SettingId.ParryRule: return "Parry rule";
                 case SettingId.DoubleWindow: return "Bout double window (host)";
+                case SettingId.ClashHaptic: return "Haptic: blade clash";
+                case SettingId.ClashHapticFloor: return "Clash strength when light";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -201,6 +208,8 @@ namespace VrFencing.UI
                     return FormatHaptic(settings.Blade.FlatHaptic);
                 case SettingId.GlanceHaptic:
                     return FormatHaptic(settings.Blade.GlanceHaptic);
+                case SettingId.ClashHaptic:
+                    return FormatHaptic(settings.Blade.ClashHaptic);
                 default:
                     var number = Numbers[id];
                     return FormatNumber(number.Get(settings) * number.DisplayScale, number.Format, number.Unit);
@@ -241,6 +250,8 @@ namespace VrFencing.UI
                 case SettingId.GlanceHaptic:
                 case SettingId.HapticFloor:
                 case SettingId.HapticFullStrengthSpeed:
+                case SettingId.ClashHaptic:
+                case SettingId.ClashHapticFloor:
                     return SettingImpact.Blade;
                 case SettingId.LaserTilt:
                     // The menu reads it every frame.
@@ -310,6 +321,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.GlanceHaptic:
                     changed.Blade.GlanceHaptic = Cycle(settings.Blade.GlanceHaptic, direction);
+                    break;
+                case SettingId.ClashHaptic:
+                    changed.Blade.ClashHaptic = Cycle(settings.Blade.ClashHaptic, direction);
                     break;
                 default:
                     Numbers[id].Step(changed, Math.Sign(direction));

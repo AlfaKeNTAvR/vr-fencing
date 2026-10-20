@@ -70,6 +70,27 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void TheArmedDummysHitIsOnItsOwnUnlikeEveryOtherBuzz()
+        {
+            var hit = BladeHaptics.ArmedDummyHit;
+            var seconds = hit.Sum(segment => segment.DurationSeconds);
+
+            Assert.That(seconds, Is.InRange(0.2f, 0.35f), "Short, but longer than any contact buzz: being hit outlasts a contact.");
+            Assert.That(hit[0].Amplitude, Is.EqualTo(1.0f), "It opens with the sharp jab.");
+            Assert.That(hit[0].Frequency, Is.GreaterThan(hit[hit.Count - 1].Frequency), "Then rumbles lower.");
+            Assert.That(hit.SequenceEqual(BladeHaptics.BeingTouched), Is.False, "Distinct from the bout's being-touched buzz.");
+            foreach (HapticPattern pattern in System.Enum.GetValues(typeof(HapticPattern)))
+            {
+                foreach (var eventType in new[] { BladeEventType.Touch, BladeEventType.TipGlance, BladeEventType.FlatContact })
+                {
+                    Assert.That(BladeHaptics.GetSegments(eventType, pattern).SequenceEqual(hit), Is.False, $"Distinct from the {eventType}'s {pattern}.");
+                }
+
+                Assert.That(ClashHaptics.GetSegments(pattern).SequenceEqual(hit), Is.False, $"Distinct from the clash's {pattern}.");
+            }
+        }
+
+        [Test]
         public void BeingTouchedIsAShortBuzzUnlikeAnyTouchPattern()
         {
             var segments = BladeHaptics.BeingTouched;

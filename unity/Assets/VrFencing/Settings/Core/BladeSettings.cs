@@ -139,6 +139,18 @@ namespace VrFencing.Settings
         /// <summary>Tip speed at contact that gives full haptic strength.</summary>
         public float HapticFullStrengthSpeedMetersPerSecond { get; set; } = 2.0f;
 
+        /// <summary>
+        /// The clash buzz when the Fencer's blade meets the Armed Dummy's (PER-99). Crisp is the prototype's ring (PER-95),
+        /// the default until its feel test picks another.
+        /// </summary>
+        public HapticPattern ClashHaptic { get; set; } = HapticPattern.Crisp;
+
+        /// <summary>
+        /// Clash buzz strength at the lightest blade contact, as a fraction of full; it rises with how hard the blades met
+        /// (PER-23). 35% is the prototype's (PER-95).
+        /// </summary>
+        public float ClashHapticFloor { get; set; } = 0.35f;
+
         /// <summary>The reach Calibrate grip measured with the chosen grip, or null when it has not been measured yet.</summary>
         public float? GetMeasuredReachMeters()
         {
@@ -162,6 +174,8 @@ namespace VrFencing.Settings
                 GlanceHaptic = GlanceHaptic,
                 HapticFloor = HapticFloor,
                 HapticFullStrengthSpeedMetersPerSecond = HapticFullStrengthSpeedMetersPerSecond,
+                ClashHaptic = ClashHaptic,
+                ClashHapticFloor = ClashHapticFloor,
             };
         }
     }

@@ -16,8 +16,9 @@ namespace VrFencing.Blade
         private readonly Dictionary<(BladeEventType, HapticPattern), ClipPlayer> _players = new Dictionary<(BladeEventType, HapticPattern), ClipPlayer>();
         private ClipPlayer _playing;
         private ClipPlayer _pressPlayer;
-        private ClipPlayer _clashPlayer;
+        private readonly Dictionary<HapticPattern, ClipPlayer> _clashPlayers = new Dictionary<HapticPattern, ClipPlayer>();
         private ClipPlayer _beingTouchedPlayer;
+        private ClipPlayer _armedDummyHitPlayer;
         private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
@@ -70,21 +71,27 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// The clash buzz (<see cref="BladeClashDetector.HapticSegments"/>) when the Fencer's blade meets the Armed
-        /// Dummy's (PER-95), at <paramref name="strength"/>; it replaces whatever is playing.
+        /// The chosen clash buzz (<see cref="ClashHaptics"/>) when the Fencer's blade meets the Armed Dummy's (PER-99), at
+        /// <paramref name="strength"/>; it replaces whatever is playing. Off plays nothing.
         /// </summary>
-        public void PlayClash(float strength, Hand swordHand)
+        public void PlayClash(HapticPattern pattern, float strength, Hand swordHand)
         {
-            if (_hasFailed)
+            if (_hasFailed || pattern == HapticPattern.Off)
             {
                 return;
             }
 
             try
             {
-                _clashPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeClashDetector.HapticSegments), BladeClashDetector.HapticSegments);
-                StartPlaying(_clashPlayer, strength, swordHand);
-                _eventEndsAt = Time.time + _clashPlayer.DurationSeconds;
+                if (!_clashPlayers.TryGetValue(pattern, out var player))
+                {
+                    var segments = ClashHaptics.GetSegments(pattern);
+                    player = new ClipPlayer(BladeHaptics.BuildClipJson(segments), segments);
+                    _clashPlayers[pattern] = player;
+                }
+
+                StartPlaying(player, strength, swordHand);
+                _eventEndsAt = Time.time + player.DurationSeconds;
             }
             catch (Exception error)
             {
@@ -98,6 +105,20 @@ namespace VrFencing.Blade
         /// </summary>
         public void PlayBeingTouched()
         {
+            PlayOnBothControllers(ref _beingTouchedPlayer, BladeHaptics.BeingTouched);
+        }
+
+        /// <summary>
+        /// The Armed Dummy's point landing on the Fencer (<see cref="BladeHaptics.ArmedDummyHit"/>, PER-99) on both
+        /// controllers at full strength; it replaces whatever is playing.
+        /// </summary>
+        public void PlayArmedDummyHit()
+        {
+            PlayOnBothControllers(ref _armedDummyHitPlayer, BladeHaptics.ArmedDummyHit);
+        }
+
+        private void PlayOnBothControllers(ref ClipPlayer player, IReadOnlyList<HapticSegment> segments)
+        {
             if (_hasFailed)
             {
                 return;
@@ -105,12 +126,12 @@ namespace VrFencing.Blade
 
             try
             {
-                _beingTouchedPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.BeingTouched), BladeHaptics.BeingTouched);
+                player ??= new ClipPlayer(BladeHaptics.BuildClipJson(segments), segments);
                 _playing?.Player.Stop();
-                _beingTouchedPlayer.Player.amplitude = 1.0f;
-                _beingTouchedPlayer.Player.Play(Controller.Both);
-                _playing = _beingTouchedPlayer;
-                _eventEndsAt = Time.time + _beingTouchedPlayer.DurationSeconds;
+                player.Player.amplitude = 1.0f;
+                player.Player.Play(Controller.Both);
+                _playing = player;
+                _eventEndsAt = Time.time + player.DurationSeconds;
             }
             catch (Exception error)
             {
@@ -143,10 +164,16 @@ namespace VrFencing.Blade
             _players.Clear();
             _pressPlayer?.Dispose();
             _pressPlayer = null;
-            _clashPlayer?.Dispose();
-            _clashPlayer = null;
+            foreach (var player in _clashPlayers.Values)
+            {
+                player.Dispose();
+            }
+
+            _clashPlayers.Clear();
             _beingTouchedPlayer?.Dispose();
             _beingTouchedPlayer = null;
+            _armedDummyHitPlayer?.Dispose();
+            _armedDummyHitPlayer = null;
             _playing = null;
         }
 

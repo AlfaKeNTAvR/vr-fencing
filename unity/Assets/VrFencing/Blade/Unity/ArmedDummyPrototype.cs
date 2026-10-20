@@ -41,6 +41,7 @@ namespace VrFencing.Blade
         private readonly BladeHapticPlayer _haptics;
         private readonly Random _random = new Random();
         private readonly BladeClashDetector _detector = new BladeClashDetector();
+        private readonly ClashBuzzGate _clashBuzzGate = new ClashBuzzGate();
         private readonly ArmedDummyBlade _blade = new ArmedDummyBlade();
         private readonly Transform _mount;
         private readonly BladeVisual _visual;
@@ -281,7 +282,7 @@ namespace VrFencing.Blade
             _attack.ReportLanded(nowSeconds);
             _hasReportedLanding = true;
             _hitFlash.Show();
-            _haptics?.PlayBeingTouched();
+            _haptics?.PlayArmedDummyHit();
             var landed = hit.Value;
             Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried.");
             _runner.ReportAttackLanded(landed);
@@ -293,6 +294,7 @@ namespace VrFencing.Blade
             _attack = null;
             _judge = null;
             Restart();
+            _clashBuzzGate.Reset();
             _visual.SetVisible(isActive);
             if (!isActive && _dummy.Layout != null)
             {
@@ -334,11 +336,17 @@ namespace VrFencing.Blade
             _blade.Swing.Kick(clash);
             _lastClash = clash;
             var phase = _attack?.GetPhase(nowSeconds);
-            _haptics?.PlayClash(clash.HapticStrength, _settings.Hand);
+            var buzzStrength = ClashHaptics.GetStrength(_settings.Blade.ClashHapticFloor, clash.RelativeSpeedMetersPerSecond);
+            var isBuzzed = _clashBuzzGate.TryPass(nowSeconds);
+            if (isBuzzed)
+            {
+                _haptics?.PlayClash(_settings.Blade.ClashHaptic, buzzStrength, _settings.Hand);
+            }
+
             ShowSpark(StripFrame.ToRoom(stripInRoom, clash.ContactPoint).ToUnity());
             Debug.Log($"[ArmedDummy] Clash {clash.RelativeSpeedMetersPerSecond:0.00} m/s, Fencer blade at {clash.FencerBladeFraction:0.00}, " +
                 $"Dummy blade at {clash.OpponentBladeFraction:0.00}, swing {BladeSwing.GetPeakMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction) * 100.0f:0} cm, " +
-                $"buzz {clash.HapticStrength:0.00}, during {phase?.ToString() ?? "guard"}");
+                $"buzz {(isBuzzed ? buzzStrength.ToString("0.00") : "skipped (rate limit)")}, during {phase?.ToString() ?? "guard"}");
         }
 
         /// <summary>The Dummy's straight blade (guard to the undrooped point) and its grip's up, in the Strip frame.</summary>

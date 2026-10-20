@@ -143,6 +143,12 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeYaw), Is.EqualTo("0 deg"));
             Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeSet), Is.EqualTo("0.7 cm"));
             Assert.That(SettingsPage.FormatValue(settings, SettingId.HapticFloor), Is.EqualTo("40%"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ClashHaptic), Is.EqualTo("Crisp"));
+            Assert.That(SettingsPage.Change(settings, SettingId.ClashHaptic, 1).Blade.ClashHaptic, Is.EqualTo(HapticPattern.Heavy));
+            Assert.That(SettingsPage.GetImpact(SettingId.ClashHaptic), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ClashHapticFloor), Is.EqualTo("35%"));
+            Assert.That(SettingsPage.Change(settings, SettingId.ClashHapticFloor, 1).Blade.ClashHapticFloor, Is.EqualTo(0.4f).Within(1e-6f));
+            Assert.That(SettingsPage.GetImpact(SettingId.ClashHapticFloor), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.Change(settings, SettingId.BladePitch, 1).Blade.SavedAngles.Center.PitchDegrees, Is.EqualTo(-9.0f));
             Assert.That(SettingsPage.Change(settings, SettingId.BladeSet, 1).Blade.SetSagittaMeters, Is.EqualTo(0.008f).Within(1e-6f));
         }
