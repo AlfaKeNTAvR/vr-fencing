@@ -32,6 +32,7 @@ namespace VrFencing.Tracking
         private DrillRunner _subscribedRunner;
         private StartMarkVisual _startMarkVisual;
         private float _fencerHeightMeters = new TrainerSettings().FencerHeightMeters;
+        private float _startMarkSideToleranceMeters = new TrainerSettings().StartMarkSideToleranceMeters;
         private bool _isWaitingForStartMark;
         private double _returnStartedAtSeconds;
 
@@ -89,7 +90,7 @@ namespace VrFencing.Tracking
             if (waitsAtStartMark)
             {
                 _startMarkWatch.AddSample(sample);
-                runner.ReportAtStartMark(_startMarkWatch.IsBackAndStill(_fencerHeightMeters));
+                runner.ReportAtStartMark(_startMarkWatch.IsBackAndStill(_fencerHeightMeters, _startMarkSideToleranceMeters));
             }
         }
 
@@ -109,10 +110,13 @@ namespace VrFencing.Tracking
             _subscribedRunner.Finished -= OnRunFinished;
         }
 
-        // The height scales the classifier's distances and the Start Mark; it can only change from the menu between runs.
+        // The height scales the classifier's distances and the Start Mark, and the Start Mark's side tolerance is a Setting
+        // (PER-117); both are read when a run starts, so a change in the menu applies from the next run.
         private void OnRunStarted()
         {
-            _fencerHeightMeters = SettingsFile.Load().FencerHeightMeters;
+            var settings = SettingsFile.Load();
+            _fencerHeightMeters = settings.FencerHeightMeters;
+            _startMarkSideToleranceMeters = settings.StartMarkSideToleranceMeters;
             _startMarkWatch.Clear();
             _isWaitingForStartMark = false;
             _startMarkVisual.Show(_subscribedRunner.Drill.WaitsAtStartMark(_subscribedRunner.IsShrunk));
@@ -156,11 +160,16 @@ namespace VrFencing.Tracking
             Debug.Log($"[Tracking] Asking the Fencer back to the line: head {FormatOffset()}.");
         }
 
-        // Where the head is from its en garde place at the Start Mark, for tuning StartMark.HeadBehindFrontFootPerHeight.
+        // Where the head is from its en garde place at the Start Mark, along the Strip (for tuning
+        // StartMark.HeadBehindFrontFootPerHeight) and across it from the center line (PER-117), with the tolerances.
         private string FormatOffset()
         {
             var offset = _startMarkWatch.MeasureOffsetMeters(_fencerHeightMeters);
-            return offset.HasValue ? $"{offset.Value:+0.00;-0.00} m along the Strip from its place" : "not seen yet";
+            var side = _startMarkWatch.MeasureSideOffsetMeters();
+            return offset.HasValue && side.HasValue
+                ? $"{offset.Value:+0.00;-0.00} m along the Strip from its place (within {StartMark.ToleranceMeters:0.00}), " +
+                  $"{side.Value:+0.00;-0.00} m across from the center line (within {_startMarkSideToleranceMeters:0.00})"
+                : "not seen yet";
         }
 
         private static void OnRepJudged(RepResult result)

@@ -202,5 +202,20 @@ namespace VrFencing.Tests.Drills
 
             Assert.That(starts, Is.EqualTo(0));
         }
+
+        [Test]
+        public void TheDummyHoldsItsBladeInEveryDrillUnlessSwitchedOffThenOnlyWhereItAttacks()
+        {
+            // PER-117: on by default, so every Drill, footwork and target ones included, arms the Dummy.
+            var drills = DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(new TrainerSettings());
+            var isOn = new TrainerSettings().ArmedDummy.BladeInEveryDrill;
+            Assert.That(drills.Where(drill => !drill.HoldsDummyBlade(isOn)).Select(drill => drill.Id), Is.Empty);
+
+            // Off: only the Drills where it attacks or holds its blade for a Beat keep it (Drills 7 to 12 and their test Drill).
+            var armedWhenOff = drills.Where(drill => drill.HoldsDummyBlade(false)).Select(drill => drill.Id).ToArray();
+            Assert.That(armedWhenOff, Is.EquivalentTo(drills.Where(drill => drill.UsesArmedDummy).Select(drill => drill.Id)));
+            Assert.That(armedWhenOff, Does.Contain(DrillCatalog.SlowParryDrillId).And.Contain(DrillCatalog.BeatDrillId).And.Contain(DrillCatalog.StopHitDrillId));
+            Assert.That(armedWhenOff, Does.Not.Contain(DrillCatalog.PointControlDrillId).And.Not.Contain(DrillCatalog.FootworkCallsDrillId));
+        }
     }
 }

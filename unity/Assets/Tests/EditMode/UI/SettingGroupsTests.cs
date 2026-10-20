@@ -63,7 +63,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.Strip), Is.EqualTo(new[]
             {
                 SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
-                SettingId.DoubleWindow,
+                SettingId.DoubleWindow, SettingId.StartMarkSideTolerance,
             }));
 
             // PER-102: the Dummy's look joins Touch, the group about the Target Zones. PER-100 moved the Parry rule to the Armed Dummy.
@@ -82,11 +82,11 @@ namespace VrFencing.Tests.UI
                 SettingId.ClashHaptic, SettingId.ClashHapticFloor,
             }));
 
-            // PER-100: the Parry rule and each Parry Drill's Riposte switch.
+            // PER-100: the Parry rule and each Parry Drill's Riposte switch. PER-117: the blade in the other Drills.
             Assert.That(SettingGroups.GetSettings(SettingGroup.ArmedDummy), Is.EqualTo(new[]
             {
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
-                SettingId.RiposteInLungeParries,
+                SettingId.RiposteInLungeParries, SettingId.DummyBladeInEveryDrill,
             }));
         }
 

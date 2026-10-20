@@ -65,7 +65,7 @@ A cue that names a footwork action for the Fencer to do at once: advance, retrea
 _Avoid_: Command, footwork cue
 
 **Start Mark**:
-The mark on the floor at the center of the En Garde Line where the Fencer's front foot goes between Reps. In Drills where the Fencer moves, the next Rep waits until the Fencer is back on it and still.
+The mark on the floor at the center of the En Garde Line where the Fencer's front foot goes between Reps. In Drills where the Fencer moves, the next Rep waits until the Fencer is back on it and still: precise along the Strip, generous to either side of its center line.
 _Avoid_: Home position, start position, spawn point
 
 **Target**:
@@ -85,7 +85,7 @@ How far the Dummy stands from the Fencer along the Strip, front foot to front fo
 _Avoid_: Range, measure
 
 **Armed Dummy**:
-The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills, where it lunges on its legs: the front foot kicks out and lands, the back foot stays (dragging a little at full length), the hips drop and the torso leans in over the front leg, the sword arm reaching from wherever that carries the shoulder. For a thrust at the hand or forearm it stands 0.6 to 0.75 m further back, as real fencers attack the arm from further away.
+The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. By default it also holds its blade in the Drills where it does not attack, only holding its line there, so the Fencer always has a blade to work around; a Setting turns that off. Its feet stay planted except in lunge Drills, where it lunges on its legs: the front foot kicks out and lands, the back foot stays (dragging a little at full length), the hips drop and the torso leans in over the front leg, the sword arm reaching from wherever that carries the shoulder. For a thrust at the hand or forearm it stands 0.6 to 0.75 m further back, as real fencers attack the arm from further away.
 _Avoid_: Floating blade, bot, enemy sword, opponent (reserved for a full virtual fencer)
 
 **Parry**:

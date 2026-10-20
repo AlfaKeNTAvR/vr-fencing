@@ -304,11 +304,11 @@ The Settings groups, in order (`SettingGroups` in the UI Core; an Edit-mode test
 |---|---|
 | You | Sword hand, Your height, Menu laser tilt |
 | Drills | Reps per Drill, Rest between Reps, Reaction window, Compound second Touch window, Distance choice window, Footwork call window, Shrink Drills to fit the Strip |
-| Strip | Warning Zone on a full piste, Warning Zone at least, Off-strip tolerance, Shrink Drills to fit the Strip, and "Bout double window (host)" (PER-82): 50 to 150 ms in 25 ms steps, used when this Fencer hosts a bout (here because Touch is full) |
+| Strip | Warning Zone on a full piste, Warning Zone at least, Off-strip tolerance, Shrink Drills to fit the Strip, and "Bout double window (host)" (PER-82): 50 to 150 ms in 25 ms steps, used when this Fencer hosts a bout (here because Touch is full), and "Start Mark: side tolerance" (PER-117): how far either side of the Strip's center line the head may be and still count as back at the Start Mark between Reps, 15 to 75 cm in 5 cm steps, default 45 cm (along the Strip it stays 15 cm; read when each run starts) |
 | Touch | Touch rule, Touch pressure, and the Dummy's look (PER-102): Show Target Zones, Zone opacity, Zone thickness (of scoring), Dummy body opacity. The look only changes how the Dummy is drawn, never how Touches are judged; hidden zones still show while lit or flashing. |
 | Blade | Grip, Blade pitch, Blade yaw, Blade set (curve), Blade flex, and the "Calibrate grip" button (opens the grip page) |
 | Haptics | Haptic Touch, flat contact, glance, strength when slow, full strength at, and the Armed Dummy's clash (PER-99): Haptic: blade clash, Clash strength when light. Full (7), so the Armed Dummy's hit buzz has no Setting |
-| Armed Dummy | Parry rule (moved here from Touch in PER-100), and each Parry Drill's Riposte switch: "Riposte: Parry 6/4 slow", "Riposte: Parry 6/4 fast", "Riposte: Parry 8/7", "Riposte: Dummy lunges" (On (within 1 s) by default; Off (parry only) runs the Drill as a parry-only warm-up) |
+| Armed Dummy | Parry rule (moved here from Touch in PER-100), and each Parry Drill's Riposte switch: "Riposte: Parry 6/4 slow", "Riposte: Parry 6/4 fast", "Riposte: Parry 8/7", "Riposte: Dummy lunges" (On (within 1 s) by default; Off (parry only) runs the Drill as a parry-only warm-up), and "Dummy blade in every Drill" (PER-117): On (holds its line) by default arms the Dummy in every Drill, its blade held in its en garde line with no attacks and solid against the Fencer's as in PER-104; Off (attack Drills only) leaves it unarmed except in Drills 7 to 12 and the Armed Dummy test Drills, which always arm it |
 
 A group holds at most 7 Settings, so each fits on one page. Folding the panels with the Menu button keeps the open group.
 

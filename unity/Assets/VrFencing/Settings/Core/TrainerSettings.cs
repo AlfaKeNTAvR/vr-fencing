@@ -54,8 +54,19 @@ namespace VrFencing.Settings
         /// </summary>
         public float BoutDoubleWindowSeconds { get; set; } = 0.05f;
 
-        /// <summary>The Armed Dummy's Parry Drills: which ask for a Riposte after the Parry (PER-100).</summary>
+        /// <summary>
+        /// The Armed Dummy: which Parry Drills ask for a Riposte after the Parry (PER-100), and whether the Dummy holds its
+        /// blade in the Drills where it does not attack (PER-117).
+        /// </summary>
         public ArmedDummySettings ArmedDummy { get; set; } = new ArmedDummySettings();
+
+        /// <summary>
+        /// How far to either side of the Strip's center line the head may be and still count as back at the Start Mark
+        /// between Reps (PER-117). Along the Strip the check stays tight (<c>StartMark.ToleranceMeters</c>); across it is
+        /// generous, since where the head sits across the Strip depends on the stance and nobody stands exactly on the
+        /// center line. Before PER-117 the side was not checked at all.
+        /// </summary>
+        public float StartMarkSideToleranceMeters { get; set; } = 0.45f;
 
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
@@ -86,6 +97,7 @@ namespace VrFencing.Settings
                 DummyLook = DummyLook.Clone(),
                 BoutDoubleWindowSeconds = BoutDoubleWindowSeconds,
                 ArmedDummy = ArmedDummy.Clone(),
+                StartMarkSideToleranceMeters = StartMarkSideToleranceMeters,
             };
         }
     }
@@ -96,6 +108,13 @@ namespace VrFencing.Settings
     /// </summary>
     public sealed class ArmedDummySettings
     {
+        /// <summary>
+        /// The Dummy holds its blade in every Drill (PER-117), so the Fencer always has a blade to sense while moving and
+        /// attacking: in a Drill where it does not attack, it holds its en garde line and never thrusts. Off leaves it
+        /// unarmed there. The Drills where it attacks or holds its blade for a Beat always arm it, whatever this says.
+        /// </summary>
+        public bool BladeInEveryDrill { get; set; } = true;
+
         /// <summary>Parry 6/4 at slow speed asks for a Riposte within 1 s of the Parry.</summary>
         public bool RiposteInSlowParries { get; set; } = true;
 
@@ -112,6 +131,7 @@ namespace VrFencing.Settings
         {
             return new ArmedDummySettings
             {
+                BladeInEveryDrill = BladeInEveryDrill,
                 RiposteInSlowParries = RiposteInSlowParries,
                 RiposteInFastParries = RiposteInFastParries,
                 RiposteInLowParries = RiposteInLowParries,

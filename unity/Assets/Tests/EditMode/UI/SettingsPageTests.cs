@@ -283,6 +283,44 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheDummyBladeInEveryDrillIsAnOnByDefaultArmedDummyToggleForTheBlade()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(settings.ArmedDummy.BladeInEveryDrill, Is.True);
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.DummyBladeInEveryDrill), Is.EqualTo("On (holds its line)"));
+            var off = SettingsPage.Change(settings, SettingId.DummyBladeInEveryDrill, -1);
+            Assert.That(off.ArmedDummy.BladeInEveryDrill, Is.False);
+            Assert.That(SettingsPage.FormatValue(off, SettingId.DummyBladeInEveryDrill), Is.EqualTo("Off (attack Drills only)"));
+            Assert.That(SettingsPage.Change(off, SettingId.DummyBladeInEveryDrill, 1).ArmedDummy.BladeInEveryDrill, Is.True);
+            Assert.That(SettingsPage.GetImpact(SettingId.DummyBladeInEveryDrill), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingGroups.GetGroup(SettingId.DummyBladeInEveryDrill), Is.EqualTo(SettingGroup.ArmedDummy));
+        }
+
+        [Test]
+        public void TheStartMarkSideToleranceIs45CentimetersInFiveCentimeterStepsUpToTheStripsSide()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.StartMarkSideTolerance), Is.EqualTo("45 cm"));
+            Assert.That(SettingsPage.Change(settings, SettingId.StartMarkSideTolerance, 1).StartMarkSideToleranceMeters, Is.EqualTo(0.5f).Within(1e-5f));
+            Assert.That(SettingsPage.Change(settings, SettingId.StartMarkSideTolerance, -1).StartMarkSideToleranceMeters, Is.EqualTo(0.4f).Within(1e-5f));
+
+            var widest = settings;
+            var narrowest = settings;
+            for (var i = 0; i < 20; i++)
+            {
+                widest = SettingsPage.Change(widest, SettingId.StartMarkSideTolerance, 1);
+                narrowest = SettingsPage.Change(narrowest, SettingId.StartMarkSideTolerance, -1);
+            }
+
+            Assert.That(widest.StartMarkSideToleranceMeters, Is.EqualTo(StripGeometry.WidthMeters * 0.5f).Within(1e-5f));
+            Assert.That(narrowest.StartMarkSideToleranceMeters, Is.EqualTo(0.15f).Within(1e-5f));
+            Assert.That(SettingsPage.GetImpact(SettingId.StartMarkSideTolerance), Is.EqualTo(SettingImpact.None), "Read when each run starts.");
+            Assert.That(SettingGroups.GetGroup(SettingId.StartMarkSideTolerance), Is.EqualTo(SettingGroup.Strip));
+        }
+
+        [Test]
         public void LightNamedZonesIsAnOnByDefaultToggleThatRebuildsTheDrills()
         {
             var settings = new TrainerSettings();

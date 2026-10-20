@@ -49,6 +49,8 @@ namespace VrFencing.UI
         RiposteInFastParries,
         RiposteInLowParries,
         RiposteInLungeParries,
+        DummyBladeInEveryDrill,
+        StartMarkSideTolerance,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -136,6 +138,10 @@ namespace VrFencing.UI
             // The bout's double window when hosting (PER-56): the rule's 50 ms up to 150 ms.
             [SettingId.DoubleWindow] = new NumberSetting(0.05f, 0.15f, 0.025f, "0", "ms",
                 settings => settings.BoutDoubleWindowSeconds, (settings, value) => settings.BoutDoubleWindowSeconds = value, displayScale: 1000.0f),
+            // How far across the Strip the head may be at the Start Mark (PER-117), 15 to 75 cm in 5 cm steps: 75 cm is the
+            // Strip's side, past which the off-strip pause takes over.
+            [SettingId.StartMarkSideTolerance] = new NumberSetting(0.15f, 0.75f, 0.05f, "0", "cm",
+                settings => settings.StartMarkSideToleranceMeters, (settings, value) => settings.StartMarkSideToleranceMeters = value, displayScale: 100.0f),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -182,6 +188,8 @@ namespace VrFencing.UI
                 case SettingId.RiposteInFastParries: return "Riposte: Parry 6/4 fast";
                 case SettingId.RiposteInLowParries: return "Riposte: Parry 8/7";
                 case SettingId.RiposteInLungeParries: return "Riposte: Dummy lunges";
+                case SettingId.DummyBladeInEveryDrill: return "Dummy blade in every Drill";
+                case SettingId.StartMarkSideTolerance: return "Start Mark: side tolerance";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -206,6 +214,8 @@ namespace VrFencing.UI
                     return FormatRiposte(settings.ArmedDummy.RiposteInLowParries);
                 case SettingId.RiposteInLungeParries:
                     return FormatRiposte(settings.ArmedDummy.RiposteInLungeParries);
+                case SettingId.DummyBladeInEveryDrill:
+                    return settings.ArmedDummy.BladeInEveryDrill ? "On (holds its line)" : "Off (attack Drills only)";
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
@@ -269,8 +279,14 @@ namespace VrFencing.UI
                 case SettingId.ClashHaptic:
                 case SettingId.ClashHapticFloor:
                     return SettingImpact.Blade;
+                case SettingId.DummyBladeInEveryDrill:
+                    // The Blade's Armed Dummy decides each frame whether to hold a blade.
+                    return SettingImpact.Blade;
                 case SettingId.LaserTilt:
                     // The menu reads it every frame.
+                    return SettingImpact.None;
+                case SettingId.StartMarkSideTolerance:
+                    // The footwork tracking reads it from the settings file when each run starts.
                     return SettingImpact.None;
                 case SettingId.ShowTargetZones:
                 case SettingId.ZoneOpacity:
@@ -322,6 +338,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.RiposteInLungeParries:
                     changed.ArmedDummy.RiposteInLungeParries = !settings.ArmedDummy.RiposteInLungeParries;
+                    break;
+                case SettingId.DummyBladeInEveryDrill:
+                    changed.ArmedDummy.BladeInEveryDrill = !settings.ArmedDummy.BladeInEveryDrill;
                     break;
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);
