@@ -52,6 +52,7 @@ namespace VrFencing.Partner
         private SessionRecorderBehaviour _session;
 
         private readonly OpponentTouchSensor _sensor = new OpponentTouchSensor();
+        private readonly TallyNumbering _tallyNumbering = new TallyNumbering();
 
         private PartnerSessionBehaviour _partner;
         private NetworkManager _network;
@@ -64,6 +65,7 @@ namespace VrFencing.Partner
         private BoutVoice _voice;
         private bool _wasConnected;
         private bool _isOffOwnStrip;
+        private bool _isAwaitingFirstFlow;
         private int _loggedRejectedMessages;
 
         /// <summary>The judge's protocol while connected (null otherwise), for the PC Editor's Partner window.</summary>
@@ -130,11 +132,12 @@ namespace VrFencing.Partner
                 && _network != null && _network.IsListening && _network.CustomMessagingManager != null;
             if (isConnected != _wasConnected)
             {
-                OnConnectionChanged(isConnected);
+                OnConnectionChanged(isConnected, now);
             }
 
             if (!isConnected)
             {
+                TickWhileWaitingForRejoin(now);
                 return;
             }
 
@@ -145,6 +148,13 @@ namespace VrFencing.Partner
 
             _box ??= new ScoringBoxView();
             _voice ??= new BoutVoice();
+            if (_isAwaitingFirstFlow && _link.HasHostFlow)
+            {
+                // The Partner's first tally after (re)joining tells whether the Host carried an interrupted tally on.
+                _isAwaitingFirstFlow = false;
+                _tallyNumbering.OnReconnected(_link.Tally.IsEmpty);
+            }
+
             _link.SetMyRules(new BoutRules(_settings.Blade.TouchPressure, _settings.BoutDoubleWindowSeconds));
             _link.SetMode(_partner.State.Mode, now);
             ReadStance();
@@ -169,7 +179,23 @@ namespace VrFencing.Partner
             DrawLinesAndFade();
         }
 
-        private void OnConnectionChanged(bool isConnected)
+        /// <summary>
+        /// The headset is going to sleep: the Paired Practice tally so far is saved (Interrupted), in case the app never
+        /// wakes (PER-84). It goes on if the session does.
+        /// </summary>
+        private void OnApplicationPause(bool isPaused)
+        {
+            if (!isPaused || _link == null)
+            {
+                return;
+            }
+
+            _link.SnapshotTally();
+            FlushLog();
+            SaveEndedTallies();
+        }
+
+        private void OnConnectionChanged(bool isConnected, double nowSeconds)
         {
             _wasConnected = isConnected;
             _sensor.Reset();
@@ -177,16 +203,34 @@ namespace VrFencing.Partner
             if (isConnected)
             {
                 var me = _partner.State.Role == PartnerRole.Host ? BoutSide.Host : BoutSide.Partner;
+                if (_link != null && _link.Me == me)
+                {
+                    // The Host kept its side through the Partner's drop: the tally carries on.
+                    _tallyNumbering.OnReconnected(_link.Tally.IsEmpty);
+                    Debug.Log($"{LogTag} The partner rejoined: the bout goes on{(_link.Tally.IsEmpty ? string.Empty : $", Paired Practice tally kept ({BoutCall.FormatCounts(_link.Tally.Host)} / {BoutCall.FormatCounts(_link.Tally.Partner)})")}.");
+                    return;
+                }
+
                 _link = new BoutLink(me);
+                _isAwaitingFirstFlow = me == BoutSide.Partner;
                 Debug.Log($"{LogTag} Judging the bout as the {me}{(me == BoutSide.Host ? " (the judge and the bout flow run here)" : string.Empty)}.");
                 return;
             }
 
-            // A Paired Practice tally in progress ends with the session.
-            _link?.Clear();
+            // PER-84: a Partner expected back keeps the Paired Practice tally (saved so far); otherwise it ends and is saved.
+            var isRejoinExpected = _partner.State.IsRejoinExpected(_network != null ? _network.DisconnectReason : null);
+            Debug.Log(isRejoinExpected
+                ? $"{LogTag} The connection to the {(_link?.Me == BoutSide.Host ? "partner" : "host")} dropped: the Paired Practice tally so far is saved and kept for a rejoin."
+                : $"{LogTag} The partner connection ended.");
+            _link?.LosePartner(isRejoinExpected, nowSeconds);
             FlushLog();
             SaveEndedTallies();
-            _link = null;
+            if (!isRejoinExpected || _link?.Me != BoutSide.Host)
+            {
+                // The Partner starts a new side on rejoining; the Host keeps its side while it waits.
+                _link = null;
+            }
+
             _box?.SetVisible(false);
             if (_strip != null)
             {
@@ -199,6 +243,35 @@ namespace VrFencing.Partner
             }
 
             Unregister();
+        }
+
+        /// <summary>
+        /// On the Host while its dropped Partner may still rejoin: the kept side follows the mode (switching to a Bout
+        /// still ends the tally). Once the session stops waiting (left, the window over, slept), the tally ends.
+        /// </summary>
+        private void TickWhileWaitingForRejoin(double nowSeconds)
+        {
+            if (_link == null)
+            {
+                return;
+            }
+
+            if (_partner.State.IsWaitingForRejoin)
+            {
+                _link.SetMode(_partner.State.Mode, nowSeconds);
+            }
+            else
+            {
+                Debug.Log($"{LogTag} The partner did not come back before the session ended.");
+                _link.EndSession();
+            }
+
+            FlushLog();
+            SaveEndedTallies();
+            if (!_partner.State.IsWaitingForRejoin)
+            {
+                _link = null;
+            }
         }
 
         /// <summary>This Fencer's place on the bout Strip, and on the Host how far apart the two bodies are drawn.</summary>
@@ -310,10 +383,17 @@ namespace VrFencing.Partner
 
         private void SaveEndedTallies()
         {
+            if (_link == null)
+            {
+                return;
+            }
+
             foreach (var ended in _link.TakeEndedTallies())
             {
                 var role = _link.Me.ToString();
-                Debug.Log($"{LogTag} Paired Practice tally ended ({ended.End}): you {BoutCall.FormatCounts(ended.Mine)}; opponent {BoutCall.FormatCounts(ended.Opponents)}.");
+                var number = _tallyNumbering.Number(ended);
+                Debug.Log($"{LogTag} Paired Practice tally {number} {(ended.End == PairedPracticeEnd.Interrupted ? "saved so far" : "ended")} ({ended.End}): "
+                          + $"you {BoutCall.FormatCounts(ended.Mine)}; opponent {BoutCall.FormatCounts(ended.Opponents)}.");
                 var recorder = _session != null ? _session.Recorder : null;
                 if (recorder == null)
                 {
@@ -321,7 +401,7 @@ namespace VrFencing.Partner
                     continue;
                 }
 
-                recorder.RecordPairedPractice(role, ended.End, ended.Mine, ended.Opponents);
+                recorder.RecordPairedPractice(role, number, ended.End, ended.Mine, ended.Opponents);
             }
         }
 

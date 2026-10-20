@@ -11,6 +11,8 @@ namespace VrFencing.EditorTools
 {
     public sealed class PartnerWindow : EditorWindow
     {
+        private const double LagSpikeSeconds = 2.0;
+
         private string _code = string.Empty;
         private string _versionOverride = string.Empty;
 
@@ -97,6 +99,30 @@ namespace VrFencing.EditorTools
                 {
                     partner.Leave();
                 }
+            }
+
+            // Drops (PER-84): a lag spike shows the other app's connection icon; a dropped connection, then Join with the
+            // same code, tries a rejoin (as the Partner) or ends the session for both (as the Host).
+            EditorGUILayout.Space();
+            using (new EditorGUI.DisabledScope(session.Phase != PartnerPhase.Connected))
+            {
+                if (GUILayout.Button($"Simulate a lag spike ({LagSpikeSeconds:0} s without data)"))
+                {
+                    if (partner.TryGetComponent<OpponentLinkBehaviour>(out var link))
+                    {
+                        link.HoldSending(LagSpikeSeconds);
+                    }
+                }
+
+                if (GUILayout.Button("Simulate a dropped connection"))
+                {
+                    partner.SimulateDrop();
+                }
+            }
+
+            if (session.Phase == PartnerPhase.Idle && string.IsNullOrEmpty(_code) && !string.IsNullOrEmpty(session.RejoinCode))
+            {
+                _code = session.RejoinCode;
             }
         }
 

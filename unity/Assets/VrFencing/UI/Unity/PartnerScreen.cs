@@ -42,6 +42,7 @@ namespace VrFencing.UI
         private readonly UiButton _joinTyped;
         private readonly Action<string> _joinCode;
         private bool _isVisible;
+        private bool _isKeypadOpen;
 
         public PartnerScreen(
             Transform panel,
@@ -155,10 +156,21 @@ namespace VrFencing.UI
             _keypadRoot.SetActive(_isVisible && isKeypad);
             if (isKeypad)
             {
+                // PER-84: after losing the Host, the keypad opens with its code typed, to rejoin with one press.
+                if (!_isKeypadOpen)
+                {
+                    _isKeypadOpen = true;
+                    foreach (var key in session.RejoinCode)
+                    {
+                        _keypad.Press(key);
+                    }
+                }
+
                 RedrawKeypad(session.Message);
                 return;
             }
 
+            _isKeypadOpen = false;
             _keypad.Clear();
             UiKit.SetText(_headline, PartnerPageText.FormatHeadline(session));
             UiKit.SetText(_status, PartnerPageText.FormatStatus(session));

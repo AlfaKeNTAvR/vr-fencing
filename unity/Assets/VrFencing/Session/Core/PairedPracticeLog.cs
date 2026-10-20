@@ -56,14 +56,25 @@ namespace VrFencing.Session
         /// <summary>The Host switched to a Bout.</summary>
         SwitchedToBout,
 
-        /// <summary>The session ended or the partner left.</summary>
+        /// <summary>The session ended, or the partner did not rejoin within the rejoin window (PER-84).</summary>
         Disconnected,
+
+        /// <summary>
+        /// The connection dropped or the headset slept (PER-84): the tally so far, saved in case it never goes on. A
+        /// rejoin within the rejoin window carries the same tally on, and a later record with the same tally number
+        /// replaces this one.
+        /// </summary>
+        Interrupted,
     }
 
-    /// <summary>One Paired Practice tally as this headset saw it, saved to the Session log when it ends (PER-83).</summary>
+    /// <summary>
+    /// One Paired Practice tally as this headset saw it, saved to the Session log when it ends (PER-83) or is interrupted
+    /// (PER-84). Records with the same session id and tally number are the same tally: the last one holds its counts.
+    /// </summary>
     public sealed class PairedPracticeRecord
     {
-        public const int CurrentSchema = 1;
+        /// <summary>2 from PER-84: the tally number and the Interrupted end.</summary>
+        public const int CurrentSchema = 2;
 
         [JsonConstructor]
         public PairedPracticeRecord(
@@ -73,6 +84,7 @@ namespace VrFencing.Session
             PairedPracticeEnd end,
             PairedPracticeCounts you,
             PairedPracticeCounts opponent,
+            int tallyNumber = 0,
             int schema = CurrentSchema)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
@@ -87,6 +99,7 @@ namespace VrFencing.Session
             End = end;
             You = you;
             Opponent = opponent;
+            TallyNumber = tallyNumber;
         }
 
         public int Schema { get; }
@@ -108,6 +121,12 @@ namespace VrFencing.Session
 
         /// <summary>The Opponent's tally, as this headset last knew it.</summary>
         public PairedPracticeCounts Opponent { get; }
+
+        /// <summary>
+        /// Which tally of this session this is, from 1; an interrupted tally that went on after a rejoin keeps its number.
+        /// 0 on lines written before PER-84.
+        /// </summary>
+        public int TallyNumber { get; }
     }
 
     /// <summary>The Paired Practice log, beside the session history: one JSON line per saved tally (<see cref="PairedPracticeRecord"/>).</summary>

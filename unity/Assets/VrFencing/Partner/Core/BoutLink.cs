@@ -405,22 +405,34 @@ namespace VrFencing.Partner
         }
 
         /// <summary>
-        /// Forgets the partner (they left, or the session ended), so a rejoin starts clean. A Paired Practice tally in
-        /// progress ends (to save); the Host's mode stays as the Unity layer sets it next.
+        /// Forgets the partner's connection (they dropped or left, or the session ended), so a rejoin starts clean: the
+        /// clock, the rules and flow heard, the box, the calls. The Paired Practice tally is what differs (PER-84): with
+        /// <paramref name="mayRejoin"/> it is saved so far (<see cref="PairedPracticeEnd.Interrupted"/>) and kept, so a
+        /// rejoin carries it on; without, it ends (<see cref="PairedPracticeEnd.Disconnected"/>) and is reset. On the Host
+        /// the mode stays as it was.
         /// </summary>
-        public void Clear()
+        public void LosePartner(bool mayRejoin, double nowSeconds)
         {
-            if (FlowState.Mode == PartnerMode.PairedPractice)
+            var mode = FlowState.Mode;
+            if (mayRejoin)
             {
-                EndTally(PairedPracticeEnd.Disconnected);
+                SnapshotTally();
+            }
+            else
+            {
+                EndSession();
             }
 
             Clock.Reset();
             Judge?.Reset();
-            Flow = Judge != null ? new BoutFlow(Judge) : null;
+            if (Judge != null)
+            {
+                Flow = new BoutFlow(Judge);
+                Flow.SetMode(mode, nowSeconds);
+            }
+
             Box.Clear();
             Announcer.Reset();
-            Tally.Reset();
             _outgoing.Clear();
             _calls.Clear();
             _hostRules = null;
@@ -435,6 +447,24 @@ namespace VrFencing.Partner
             _areRulesChanged = true;
             _isFlowChanged = true;
             _isTouched = false;
+        }
+
+        /// <summary>
+        /// Saves the Paired Practice tally so far without ending it (<see cref="PairedPracticeEnd.Interrupted"/>): the
+        /// connection dropped, or the headset is going to sleep and the app may never wake.
+        /// </summary>
+        public void SnapshotTally()
+        {
+            AddEndedTally(PairedPracticeEnd.Interrupted, Tally.For(Me), Tally.For(ScoringBox.Other(Me)));
+        }
+
+        /// <summary>
+        /// The session is over for good (left, ended, or the Partner did not rejoin in time): a tally still held ends
+        /// (<see cref="PairedPracticeEnd.Disconnected"/>, saved) and is reset.
+        /// </summary>
+        public void EndSession()
+        {
+            EndTally(PairedPracticeEnd.Disconnected);
         }
 
         private void SendRulesIfDue(double nowSeconds)

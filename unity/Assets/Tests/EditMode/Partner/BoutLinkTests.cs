@@ -112,18 +112,109 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
-        public void ClearForgetsThePartnerSoARejoinStartsClean()
+        public void LosingThePartnerForgetsTheConnectionSoARejoinStartsClean()
         {
             var bout = new PretendBout();
             bout.OpenThePhrase();
             bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, false, bout.PartnerNow);
             bout.RunFor(0.3);
 
-            bout.Partner.Clear();
+            bout.Partner.LosePartner(mayRejoin: false, bout.PartnerNow);
+            bout.Host.LosePartner(mayRejoin: true, bout.HostNow);
 
             Assert.That(bout.Partner.Clock.IsSynced, Is.False);
             Assert.That(bout.Partner.HasHostRules, Is.False);
             Assert.That(bout.Partner.Box.IsMyLampLit(bout.PartnerNow), Is.False);
+            Assert.That(bout.Host.Clock.IsSynced, Is.False);
+            Assert.That(bout.Host.FlowState.Phase, Is.EqualTo(BoutPhase.WaitingForEnGarde), "The Bout starts again from the lines.");
+        }
+
+        [Test]
+        public void ADroppedPartnerRejoinsAndTheTallyCarriesOn()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+            bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, false, bout.PartnerNow);
+            bout.Host.ReportGlance();
+            bout.RunFor(0.3);
+
+            bout.Drop();
+            bout.Host.LosePartner(mayRejoin: true, bout.HostNow);
+            bout.Partner.LosePartner(mayRejoin: true, bout.PartnerNow);
+
+            var hostSoFar = bout.Host.TakeEndedTallies().Single();
+            var partnerSoFar = bout.Partner.TakeEndedTallies().Single();
+            Assert.That(hostSoFar.End, Is.EqualTo(PairedPracticeEnd.Interrupted), "Each headset writes its log up to the drop.");
+            Assert.That(hostSoFar.Mine, Is.EqualTo(new PairedPracticeCounts(0, 0, 1)));
+            Assert.That(partnerSoFar.End, Is.EqualTo(PairedPracticeEnd.Interrupted));
+            Assert.That(partnerSoFar.Mine, Is.EqualTo(new PairedPracticeCounts(1, 0, 0)));
+            Assert.That(bout.Host.Tally.IsEmpty, Is.False, "The Host keeps the tally for a rejoin.");
+            Assert.That(bout.Host.FlowState.Mode, Is.EqualTo(PartnerMode.PairedPractice), "The mode stays.");
+
+            bout.RunFor(30.0);
+            bout.Rejoin();
+            bout.RunFor(1.2);
+
+            Assert.That(bout.Partner.Tally.Partner, Is.EqualTo(new PairedPracticeCounts(1, 0, 0)), "The rejoined Partner sees the kept tally.");
+            Assert.That(bout.Partner.Tally.Host, Is.EqualTo(new PairedPracticeCounts(0, 0, 1)));
+
+            bout.Partner.Claim(TargetZone.Hand, bout.PartnerNow, false, bout.PartnerNow);
+            bout.RunFor(0.3);
+            Assert.That(bout.Host.Tally.Partner, Is.EqualTo(new PairedPracticeCounts(2, 0, 0)), "Counting goes on from the kept tally.");
+            Assert.That(bout.Partner.Tally.Partner, Is.EqualTo(new PairedPracticeCounts(2, 0, 0)));
+        }
+
+        [Test]
+        public void ThePartnerNotComingBackEndsTheTallyAndResetsIt()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+            bout.Host.ReportGlance();
+            bout.RunFor(0.2);
+            bout.Drop();
+            bout.Host.LosePartner(mayRejoin: true, bout.HostNow);
+            bout.Host.TakeEndedTallies();
+
+            bout.Host.EndSession();
+
+            var ended = bout.Host.TakeEndedTallies().Single();
+            Assert.That(ended.End, Is.EqualTo(PairedPracticeEnd.Disconnected));
+            Assert.That(ended.Mine, Is.EqualTo(new PairedPracticeCounts(0, 0, 1)));
+            Assert.That(bout.Host.Tally.IsEmpty, Is.True);
+        }
+
+        [Test]
+        public void SwitchingToABoutWhileThePartnerIsAwayEndsTheKeptTally()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+            bout.Host.ReportGlance();
+            bout.RunFor(0.2);
+            bout.Drop();
+            bout.Host.LosePartner(mayRejoin: true, bout.HostNow);
+            bout.Host.TakeEndedTallies();
+
+            bout.Host.SetMode(PartnerMode.Bout, bout.HostNow);
+
+            Assert.That(bout.Host.TakeEndedTallies().Single().End, Is.EqualTo(PairedPracticeEnd.SwitchedToBout));
+            Assert.That(bout.Host.Tally.IsEmpty, Is.True);
+        }
+
+        [Test]
+        public void ASnapshotSavesTheTallySoFarAndKeepsCounting()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+            bout.Host.ReportGlance();
+
+            bout.Host.SnapshotTally();
+
+            Assert.That(bout.Host.TakeEndedTallies().Single().End, Is.EqualTo(PairedPracticeEnd.Interrupted));
+            Assert.That(bout.Host.Tally.Host, Is.EqualTo(new PairedPracticeCounts(0, 0, 1)), "Still counting.");
         }
 
         [Test]
@@ -271,7 +362,24 @@ namespace VrFencing.Tests.Partner
 
             public BoutLink Host { get; } = new BoutLink(BoutSide.Host);
 
-            public BoutLink Partner { get; } = new BoutLink(BoutSide.Partner);
+            public BoutLink Partner { get; private set; } = new BoutLink(BoutSide.Partner);
+
+            /// <summary>The connection drops: whatever is on the way is lost, and nothing goes through until <see cref="Rejoin"/>.</summary>
+            public void Drop()
+            {
+                _isLinkUp = false;
+                _toHost.Clear();
+                _toPartner.Clear();
+            }
+
+            /// <summary>The Partner joins again as a new side (its app made a new one), the Host keeping its own.</summary>
+            public void Rejoin()
+            {
+                Partner = new BoutLink(BoutSide.Partner);
+                _isLinkUp = true;
+            }
+
+            private bool _isLinkUp = true;
 
             public List<string> HostLog { get; } = new List<string>();
 
@@ -295,8 +403,14 @@ namespace VrFencing.Tests.Partner
                 Deliver(_toPartner, message => Partner.Receive(message, PartnerNow));
                 Host.Tick(HostNow);
                 Partner.Tick(PartnerNow);
-                _toPartner.AddRange(Host.TakeOutgoing().Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
-                _toHost.AddRange(Partner.TakeOutgoing().Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
+                var toPartner = Host.TakeOutgoing();
+                var toHost = Partner.TakeOutgoing();
+                if (_isLinkUp)
+                {
+                    _toPartner.AddRange(toPartner.Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
+                    _toHost.AddRange(toHost.Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
+                }
+
                 HostLog.AddRange(Host.TakeLog());
                 HostCalls.AddRange(Host.TakeCalls().Select(clip => (clip, HostNow)));
                 PartnerCalls.AddRange(Partner.TakeCalls().Select(clip => (clip, HostNow)));

@@ -51,10 +51,17 @@ namespace VrFencing.Partner
         private readonly BodyStream _body = new BodyStream();
         private StripExtent _myStrip = StripExtent.Unplaced;
         private FencerInfo? _partner;
+        private double? _lastArrivalSeconds;
 
         public OpponentLink()
         {
         }
+
+        /// <summary>
+        /// No stream message (hand or body) for this long is a lost signal (PER-84, decided in PER-73): the opponent holds
+        /// its last pose, faded (<see cref="BodyStream.StaleSeconds"/>), and the connection icon shows.
+        /// </summary>
+        public const double SignalLostSeconds = 0.5;
 
         /// <summary>The partner's last info message, or null before the first.</summary>
         public FencerInfo? Partner => _partner;
@@ -88,11 +95,13 @@ namespace VrFencing.Partner
                         var hand = PartnerMessages.DecodeHand(message);
                         _clock.Observe(hand.SenderTimeSeconds, localSeconds);
                         _hand.Add(hand);
+                        _lastArrivalSeconds = localSeconds;
                         return true;
                     case PartnerMessages.BodyKind:
                         var body = PartnerMessages.DecodeBody(message);
                         _clock.Observe(body.SenderTimeSeconds, localSeconds);
                         _body.Add(body);
+                        _lastArrivalSeconds = localSeconds;
                         return true;
                     default:
                         RejectedMessages++;
@@ -113,6 +122,22 @@ namespace VrFencing.Partner
             _hand.Clear();
             _body.Clear();
             _partner = null;
+            _lastArrivalSeconds = null;
+        }
+
+        /// <summary>
+        /// Seconds since the last hand or body message at <paramref name="localSeconds"/>, or null before the first one.
+        /// </summary>
+        public double? GetSilenceSeconds(double localSeconds)
+        {
+            return _lastArrivalSeconds.HasValue ? localSeconds - _lastArrivalSeconds.Value : (double?)null;
+        }
+
+        /// <summary>The streams went silent for <see cref="SignalLostSeconds"/> after having come: show the connection icon.</summary>
+        public bool IsSignalLost(double localSeconds)
+        {
+            var silence = GetSilenceSeconds(localSeconds);
+            return silence.HasValue && silence.Value >= SignalLostSeconds;
         }
 
         /// <summary>

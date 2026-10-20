@@ -68,6 +68,9 @@ namespace VrFencing.Partner
         private BladeFlexSoftness? _appliedFlex;
         private bool _isShown;
         private bool _isBladeShown;
+        private ConnectionIconView _connectionIcon;
+        private bool _isSignalLost;
+        private double _signalLostAtSeconds;
 
         /// <summary>The body model, for a scene built without one (the PC Editor's Partner window sets it).</summary>
         public GameObject BodyModel
@@ -106,6 +109,7 @@ namespace VrFencing.Partner
             _bladeMount.SetParent(_root, false);
             _bladeVisual = new BladeVisual(_bladeMount);
             _bladeVisual.SetVisible(false);
+            _connectionIcon = new ConnectionIconView(_root);
             _root.gameObject.SetActive(false);
         }
 
@@ -147,6 +151,34 @@ namespace VrFencing.Partner
             var stripInRoom = PlaceRoot();
             DrawBody(view, Time.deltaTime);
             DrawBlade(view, stripInRoom, Time.deltaTime);
+            DrawConnectionIcon(view, stripInRoom, Time.realtimeSinceStartupAsDouble);
+        }
+
+        /// <summary>
+        /// The connection icon above the opponent's head while no data comes (PER-84): the body meanwhile holds its last
+        /// pose and fades (<see cref="OpponentFade.LostBodyFactor"/>). Each lost and found signal is logged.
+        /// </summary>
+        private void DrawConnectionIcon(OpponentView view, TrackedPose stripInRoom, double nowSeconds)
+        {
+            var isSignalLost = _link.Link.IsSignalLost(nowSeconds);
+            if (isSignalLost != _isSignalLost)
+            {
+                _isSignalLost = isSignalLost;
+                if (isSignalLost)
+                {
+                    _signalLostAtSeconds = nowSeconds;
+                    Debug.LogWarning($"{LogTag} No data from the partner for {OpponentLink.SignalLostSeconds:0.0} s: holding the last pose, faded, connection icon on.");
+                }
+                else
+                {
+                    Debug.Log($"{LogTag} Partner data back after {nowSeconds - _signalLostAtSeconds + OpponentLink.SignalLostSeconds:0.0} s without it.");
+                }
+            }
+
+            var head = view.Body?.Get(SkeletonJoint.HeadCenter)
+                       ?? new System.Numerics.Vector3(0.0f, view.Info.HeightMeters, view.Bout.OpponentEnGardeLineZ);
+            var eyes = Camera.main != null ? Camera.main.transform.position : _root.position;
+            _connectionIcon.Draw(isSignalLost, StripFrame.ToRoom(stripInRoom, head).ToUnity(), eyes);
         }
 
         private void SetShown(bool isShown)
@@ -175,6 +207,8 @@ namespace VrFencing.Partner
             }
             _drawnBlade.Reset();
             _fades.Clear();
+            _isSignalLost = false;
+            _connectionIcon.Draw(false, Vector3.zero, Vector3.zero);
             Debug.Log(isShown ? $"{LogTag} The opponent is shown." : $"{LogTag} The opponent is hidden.");
         }
 
