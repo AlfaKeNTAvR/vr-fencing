@@ -16,6 +16,9 @@ namespace VrFencing.Dummy
     /// (<see cref="FootworkTuning.LungeTorsoLeanDegrees"/>). A dropping hip leans it a little too, so a fleche's crouch
     /// bends the body. Breathing and weight shift move the whole upper body with the hips.
     ///
+    /// A knocked sword arm (the Armed Dummy, PER-116) turns the whole upper body a little more about the hips
+    /// (<see cref="GetKnockedTurn"/>), the shoulder going with the arm.
+    ///
     /// All positions are in the Dummy frame (see <see cref="EnGardePose"/>), in meters, mirrored for the Dummy's hand.
     /// The sword arm's shoulder rides here too; its pose (where the arm points) stays the arm's own
     /// (<see cref="SwordArm"/>), so the Armed Dummy aims from wherever the shoulder is.
@@ -78,6 +81,15 @@ namespace VrFencing.Dummy
         /// </summary>
         public static DummyTorso Pose(float heightMeters, Hand hand, Vector3 hipCenter)
         {
+            return Pose(heightMeters, hand, hipCenter, Quaternion.Identity);
+        }
+
+        /// <summary>
+        /// As <see cref="Pose(float, Hand, Vector3)"/>, with the whole upper body turned further by <paramref name="turn"/>
+        /// (Dummy frame) about the hips, e.g. with a knocked arm (<see cref="GetKnockedTurn"/>). Bone lengths stay.
+        /// </summary>
+        public static DummyTorso Pose(float heightMeters, Hand hand, Vector3 hipCenter, Quaternion turn)
+        {
             var restHipCenter = Place(RestHipCenterAtUnitHeight, heightMeters, hand);
             var leanRadians = GetLeanRadians(hipCenter - restHipCenter, heightMeters);
             var lean = GetLeanRotation(leanRadians);
@@ -101,18 +113,42 @@ namespace VrFencing.Dummy
                 return backShoulder + Vector3.Transform(Place(pointAtUnitHeight - EnGardePose.BackShoulder, heightMeters, hand), backArmTilt);
             }
 
-            var body = new Capsule(OnTorso(EnGardePose.TorsoBottom), OnTorso(EnGardePose.TorsoTop), EnGardePose.TorsoRadius * heightMeters);
+            Vector3 Turned(Vector3 point)
+            {
+                return hipCenter + Vector3.Transform(point - hipCenter, turn);
+            }
+
+            var body = new Capsule(Turned(OnTorso(EnGardePose.TorsoBottom)), Turned(OnTorso(EnGardePose.TorsoTop)), EnGardePose.TorsoRadius * heightMeters);
             return new DummyTorso(
                 leanRadians,
                 hipCenter,
-                shoulderCenter,
-                OnTorso(EnGardePose.SwordShoulder),
-                backShoulder,
-                OnBackArm(EnGardePose.BackElbow),
-                OnBackArm(EnGardePose.BackHand),
-                headCenter,
-                headRotation,
+                Turned(shoulderCenter),
+                Turned(OnTorso(EnGardePose.SwordShoulder)),
+                Turned(backShoulder),
+                Turned(OnBackArm(EnGardePose.BackElbow)),
+                Turned(OnBackArm(EnGardePose.BackHand)),
+                Turned(headCenter),
+                Quaternion.Normalize(Quaternion.Concatenate(headRotation, turn)),
                 body);
+        }
+
+        /// <summary>
+        /// The upper body's turn with a sword arm knocked aside by <paramref name="armOffset"/> at its point (Dummy frame,
+        /// PER-116): about the hips, so the sword shoulder at <paramref name="swordShoulder"/> goes the way the arm was
+        /// knocked, <see cref="ArmedDummyTuning.KnockedTorsoTurnDegreesPerMeter"/> per meter, at most
+        /// <see cref="ArmedDummyTuning.MaximumKnockedTorsoTurnDegrees"/>. Identity for an arm in line.
+        /// </summary>
+        public static Quaternion GetKnockedTurn(Vector3 hipCenter, Vector3 swordShoulder, Vector3 armOffset)
+        {
+            var axis = Vector3.Cross(swordShoulder - hipCenter, armOffset);
+            var axisLength = axis.Length();
+            if (axisLength < 1e-9f)
+            {
+                return Quaternion.Identity;
+            }
+
+            var degrees = Math.Min(ArmedDummyTuning.MaximumKnockedTorsoTurnDegrees, ArmedDummyTuning.KnockedTorsoTurnDegreesPerMeter * armOffset.Length());
+            return Quaternion.CreateFromAxisAngle(axis / axisLength, degrees * DegreesToRadians);
         }
 
         /// <summary>The upright en garde upper body of a Dummy of <paramref name="heightMeters"/>.</summary>

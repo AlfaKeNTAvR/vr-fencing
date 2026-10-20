@@ -6,8 +6,9 @@ namespace VrFencing.Blade
     /// <summary>
     /// Judges whether a blade-on-blade contact Beats the Armed Dummy's blade held in line (PER-23 resolution, PER-101):
     /// the contact must knock the Dummy's point at least <see cref="OutOfLineMeters"/> off its line. As in the
-    /// <see cref="ParryJudge"/>, a clash opens a watch; each frame takes the larger of the swing's measured tip offset
-    /// and the peak the clash's kick will reach (<see cref="BladeSwing.GetPeakMeters"/>, so a sharp Beat is judged at
+    /// <see cref="ParryJudge"/>, a clash opens a watch; each frame takes the larger of the measured tip offset (wrist and
+    /// arm, <see cref="BladeDeflection.TipOffset"/>) and the deflection the clash's knock will reach
+    /// (<see cref="BladeDeflection.GetKickMeters"/>, so a sharp Beat is judged at
     /// once). The watch stays open while the blades touch and for <see cref="ParryJudge.WatchSeconds"/> after the clash; a
     /// watch that ends short of the threshold was a touch, not a Beat. Meters, seconds.
     /// </summary>
@@ -15,8 +16,9 @@ namespace VrFencing.Blade
     {
         /// <summary>
         /// The point must be knocked this far off its line for a Beat: about a torso's width, so it no longer threatens
-        /// the Fencer's body. A first guess, to tune on the headset: a clash at about 1 m/s near the Dummy's point reaches
-        /// it (<see cref="BladeSwing.PeakMetersPerMeterPerSecond"/>).
+        /// the Fencer's body. A firm beat meets it easily (PER-116): 0.9 m/s on the Dummy's foible (0.8 of the way out)
+        /// or 0.75 m/s at its point reaches it (<see cref="BladeDeflection.BeatMetersPerMeterPerSecond"/>), and the point
+        /// then stays this far out for about 0.6 s after a 2 m/s beat.
         /// </summary>
         public const float OutOfLineMeters = 0.15f;
 
@@ -36,14 +38,14 @@ namespace VrFencing.Blade
         public void ReportClash(BladeClash clash)
         {
             _clash = clash;
-            _kickMeters = BladeSwing.GetPeakMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction);
+            _kickMeters = BladeDeflection.GetKickMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction);
         }
 
         /// <summary>
         /// One frame of the watch. Returns the report once the point is out of line (then the watch closes); null while it
         /// is not, and once the watch ends without it.
         /// </summary>
-        /// <param name="tipOffset">The Dummy's point off its line now (<see cref="BladeSwing.TipOffset"/>).</param>
+        /// <param name="tipOffset">The Dummy's point off its line now (<see cref="BladeDeflection.TipOffset"/>).</param>
         /// <param name="isInContact">The blades still touch or press, which keeps the watch open.</param>
         public BeatReport? Step(double nowSeconds, Vector3 tipOffset, bool isInContact)
         {

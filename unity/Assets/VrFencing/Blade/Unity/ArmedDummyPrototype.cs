@@ -19,9 +19,12 @@ namespace VrFencing.Blade
     /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the target and speed the cue names
     /// (<see cref="RepCue.AttackTarget"/>, <see cref="RepCue.AttackSpeed"/>, from the Drill's <see cref="AttackScript"/>),
     /// standing further back for a thrust at the arm (<see cref="RepCue.DummyStandBackMeters"/>). When the Fencer's blade meets its blade (<see cref="BladeClashDetector"/>) a spark
-    /// shows at the contact, the clash buzz plays on the sword hand, and its blade swings away and recovers
-    /// (<see cref="BladeSwing"/>). The two blades are solid against each other (<see cref="ArmedDummyBlade"/>,
-    /// PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives way to a press and springs back.
+    /// shows at the contact and moves with the Dummy's blade, the clash buzz plays on the sword hand, and its point is
+    /// knocked off line by how hard and where the blades met, a big knock taking the whole arm and turning the torso a
+    /// little, held open, then recovered (<see cref="BladeDeflection"/>, PER-116); a knocked Dummy waits until its arm
+    /// is back in line before winding up its next attack. The two blades are solid against each other
+    /// (<see cref="ArmedDummyBlade"/>, PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives
+    /// way to a press and comes back when let go.
     /// A contact during the thrust or its hold is judged (<see cref="ParryJudge"/>, PER-97): once it has turned the point
     /// off the Fencer's body the thrust is cut short and recovers, and the runner gets the Parry. Unparried, its point is
     /// judged against the Fencer's body each frame (<see cref="FencerTarget"/>, PER-98: IOBT when confident, else
@@ -68,6 +71,9 @@ namespace VrFencing.Blade
         private BladeSegment? _lastFencerBlade;
         private bool _isActive;
         private float _sparkEndsAt = float.NegativeInfinity;
+        private float _sparkBladeFraction;
+        private int _loggedPlanCount;
+        private bool _hasLoggedWait;
 
         public ArmedDummyPrototype(DummyBehaviour dummy, DrillRunner runner, BladeHapticPlayer haptics, OVRCameraRig cameraRig)
         {
@@ -120,6 +126,8 @@ namespace VrFencing.Blade
                 return;
             }
 
+            // The upper body turns a little with a knocked arm (PER-116), from the next posing of the legs on.
+            _dummy.Layout.TurnTorso(_blade.GetKnockedTorsoTurn(_dummy.Layout));
             if (_attack != null && _attack.LungeMeters > 0.0f)
             {
                 // The Dummy lunges (PER-101): the body moves along the Strip with the thrust and back, on the attack's
@@ -128,23 +136,29 @@ namespace VrFencing.Blade
                 _dummy.ApplyFootwork();
             }
 
-            _dummy.SetArmPose(
-                _attack?.GetPose(nowSeconds) ?? _inLinePose ?? SwordArmReach.PoseEnGarde(_dummy.Layout.HeightMeters, BladePose.BladeLengthMeters));
-            var (forte, gripUp) = GetDummyBladeOnStrip();
+            WaitWhileKnocked(nowSeconds);
+            var scriptPose = _attack?.GetPose(nowSeconds) ?? _inLinePose ?? SwordArmReach.PoseEnGarde(_dummy.Layout.HeightMeters, BladePose.BladeLengthMeters);
+
+            // The script's arm is the blade's line; the knocked arm is drawn and judged (PER-116).
+            _dummy.Layout.PoseArm(scriptPose);
+            var (forte, gripUp, shoulder) = GetDummyBladeOnStrip();
             var wasPressed = _blade.IsPressed;
-            _blade.Step(forte, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, fencerBlade, fencerDrawn, deltaSeconds);
+            _blade.Step(forte, shoulder, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, fencerBlade, fencerDrawn, deltaSeconds);
+            _dummy.SetArmPose(_blade.GetKnockedArmPose(scriptPose, _dummy.Layout.Hand));
             if (_blade.IsPressed != wasPressed)
             {
                 Debug.Log(_blade.IsPressed
                     ? "[ArmedDummy] Blades pressed: the Dummy's blade gives way"
-                    : "[ArmedDummy] Blades let go: the Dummy's blade springs back");
+                    : "[ArmedDummy] Blades let go: the Dummy's blade comes back");
             }
 
             var clash = _detector.Step(nowSeconds, fencerBlade, _blade.Chord);
             if (clash.HasValue)
             {
-                OnClash(clash.Value, nowSeconds, stripInRoom);
+                OnClash(clash.Value, nowSeconds);
             }
+
+            LogDeflection();
 
             UpdateFencer(stripInRoom, fencerBlade);
             ReportAttackUnderWay(nowSeconds);
@@ -152,10 +166,7 @@ namespace VrFencing.Blade
             JudgeParry(nowSeconds, clash, fencerBlade);
             JudgeHit(nowSeconds);
             _visual.Draw(_blade.Drawn, stripInRoom, (float)nowSeconds);
-            if (_spark != null && Time.time >= _sparkEndsAt && _spark.enabled)
-            {
-                _spark.enabled = false;
-            }
+            MoveSpark(stripInRoom);
         }
 
         /// <summary>Adds the Dummy's blade, as drawn this frame, to the Fencer's drawn blade's obstacles while armed.</summary>
@@ -253,7 +264,7 @@ namespace VrFencing.Blade
             var line = AttackLine.OnStrip(_attack.Path, _attackDistanceMeters, nowSeconds);
             // Without a headset pose there is no tracked Fencer: the stand-in at the En Garde Line keeps the judging fair.
             var body = _fencer.HasBody ? _fencer.Capsules : AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
-            var parry = _judge.Step(nowSeconds, _blade.Swing.TipOffset, isInContact, line, body);
+            var parry = _judge.Step(nowSeconds, _blade.Deflection.TipOffset, isInContact, line, body);
             if (!parry.HasValue)
             {
                 return;
@@ -337,6 +348,7 @@ namespace VrFencing.Blade
             _visual.SetVisible(isActive);
             if (!isActive && _dummy.Layout != null)
             {
+                _dummy.Layout.TurnTorso(System.Numerics.Quaternion.Identity);
                 _dummy.SetArmPose(SwordArmPose.ArmInLine);
             }
 
@@ -380,6 +392,7 @@ namespace VrFencing.Blade
             _attack = ArmedDummyAttack.Plan(
                 Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters, lungeMeters);
             _hasReportedAttackUnderWay = false;
+            _hasLoggedWait = false;
             _judge = new ParryJudge(_settings.Blade.ParryRule, _settings.Hand);
             _hasAttackClashed = false;
             _hasReportedLanding = false;
@@ -452,7 +465,7 @@ namespace VrFencing.Blade
                 _beatJudge.ReportClash(clash.Value);
             }
 
-            var beat = _beatJudge.Step(nowSeconds, _blade.Swing.TipOffset, _detector.IsInContact || _blade.IsPressed);
+            var beat = _beatJudge.Step(nowSeconds, _blade.Deflection.TipOffset, _detector.IsInContact || _blade.IsPressed);
             if (!beat.HasValue)
             {
                 return;
@@ -465,9 +478,43 @@ namespace VrFencing.Blade
             _runner.ReportBeat(report);
         }
 
-        private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)
+        /// <summary>
+        /// A Dummy whose arm is knocked off line does not start its next wind-up until the arm is back (PER-116): the
+        /// attack's plan waits for the deflection's recovery.
+        /// </summary>
+        private void WaitWhileKnocked(double nowSeconds)
         {
-            _blade.Swing.Kick(clash);
+            var deflection = _blade.Deflection;
+            if (_attack == null || !deflection.IsOffLine || !_attack.PostponeWindUp(nowSeconds, nowSeconds + deflection.SecondsUntilInLine))
+            {
+                return;
+            }
+
+            if (!_hasLoggedWait)
+            {
+                _hasLoggedWait = true;
+                Debug.Log($"[ArmedDummy] Knocked off line: the next attack waits until the arm is back ({deflection.SecondsUntilInLine:0.00} s).");
+            }
+        }
+
+        /// <summary>Logs each knock or release that takes the point well off line.</summary>
+        private void LogDeflection()
+        {
+            var deflection = _blade.Deflection;
+            if (deflection.PlanCount == _loggedPlanCount)
+            {
+                return;
+            }
+
+            _loggedPlanCount = deflection.PlanCount;
+            var plan = deflection.LastPlan;
+            Debug.Log($"[ArmedDummy] Deflect {plan.Meters * 100.0f:0} cm (wrist {plan.WristMeters * 100.0f:0}, arm {plan.ArmMeters * 100.0f:0}), " +
+                $"open {plan.OpenSeconds:0.00} s, recover {plan.RecoverSeconds:0.00} s");
+        }
+
+        private void OnClash(BladeClash clash, double nowSeconds)
+        {
+            _blade.Deflection.Kick(clash);
             _lastClash = clash;
             var phase = _attack?.GetPhase(nowSeconds);
             var buzzStrength = ClashHaptics.GetStrength(_settings.Blade.ClashHapticFloor, clash.RelativeSpeedMetersPerSecond);
@@ -477,21 +524,25 @@ namespace VrFencing.Blade
                 _haptics?.PlayClash(_settings.Blade.ClashHaptic, buzzStrength, _settings.Hand);
             }
 
-            ShowSpark(StripFrame.ToRoom(stripInRoom, clash.ContactPoint).ToUnity());
+            ShowSpark(clash.OpponentBladeFraction);
             Debug.Log($"[ArmedDummy] Clash {clash.RelativeSpeedMetersPerSecond:0.00} m/s, Fencer blade at {clash.FencerBladeFraction:0.00}, " +
-                $"Dummy blade at {clash.OpponentBladeFraction:0.00}, swing {BladeSwing.GetPeakMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction) * 100.0f:0} cm, " +
+                $"Dummy blade at {clash.OpponentBladeFraction:0.00}, knock {BladeDeflection.GetKickMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction) * 100.0f:0} cm, " +
                 $"buzz {(isBuzzed ? buzzStrength.ToString("0.00") : "skipped (rate limit)")}, during {phase?.ToString() ?? "guard"}");
         }
 
-        /// <summary>The Dummy's straight blade (guard to the undrooped point) and its grip's up, in the Strip frame.</summary>
-        private (BladeSegment Forte, System.Numerics.Vector3 GripUp) GetDummyBladeOnStrip()
+        /// <summary>
+        /// The Dummy's straight blade as its arm holds it now (guard to the undrooped point), its grip's up and its sword
+        /// shoulder, in the Strip frame.
+        /// </summary>
+        private (BladeSegment Forte, System.Numerics.Vector3 GripUp, System.Numerics.Vector3 Shoulder) GetDummyBladeOnStrip()
         {
             var arm = _dummy.Layout.Arm;
             var distance = _dummy.DistanceMeters;
             var guard = DummyLayout.DummyToStrip(arm.GetGuardPosition(), distance);
             var point = DummyLayout.DummyToStrip(arm.GetBladePoint(BladePose.BladeLengthMeters), distance);
+            var shoulder = DummyLayout.DummyToStrip(arm.GetPose(ArmJoint.Shoulder).Position, distance);
             var wristUp = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, arm.GetPose(ArmJoint.Wrist).Rotation);
-            return (new BladeSegment(guard, point), DirectionToStrip(wristUp));
+            return (new BladeSegment(guard, point), DirectionToStrip(wristUp), shoulder);
         }
 
         private static System.Numerics.Vector3 DirectionToStrip(System.Numerics.Vector3 directionInDummyFrame)
@@ -499,16 +550,37 @@ namespace VrFencing.Blade
             return new System.Numerics.Vector3(-directionInDummyFrame.X, directionInDummyFrame.Y, -directionInDummyFrame.Z);
         }
 
-        private void ShowSpark(Vector3 worldPosition)
+        /// <summary>Shows the spark at <paramref name="dummyBladeFraction"/> along the Dummy's blade, where the blades met.</summary>
+        private void ShowSpark(float dummyBladeFraction)
         {
             if (_spark == null)
             {
                 return;
             }
 
-            _spark.transform.position = worldPosition;
+            _sparkBladeFraction = dummyBladeFraction;
             _spark.enabled = true;
             _sparkEndsAt = Time.time + SparkSeconds;
+        }
+
+        /// <summary>
+        /// Keeps the spark on its spot of the Dummy's blade as drawn this frame, so it never hangs in the air; hides it
+        /// when its time is up.
+        /// </summary>
+        private void MoveSpark(TrackedPose stripInRoom)
+        {
+            if (_spark == null || !_spark.enabled)
+            {
+                return;
+            }
+
+            if (Time.time >= _sparkEndsAt)
+            {
+                _spark.enabled = false;
+                return;
+            }
+
+            _spark.transform.position = StripFrame.ToRoom(stripInRoom, _blade.GetPointAt(_sparkBladeFraction)).ToUnity();
         }
 
         private static Renderer CreateSpark()

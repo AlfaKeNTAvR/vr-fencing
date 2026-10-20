@@ -127,6 +127,33 @@ namespace VrFencing.Tests.Dummy
                 DummySkeleton.GetJointPosition(layout, SkeletonJoint.HipCenter), DummySkeleton.GetJointPosition(layout, SkeletonJoint.ShoulderCenter));
         }
 
+        [Test]
+        public void AKnockedArmTurnsTheUpperBodyALittleWithIt([Values(Hand.Right, Hand.Left)] Hand hand)
+        {
+            var layout = DummyLayout.Create(Height, hand);
+            var legs = DummyLegs.EnGarde(Height, hand);
+            layout.PoseLegs(legs);
+            var before = layout.Torso;
+            var knock = new Vector3(0.4f, 0.0f, 0.0f);
+
+            var turn = DummyTorso.GetKnockedTurn(before.HipCenter, before.SwordShoulder, knock);
+            layout.TurnTorso(turn);
+            layout.PoseLegs(legs);
+            var after = layout.Torso;
+
+            var degrees = 2.0 * Math.Acos(Math.Min(1.0, Math.Abs(turn.W))) * 180.0 / Math.PI;
+            Assert.That(degrees, Is.EqualTo(ArmedDummyTuning.MaximumKnockedTorsoTurnDegrees).Within(0.01), "40 cm of arm turns it the most, 6 degrees.");
+            Assert.That(Vector3.Dot(after.SwordShoulder - before.SwordShoulder, knock), Is.GreaterThan(0.0f), "The shoulder goes with the arm.");
+            Assert.That(Vector3.Distance(after.SwordShoulder, before.SwordShoulder), Is.InRange(0.01f, 0.08f), "A small reaction.");
+            Assert.That(Vector3.Distance(after.HipCenter, after.SwordShoulder), Is.EqualTo(Vector3.Distance(before.HipCenter, before.SwordShoulder)).Within(1e-4f), "No bone stretches.");
+            Assert.That(Vector3.Distance(after.ShoulderCenter, after.HeadCenter), Is.EqualTo(Vector3.Distance(before.ShoulderCenter, before.HeadCenter)).Within(1e-4f));
+            Assert.That(DummyTorso.GetKnockedTurn(before.HipCenter, before.SwordShoulder, Vector3.Zero), Is.EqualTo(Quaternion.Identity), "In line: no turn.");
+
+            layout.TurnTorso(Quaternion.Identity);
+            layout.PoseLegs(legs);
+            Assert.That(Vector3.Distance(layout.Torso.SwordShoulder, before.SwordShoulder), Is.LessThan(1e-5f), "Back as the legs have it.");
+        }
+
         private static Vector3 Scale(Vector3 pointAtUnitHeight, float mirror)
         {
             return new Vector3(pointAtUnitHeight.X * mirror * Height, pointAtUnitHeight.Y * Height, pointAtUnitHeight.Z * Height);

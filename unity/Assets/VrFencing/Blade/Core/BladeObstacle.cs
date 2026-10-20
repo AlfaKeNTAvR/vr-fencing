@@ -28,10 +28,10 @@ namespace VrFencing.Blade
         public const float JacketFriction = 0.7f;
 
         /// <summary>
-        /// Friction of the point on another blade: steel on steel, low, so a point pressed on the Armed Dummy's blade
-        /// slides along it unless pushed in nearly square (about 11 degrees off its normal or less).
+        /// Friction of the point on another blade: dry steel on steel (PER-116, up from 0.2), so a point pressed on the
+        /// Armed Dummy's blade holds unless pushed more than about 19 degrees off its normal, instead of sliding off its end.
         /// </summary>
-        public const float BladeFriction = 0.2f;
+        public const float BladeFriction = 0.35f;
 
         /// <summary>
         /// Half the width of the Armed Dummy's blade: its centerline and the drawn blade's keep this plus
