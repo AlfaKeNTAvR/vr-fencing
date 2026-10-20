@@ -45,6 +45,18 @@ namespace VrFencing.Drills
         /// it was another action than the one called (footwork calls).
         /// </summary>
         WrongFootwork,
+
+        /// <summary>Parry Drills: the Armed Dummy's attack reached its aim without a Parry.</summary>
+        NotParried,
+
+        /// <summary>
+        /// Parry Drills with the strict Parry rule: a contact deflected the attack, but not with the Fencer's forte on the
+        /// Dummy's foible.
+        /// </summary>
+        NotForteOnFoible,
+
+        /// <summary>Parry Drills that require a Riposte: no Touch within the Riposte window after the Parry.</summary>
+        NoRiposte,
     }
 
     /// <summary>A Rep's cue, for the Dummy (light or name the zone, call the footwork, stand at its distance) and the UI.</summary>
@@ -101,9 +113,13 @@ namespace VrFencing.Drills
             double? secondTouchSeconds = null,
             FootworkAction? requestedFootwork = null,
             FootworkReading? footwork = null,
-            DummyDistance? dummyDistance = null)
+            DummyDistance? dummyDistance = null,
+            ParryLine? parryLine = null,
+            double? riposteSeconds = null)
         {
             DrillId = drillId;
+            ParryLine = parryLine;
+            RiposteSeconds = riposteSeconds;
             RepIndex = repIndex;
             RequestedZone = requestedZone;
             Outcome = outcome;
@@ -162,6 +178,12 @@ namespace VrFencing.Drills
 
         /// <summary>Where the Dummy stood for this Rep.</summary>
         public DummyDistance? DummyDistance { get; }
+
+        /// <summary>Parry Drills: the line of the contact that deflected the attack (a Parry, or one strict did not count); else null.</summary>
+        public ParryLine? ParryLine { get; }
+
+        /// <summary>Parry Drills: from the Parry to the Riposte's contact; null without both.</summary>
+        public double? RiposteSeconds { get; }
     }
 
     /// <summary>How a run ended: every judged Rep in order, and whether the Fencer cancelled.</summary>

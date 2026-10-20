@@ -399,9 +399,9 @@ namespace VrFencing.Drills
 
         /// <summary>
         /// The Armed Dummy feel test (PER-95, development builds only): the Dummy stands at extension distance holding a
-        /// blade and, on each Rep's cue, makes one scripted thrust after a random delay. The Fencer parries it and
-        /// ripostes to the body; a Touch on the body is the Rep's success. Its speed cycles slow, medium, real by Rep
-        /// (the Blade module's Armed Dummy runs it). Nothing here judges the Parry yet (PER-97).
+        /// blade and, on each Rep's cue, makes one scripted thrust after a random delay. Its speed cycles slow, medium,
+        /// real by Rep (the Blade module's Armed Dummy runs it). The Fencer must Parry it (PER-97: deflect its point off
+        /// the body) and Riposte with a Touch on the body within 1 s.
         /// </summary>
         public static DrillDefinition CreateArmedDummyTestDrill(TrainerSettings settings)
         {
@@ -416,10 +416,11 @@ namespace VrFencing.Drills
                 windowSeconds: ArmedDummyTestWindowSeconds,
                 restSeconds: settings.RestBetweenRepsSeconds,
                 CueType.NamedTargetZone,
-                SuccessRule.PointFirstTouchOnTargetZone,
+                SuccessRule.Parry,
                 new[] { TargetZone.Body },
                 DummyDistance.Extension,
-                taskLine: ArmedDummyTestTaskLine);
+                taskLine: ArmedDummyTestTaskLine,
+                requiresRiposte: true);
         }
     }
 }

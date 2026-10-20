@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace VrFencing.Dummy
@@ -60,6 +61,39 @@ namespace VrFencing.Dummy
             // The Dummy frame is the Strip frame turned half a turn about the vertical and moved along the Strip; the
             // same move takes it back.
             return DummyLayout.DummyToStrip(aimOnStrip, distanceMeters);
+        }
+
+        /// <summary>
+        /// The Fencer's body that a thrust must be turned off for a Parry (PER-97), in the Strip frame, by the same
+        /// stand-in as the aims: the Dummy's stance and size at the En Garde Line, without its posed sword arm. The
+        /// Fencer's own sword arm is a capsule from the front of their live guard (<paramref name="fencerGuardOnStrip"/>)
+        /// to the stance's sword shoulder, as thick as the upper arm, left out while the blade is unknown. IOBT body tracking replaces this (PER-98).
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="layout"/> is null.</exception>
+        public static IReadOnlyList<Capsule> GetFencerBodyOnStrip(DummyLayout layout, Vector3? fencerGuardOnStrip)
+        {
+            if (layout == null)
+            {
+                throw new ArgumentNullException(nameof(layout));
+            }
+
+            var body = new List<Capsule>();
+            foreach (var zone in layout.Zones)
+            {
+                if (!SwordArm.IsArmZone(zone.Zone))
+                {
+                    body.Add(zone.Shape);
+                }
+            }
+
+            body.AddRange(layout.SilhouetteParts);
+            if (fencerGuardOnStrip.HasValue)
+            {
+                var shoulder = layout.Arm.GetPose(ArmJoint.Shoulder).Position;
+                body.Add(new Capsule(fencerGuardOnStrip.Value, shoulder, EnGardePose.UpperArmRadius * layout.HeightMeters));
+            }
+
+            return body;
         }
 
         /// <summary>A random target, each of the four equally likely.</summary>

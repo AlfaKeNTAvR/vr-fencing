@@ -14,6 +14,19 @@ namespace VrFencing.Settings
     }
 
     /// <summary>
+    /// What blade-on-blade contact counts as a Parry of the Armed Dummy's attack (PER-23, PER-97). Either way the contact
+    /// must deflect the Dummy's point off the Fencer's body; the numbers live in the Blade Core (<c>ParryJudge</c>).
+    /// </summary>
+    public enum ParryRule
+    {
+        /// <summary>Any deflecting contact. The default while blade-on-blade contact is new on the headset.</summary>
+        Loose,
+
+        /// <summary>The deflecting contact must also be the Fencer's forte on the Dummy's foible.</summary>
+        Strict,
+    }
+
+    /// <summary>
     /// How hard the point must press for a Touch (PER-50). A real épée scores only with at least 750 g (about 7.4 N) on
     /// the point; the numbers that stand in for it live in the Blade Core (<c>TouchRules</c>).
     /// </summary>
@@ -91,6 +104,9 @@ namespace VrFencing.Settings
 
         public TouchPressure TouchPressure { get; set; } = TouchPressure.Realistic;
 
+        /// <summary>What counts as a Parry of the Armed Dummy's attack (PER-97). Loose until strict is tried on the headset.</summary>
+        public ParryRule ParryRule { get; set; } = ParryRule.Loose;
+
         public BladeFlexSoftness Flex { get; set; } = BladeFlexSoftness.Normal;
 
         /// <summary>The grip: where the guard sits and the computed angles (<see cref="GripGeometry"/>).</summary>
@@ -136,6 +152,7 @@ namespace VrFencing.Settings
             {
                 TouchRule = TouchRule,
                 TouchPressure = TouchPressure,
+                ParryRule = ParryRule,
                 Flex = Flex,
                 Mount = Mount,
                 SavedAngles = SavedAngles.Clone(),

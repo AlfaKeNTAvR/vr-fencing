@@ -36,17 +36,18 @@ namespace VrFencing.UI
             },
 
             // "Shrink Drills to fit" moved here from Drills (PER-92) to make room for "Light named zones": it is about the Strip's length.
+            // The bout's double window (PER-82) is here because Touch is full (7): the Strip group is the one about the shared bout.
             [SettingGroup.Strip] = new[]
             {
                 SettingId.WarningZoneLengthOnPiste, SettingId.WarningZoneMinimumLength, SettingId.OffStripTolerance, SettingId.ShrinkDrillsToFit,
+                SettingId.DoubleWindow,
             },
 
             // The Dummy's look (PER-102) is here: Touch is the group about the Target Zones, and it has room for all four.
-            // The bout's double window (PER-82) is here too: it decides which Touches light.
             [SettingGroup.Touch] = new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity, SettingId.DoubleWindow,
+                SettingId.BodyOpacity, SettingId.ParryRule,
             },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]

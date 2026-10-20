@@ -21,8 +21,10 @@ namespace VrFencing.Drills
     ///
     /// Rules (<see cref="SuccessRule"/>): a Touch on the cued zone; the same plus footwork that suits the Rep's Dummy
     /// Distance (distance choice); two Touches in order, the second within its own window of the first (compound); or,
-    /// with no blade, the footwork read in the window answering the call (footwork calls, judged when the window ends).
-    /// Footwork comes in through <see cref="ReportFootwork"/>.
+    /// with no blade, the footwork read in the window answering the call (footwork calls, judged when the window ends);
+    /// or a Parry of the Armed Dummy's attack, then a Riposte within 1 s if the Drill requires one (PER-97).
+    /// Footwork comes in through <see cref="ReportFootwork"/>, Parries through <see cref="ReportParry"/> and
+    /// <see cref="ReportAttackLanded"/>.
     ///
     /// Start Mark (PER-89): in a Drill where the Fencer moves (<see cref="DrillDefinition.WaitsAtStartMark"/>), the run
     /// waits after each judged Rep, in <see cref="DrillState.Return"/>, until the Fencer is back at the Start Mark and
@@ -47,6 +49,10 @@ namespace VrFencing.Drills
 
         // Compound Reps: when the first Touch landed (active clock), null until it has.
         private double? _firstTouchAtActiveSeconds;
+
+        // Parry Reps: the Parry that a Riposte now answers, and when it landed (active clock); null until then.
+        private ParryReport? _parry;
+        private double? _parryAtActiveSeconds;
 
         // The latest footwork reading reported since the current cue, for Drills that judge footwork.
         private FootworkReading? _latestFootwork;
@@ -123,6 +129,9 @@ namespace VrFencing.Drills
 
         /// <summary>A compound Rep's first Touch landed and its second is awaited.</summary>
         public bool IsAwaitingSecondTouch => _firstTouchAtActiveSeconds.HasValue && State == DrillState.Window;
+
+        /// <summary>A Parry Rep's attack was parried and the Riposte is awaited.</summary>
+        public bool IsAwaitingRiposte => _parryAtActiveSeconds.HasValue && State == DrillState.Window;
 
         /// <summary>The run is waiting for the Fencer at the Start Mark and has asked them to come back (<see cref="ReturnPrompted"/>).</summary>
         public bool IsPromptingReturn { get; private set; }
@@ -203,6 +212,12 @@ namespace VrFencing.Drills
                 return;
             }
 
+            if (Drill.SuccessRule == SuccessRule.Parry && !_parryAtActiveSeconds.HasValue)
+            {
+                // Before the Parry, the Fencer's blade may brush the attacking arm: only the Riposte is judged.
+                return;
+            }
+
             var contactAtActiveSeconds = ActiveSeconds();
             var outcome = JudgeContact(contact);
             if (Drill.SuccessRule == SuccessRule.TwoTouchesInOrder && !_firstTouchAtActiveSeconds.HasValue && outcome == RepOutcome.Success)
@@ -217,10 +232,67 @@ namespace VrFencing.Drills
             var result = CreateResult(
                 outcome,
                 contact,
-                reactionSeconds: (_firstTouchAtActiveSeconds ?? contactAtActiveSeconds) - _stateStartedAtActiveSeconds,
-                secondTouchSeconds: contactAtActiveSeconds - _firstTouchAtActiveSeconds);
+                reactionSeconds: (_parryAtActiveSeconds ?? _firstTouchAtActiveSeconds ?? contactAtActiveSeconds) - _stateStartedAtActiveSeconds,
+                secondTouchSeconds: contactAtActiveSeconds - _firstTouchAtActiveSeconds,
+                riposteSeconds: contactAtActiveSeconds - _parryAtActiveSeconds);
 
             FinishRep(result, contactAtActiveSeconds);
+            AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// Parry Drills: a contact deflected the Armed Dummy's point off the Fencer's body (the Blade's Parry judge).
+        /// Only the first one inside an open window counts. If it fails the Parry rule the Rep fails; otherwise the Rep
+        /// succeeds now, or, when the Drill requires a Riposte, waits <see cref="DrillDefinition.RiposteWindowSeconds"/>
+        /// for a Touch on the cued zone. Ignored in other Drills, during the cue, the rest or a pause.
+        /// </summary>
+        public void ReportParry(ParryReport parry)
+        {
+            if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.Parry)
+            {
+                return;
+            }
+
+            AdvanceDueTransitions();
+            if (State != DrillState.Window || _parryAtActiveSeconds.HasValue)
+            {
+                return;
+            }
+
+            var parryAtActiveSeconds = ActiveSeconds();
+            _parry = parry;
+            var reactionSeconds = parryAtActiveSeconds - _stateStartedAtActiveSeconds;
+            if (!parry.CountsAsParry || !Drill.RequiresRiposte)
+            {
+                var outcome = parry.CountsAsParry ? RepOutcome.Success : RepOutcome.NotForteOnFoible;
+                FinishRep(CreateResult(outcome, contact: null, reactionSeconds, secondTouchSeconds: null), parryAtActiveSeconds);
+                AdvanceDueTransitions();
+                return;
+            }
+
+            _parryAtActiveSeconds = parryAtActiveSeconds;
+            AdvanceDueTransitions();
+        }
+
+        /// <summary>
+        /// Parry Drills: the Armed Dummy's attack reached its aim with no Parry (the Blade's Parry judge saw no deflecting
+        /// contact). Fails the open Rep; ignored once it was parried, and outside an open window.
+        /// </summary>
+        public void ReportAttackLanded()
+        {
+            if (!IsRunning || IsPaused || Drill.SuccessRule != SuccessRule.Parry)
+            {
+                return;
+            }
+
+            AdvanceDueTransitions();
+            if (State != DrillState.Window || _parryAtActiveSeconds.HasValue)
+            {
+                return;
+            }
+
+            var landedAtActiveSeconds = ActiveSeconds();
+            FinishRep(CreateResult(RepOutcome.NotParried, contact: null, reactionSeconds: null, secondTouchSeconds: null), landedAtActiveSeconds);
             AdvanceDueTransitions();
         }
 
@@ -370,7 +442,8 @@ namespace VrFencing.Drills
             return CreateResult(outcome, contact: null, reactionSeconds: footwork?.OnsetSecondsAfterCue, secondTouchSeconds: null);
         }
 
-        private RepResult CreateResult(RepOutcome outcome, BladeContact? contact, double? reactionSeconds, double? secondTouchSeconds)
+        private RepResult CreateResult(
+            RepOutcome outcome, BladeContact? contact, double? reactionSeconds, double? secondTouchSeconds, double? riposteSeconds = null)
         {
             return new RepResult(
                 Drill.Id,
@@ -386,7 +459,9 @@ namespace VrFencing.Drills
                 secondTouchSeconds,
                 CurrentCue.FootworkCall,
                 Drill.UsesFootwork ? _latestFootwork : null,
-                CurrentCue.DummyDistance);
+                CurrentCue.DummyDistance,
+                _parry?.Line,
+                riposteSeconds);
         }
 
         private void AdvanceDueTransitions()
@@ -408,9 +483,11 @@ namespace VrFencing.Drills
                         break;
 
                     case DrillState.Window:
-                        var windowClosesAt = _firstTouchAtActiveSeconds.HasValue
-                            ? _firstTouchAtActiveSeconds.Value + Drill.SecondTouchWindowSeconds
-                            : _stateStartedAtActiveSeconds + Drill.WindowSeconds;
+                        var windowClosesAt = _parryAtActiveSeconds.HasValue
+                            ? _parryAtActiveSeconds.Value + DrillDefinition.RiposteWindowSeconds
+                            : _firstTouchAtActiveSeconds.HasValue
+                                ? _firstTouchAtActiveSeconds.Value + Drill.SecondTouchWindowSeconds
+                                : _stateStartedAtActiveSeconds + Drill.WindowSeconds;
                         if (now < windowClosesAt)
                         {
                             return;
@@ -450,13 +527,16 @@ namespace VrFencing.Drills
             }
         }
 
-        /// <summary>No (further) contact in time. A compound whose first Touch landed keeps that Touch's reaction time.</summary>
+        /// <summary>
+        /// No (further) contact in time. A compound whose first Touch landed keeps that Touch's reaction time; a Parry
+        /// with no Riposte after it is <see cref="RepOutcome.NoRiposte"/> and keeps the Parry's.
+        /// </summary>
         private RepResult TimeoutResult()
         {
             return CreateResult(
-                RepOutcome.Timeout,
+                _parryAtActiveSeconds.HasValue ? RepOutcome.NoRiposte : RepOutcome.Timeout,
                 contact: null,
-                reactionSeconds: _firstTouchAtActiveSeconds - _stateStartedAtActiveSeconds,
+                reactionSeconds: (_parryAtActiveSeconds ?? _firstTouchAtActiveSeconds) - _stateStartedAtActiveSeconds,
                 secondTouchSeconds: null);
         }
 
@@ -494,6 +574,8 @@ namespace VrFencing.Drills
         {
             CurrentRepIndex = _results.Count;
             _firstTouchAtActiveSeconds = null;
+            _parry = null;
+            _parryAtActiveSeconds = null;
             _latestFootwork = null;
             CurrentCue = PickCue();
             EnterState(DrillState.Cue, atActiveSeconds);

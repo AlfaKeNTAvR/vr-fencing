@@ -41,6 +41,7 @@ namespace VrFencing.UI
         ZoneOpacity,
         ZoneThickness,
         BodyOpacity,
+        ParryRule,
         DoubleWindow,
     }
 
@@ -164,6 +165,7 @@ namespace VrFencing.UI
                 case SettingId.ZoneOpacity: return "Zone opacity";
                 case SettingId.ZoneThickness: return "Zone thickness (of scoring)";
                 case SettingId.BodyOpacity: return "Dummy body opacity";
+                case SettingId.ParryRule: return "Parry rule";
                 case SettingId.DoubleWindow: return "Bout double window (host)";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
@@ -185,6 +187,8 @@ namespace VrFencing.UI
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
                     return settings.Blade.TouchRule == TouchRule.Strict ? "Strict" : "Loose";
+                case SettingId.ParryRule:
+                    return settings.Blade.ParryRule == ParryRule.Strict ? "Strict (forte on foible)" : "Loose";
                 case SettingId.TouchPressure:
                     return settings.Blade.TouchPressure == TouchPressure.OnContact ? "On contact" : "Realistic (750 g)";
                 case SettingId.BladeFlex:
@@ -227,6 +231,7 @@ namespace VrFencing.UI
                 case SettingId.DoubleWindow:
                     return SettingImpact.Bout;
                 case SettingId.TouchRule:
+                case SettingId.ParryRule:
                 case SettingId.BladeFlex:
                 case SettingId.BladePitch:
                 case SettingId.BladeYaw:
@@ -284,6 +289,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.TouchRule:
                     changed.Blade.TouchRule = Cycle(settings.Blade.TouchRule, direction);
+                    break;
+                case SettingId.ParryRule:
+                    changed.Blade.ParryRule = Cycle(settings.Blade.ParryRule, direction);
                     break;
                 case SettingId.TouchPressure:
                     changed.Blade.TouchPressure = Cycle(settings.Blade.TouchPressure, direction);

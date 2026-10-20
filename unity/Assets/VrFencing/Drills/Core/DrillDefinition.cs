@@ -41,6 +41,15 @@ namespace VrFencing.Drills
         /// (<see cref="FootworkJudging.AnswersCall"/>). Blade contacts are ignored (footwork calls).
         /// </summary>
         FootworkCall,
+
+        /// <summary>
+        /// The Armed Dummy attacks and the Fencer must Parry it (<see cref="DrillRunner.ReportParry"/>, PER-97): a contact
+        /// that deflects its point off the body and passes the Parry rule. With
+        /// <see cref="DrillDefinition.RequiresRiposte"/>, a point-first Touch on the cued zone must follow within
+        /// <see cref="DrillDefinition.RiposteWindowSeconds"/> of the Parry. Contacts with the Dummy before the Parry are
+        /// ignored; an attack that lands unparried fails the Rep.
+        /// </summary>
+        Parry,
     }
 
     /// <summary>Two Target Zones a compound Rep cues in order.</summary>
@@ -89,7 +98,8 @@ namespace VrFencing.Drills
             float secondTouchWindowSeconds = 0.0f,
             IReadOnlyList<FootworkAction> footworkCalls = null,
             string taskLine = null,
-            bool lightsNamedZone = false)
+            bool lightsNamedZone = false,
+            bool requiresRiposte = false)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -167,6 +177,11 @@ namespace VrFencing.Drills
                 throw new ArgumentException("Footwork calls are judged by the footwork-call rule.", nameof(successRule));
             }
 
+            if (requiresRiposte && successRule != SuccessRule.Parry)
+            {
+                throw new ArgumentException("Only a Parry Drill can require a Riposte.", nameof(requiresRiposte));
+            }
+
             if (lightsNamedZone && cueType != CueType.NamedTargetZone)
             {
                 throw new ArgumentException("Only a Drill that names its Target Zone can also light it.", nameof(lightsNamedZone));
@@ -205,7 +220,20 @@ namespace VrFencing.Drills
             FootworkCalls = footworkCalls?.ToArray() ?? Array.Empty<FootworkAction>();
             TaskLine = taskLine ?? string.Empty;
             LightsNamedZone = lightsNamedZone;
+            RequiresRiposte = requiresRiposte;
         }
+
+        /// <summary>A Riposte must land within this of the Parry (PER-23: 1 s).</summary>
+        public const float RiposteWindowSeconds = 1.0f;
+
+        /// <summary>
+        /// A Parry Drill also needs a Riposte after the Parry (PER-23: per Drill, so a parry-only warm-up turns it off).
+        /// Always false for other rules.
+        /// </summary>
+        public bool RequiresRiposte { get; }
+
+        /// <summary>The Armed Dummy holds a blade and attacks in this Drill (<see cref="SuccessRule.Parry"/>).</summary>
+        public bool UsesArmedDummy => SuccessRule == SuccessRule.Parry;
 
         /// <summary>
         /// One line saying what the Fencer does (PER-92), e.g. "Extend and Touch the named zone. Arm only, no step.". The
