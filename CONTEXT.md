@@ -85,7 +85,7 @@ How far the Dummy stands from the Fencer along the Strip, front foot to front fo
 _Avoid_: Range, measure
 
 **Armed Dummy**:
-The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills.
+The Dummy holding a blade in its moving sword arm: it makes scripted attacks for the Fencer to Parry and holds its blade in line for the Fencer to Beat. Its feet stay planted except in lunge Drills. For a thrust at the hand or forearm it stands 0.6 to 0.75 m further back, as real fencers attack the arm from further away.
 _Avoid_: Floating blade, bot, enemy sword, opponent (reserved for a full virtual fencer)
 
 **Parry**:
