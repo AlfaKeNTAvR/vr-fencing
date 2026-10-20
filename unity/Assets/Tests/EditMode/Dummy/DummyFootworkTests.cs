@@ -87,7 +87,7 @@ namespace VrFencing.Tests.Dummy
         [TestCase(1.0f, Hand.Left)]
         public void APlantedFootNeverSlides(float move, Hand hand)
         {
-            var footwork = new DummyFootwork(Height, hand, Start, new Random(7));
+            var footwork = new DummyFootwork(Height, hand, Start, new Random(7), isAlive: false);
             Vector3? frontSpot = null;
             Vector3? backSpot = null;
 
@@ -104,7 +104,7 @@ namespace VrFencing.Tests.Dummy
         [TestCase(1.0f, 2.1f)]
         public void TheLegsAlwaysReachAndTheKneesBendForward(float move, float height)
         {
-            var footwork = new DummyFootwork(height, Hand.Right, Start, new Random(3));
+            var footwork = new DummyFootwork(height, Hand.Right, Start, new Random(3), isAlive: false);
             var rest = DummyLegs.EnGarde(height, Hand.Right);
 
             Run(footwork, Start + move, 5.0f, frame =>
@@ -156,7 +156,7 @@ namespace VrFencing.Tests.Dummy
         [TestCase(-1.0f, 1.5f)]
         public void NothingJumpsFurtherInAFrameThanTheBladeSweeps(float move, float height)
         {
-            var footwork = new DummyFootwork(height, Hand.Right, Start, new Random(11));
+            var footwork = new DummyFootwork(height, Hand.Right, Start, new Random(11), isAlive: false);
             var layout = DummyLayout.Create(height, Hand.Right);
             var before = layout.GetBodyOnStrip(footwork.DistanceMeters);
 
@@ -226,8 +226,8 @@ namespace VrFencing.Tests.Dummy
         [Test]
         public void ALeftHandedDummysLegsMirrorARightHandedOnes()
         {
-            var right = new DummyFootwork(Height, Hand.Right, Start, new Random(5));
-            var left = new DummyFootwork(Height, Hand.Left, Start, new Random(5));
+            var right = new DummyFootwork(Height, Hand.Right, Start, new Random(5), isAlive: false);
+            var left = new DummyFootwork(Height, Hand.Left, Start, new Random(5), isAlive: false);
 
             for (var frame = 0; frame < 20; frame++)
             {
@@ -256,7 +256,7 @@ namespace VrFencing.Tests.Dummy
         public void ItRetreatsOnTheDistanceKeepersIntentWhenTheFencerAdvances()
         {
             var keeper = new DistanceKeeper(3.0f, 3.0f, DummyStripLimits.Unlimited, DummyDifficulty.Hard, new Random(1));
-            var footwork = new DummyFootwork(Height, Hand.Right, keeper.TargetFrontFootZ, new Random(1));
+            var footwork = new DummyFootwork(Height, Hand.Right, keeper.TargetFrontFootZ, new Random(1), isAlive: false);
             var now = 0.0;
 
             for (var frame = 0; frame < 72 * 4; frame++)
@@ -317,7 +317,7 @@ namespace VrFencing.Tests.Dummy
 
         private static DummyFootwork Create()
         {
-            return new DummyFootwork(Height, Hand.Right, Start, new Random(1));
+            return new DummyFootwork(Height, Hand.Right, Start, new Random(1), isAlive: false);
         }
 
         private static void Run(DummyFootwork footwork, float target, float seconds, Action<int> onFrame)
@@ -346,7 +346,7 @@ namespace VrFencing.Tests.Dummy
 
         private static void CountStepFrames(Random random, int[] frames)
         {
-            var footwork = new DummyFootwork(Height, Hand.Right, Start, random);
+            var footwork = new DummyFootwork(Height, Hand.Right, Start, random, isAlive: false);
             var target = Start - (3.0f * MaxStride(Height));
             for (var frame = 0; frame < 72 * 5 && footwork.StepCount <= frames.Length; frame++)
             {

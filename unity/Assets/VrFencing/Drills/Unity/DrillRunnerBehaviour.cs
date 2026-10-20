@@ -11,7 +11,9 @@ namespace VrFencing.Drills
     /// When a run starts it stands the Dummy at the Drill's Dummy Distance (the shortened variant's when the run is
     /// shrunk), and in a Drill with a Dummy Distance per Rep (distance choice) moves it on every cue; when the run ends
     /// it stands the Dummy back where the scene had it. In a Drill whose Dummy keeps its distance (PER-105) it runs the
-    /// moving Dummy every frame of the run (<see cref="DistanceKeeperDriver"/>), at each Rep's difficulty.
+    /// moving Dummy every frame of the run (<see cref="DistanceKeeperDriver"/>), at each Rep's difficulty. In the
+    /// footwork feel test (<see cref="DrillDefinition.ShowsFootwork"/>) it runs the Dummy through its footwork moves
+    /// (<see cref="FootworkShowcaseDriver"/>).
     /// All rules live in the Core; this only supplies time and applies the Drill's data.
     /// </summary>
     public sealed class DrillRunnerBehaviour : MonoBehaviour
@@ -32,6 +34,7 @@ namespace VrFencing.Drills
         public DrillRunner Runner { get; private set; }
 
         private DistanceKeeperDriver _distanceKeeper;
+        private FootworkShowcaseDriver _showcase;
 
         private void Awake()
         {
@@ -48,6 +51,7 @@ namespace VrFencing.Drills
 
             var cameraRig = FindFirstObjectByType<OVRCameraRig>();
             _distanceKeeper = new DistanceKeeperDriver(_dummy, _strip, cameraRig != null ? cameraRig.centerEyeAnchor : null);
+            _showcase = new FootworkShowcaseDriver(_dummy);
         }
 
         private void OnEnable()
@@ -74,6 +78,7 @@ namespace VrFencing.Drills
             if (Runner.IsRunning && !Runner.IsPaused)
             {
                 _distanceKeeper.Step(Time.timeAsDouble, Time.deltaTime);
+                _showcase.Step(Time.deltaTime);
             }
         }
 
@@ -114,6 +119,11 @@ namespace VrFencing.Drills
             {
                 _distanceKeeper.Begin(difficulty.Value);
             }
+
+            if (Runner.Drill.ShowsFootwork)
+            {
+                _showcase.Begin();
+            }
         }
 
         // Distance choice: the Dummy appearing at the Rep's distance is the cue. Rest separates it from the last Touch,
@@ -137,6 +147,7 @@ namespace VrFencing.Drills
         private void OnRunFinished(DrillRunSummary summary)
         {
             _distanceKeeper.End();
+            _showcase.End();
             if (_dummy != null)
             {
                 _dummy.ResetDistance();

@@ -152,6 +152,49 @@ namespace VrFencing.Tests.Dummy
             }
         }
 
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void ApplyingTheFootworkPlacesTheDummyAndMovesItsZonesWithoutRebuilding(Hand hand)
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, hand);
+            dummy.SetDistanceMeters(3.0f);
+            var bodyPart = FindPart($"Zone {TargetZone.Body}");
+            var bodyBefore = bodyPart.position;
+            var renderersBefore = _dummyObject.GetComponentsInChildren<MeshRenderer>().Length;
+            var lunge = ArmedDummyAttack.GetLungeMeters(1.65f);
+            for (var frame = 1; frame <= 72; frame++)
+            {
+                dummy.Footwork.StepLunge(lunge * frame / 72.0f, lunge, 1.0f / 72.0f);
+                dummy.ApplyFootwork();
+            }
+
+            Assert.That(dummy.DistanceMeters, Is.EqualTo(3.0f - lunge).Within(1e-4f));
+            Assert.That(dummy.transform.localPosition.z, Is.EqualTo(3.0f - lunge).Within(1e-4f));
+            Assert.That(FindPart($"Zone {TargetZone.Body}"), Is.SameAs(bodyPart), "The body part was rebuilt.");
+            Assert.That(Vector3.Distance(bodyPart.position, bodyBefore), Is.GreaterThan(0.3f));
+            Assert.That(_dummyObject.GetComponentsInChildren<MeshRenderer>(), Has.Length.EqualTo(renderersBefore));
+            AssertRenderedZonesMatchCore(dummy);
+        }
+
+        [Test]
+        public void PlacingTheDummyStandsItsFootworkInEnGardeThere()
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, Hand.Right);
+            dummy.SetDistanceMeters(3.0f);
+            dummy.Footwork.Step(2.5f, 1.0f / 72.0f);
+            dummy.ApplyFootwork();
+            Assert.That(dummy.Footwork.CurrentStep, Is.EqualTo(FootworkStep.Advancing));
+
+            dummy.SetDistanceMeters(2.0f);
+
+            Assert.That(dummy.Footwork.CurrentStep, Is.EqualTo(FootworkStep.Standing));
+            Assert.That(dummy.Footwork.DistanceMeters, Is.EqualTo(2.0f));
+            Assert.That(dummy.Layout.Legs.Front.Toe, Is.EqualTo(DummyLegs.EnGarde(1.65f, Hand.Right).Front.Toe));
+            AssertRenderedZonesMatchCore(dummy);
+        }
+
         [Test]
         public void TheHandHangsUnderTheWristJoint()
         {

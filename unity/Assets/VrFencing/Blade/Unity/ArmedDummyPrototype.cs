@@ -120,8 +120,10 @@ namespace VrFencing.Blade
 
             if (_attack != null && _attack.LungeMeters > 0.0f)
             {
-                // The Dummy lunges (PER-101): the whole Dummy moves along the Strip with the thrust and back.
-                _dummy.SetDistanceMeters(_attackDistanceMeters - _attack.GetLungeOffsetMeters(nowSeconds));
+                // The Dummy lunges (PER-101): the body moves along the Strip with the thrust and back, on the attack's
+                // timing; the footwork plants the back foot, kicks out the front foot and drops the hips (PER-111).
+                _dummy.Footwork.StepLunge(_attack.GetLungeOffsetMeters(nowSeconds), _attack.LungeMeters, deltaSeconds);
+                _dummy.ApplyFootwork();
             }
 
             _dummy.SetArmPose(

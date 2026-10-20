@@ -53,7 +53,9 @@ namespace VrFencing.Tests.Drills
             Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.ArmedDummyTestDrillId));
             Assert.That(withTests, Does.Contain(DrillCatalog.DistanceKeeperTestDrillId));
             Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.DistanceKeeperTestDrillId));
-            Assert.That(withTests.Length, Is.EqualTo(withoutTests.Length + 3), "Only the full-piste, Armed Dummy and distance keeper test Drills are dev-only.");
+            Assert.That(withTests, Does.Contain(DrillCatalog.FootworkTestDrillId));
+            Assert.That(withoutTests, Does.Not.Contain(DrillCatalog.FootworkTestDrillId));
+            Assert.That(withTests.Length, Is.EqualTo(withoutTests.Length + 4), "Only the full-piste, Armed Dummy, distance keeper and footwork test Drills are dev-only.");
         }
 
         [Test]

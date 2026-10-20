@@ -85,6 +85,7 @@ namespace VrFencing.Drills
         public const string FullPisteTestDrillId = "test-full-piste";
         public const string ArmedDummyTestDrillId = "test-armed-dummy";
         public const string DistanceKeeperTestDrillId = "test-distance-keeper";
+        public const string FootworkTestDrillId = "test-dummy-footwork";
         public const string SlowParryDrillId = "parry-six-four-slow";
         public const string FastParryDrillId = "parry-six-four-fast";
         public const string LowParryDrillId = "parry-eight-seven";
@@ -304,6 +305,8 @@ namespace VrFencing.Drills
 
         public const string StopHitTaskLine = "Touch the arm before the thrust lands.";
 
+        public const string FootworkTestTaskLine = "Watch the Dummy's footwork. Touch the lit zone.";
+
         public const string LungeParryTaskLine = "Parry the Dummy's lunge, then riposte in 1 s.";
 
         public const string LungeParryOnlyTaskLine = "Parry the Dummy's lunge. No riposte.";
@@ -335,6 +338,7 @@ namespace VrFencing.Drills
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
                 registry.Register(ArmedDummyTestDrillId, CreateArmedDummyTestDrill);
                 registry.Register(DistanceKeeperTestDrillId, CreateDistanceKeeperTestDrill);
+                registry.Register(FootworkTestDrillId, CreateFootworkTestDrill);
             }
 
             return registry;
@@ -669,6 +673,33 @@ namespace VrFencing.Drills
                 taskLine: DistanceKeeperTestTaskLine,
                 lightsNamedZone: true,
                 dummyDifficulties: DistanceKeeperTestDifficulties);
+        }
+
+        /// <summary>
+        /// The Dummy's footwork feel test (PER-111, development builds only): the Dummy stands at step-lunge distance and
+        /// runs through every footwork move it has, over and over (<see cref="FootworkShowcase"/>): advances, retreats, a
+        /// lunge and recovery, a fleche, and breathing and weight shift in between. Each Rep names and lights a zone, as
+        /// the distance keeper's test, so a Touch on the moving Dummy can be tried too.
+        /// </summary>
+        public static DrillDefinition CreateFootworkTestDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                FootworkTestDrillId,
+                "Test: Dummy footwork",
+                TestDrillOrder + 3,
+                requiredStripLengthMeters: DistanceKeeperTestStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: DistanceKeeperTestWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.NamedTargetZone,
+                SuccessRule.PointFirstTouchOnTargetZone,
+                AllTargetZones,
+                DummyDistance.StepLunge,
+                taskLine: FootworkTestTaskLine,
+                lightsNamedZone: true,
+                showsFootwork: true);
         }
 
         /// <summary>

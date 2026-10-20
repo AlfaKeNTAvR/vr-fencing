@@ -15,7 +15,8 @@ namespace VrFencing.Dummy
     ///
     /// The sword arm is a joint chain (<see cref="Arm"/>): the hand, wrist, forearm and upper arm zones are derived
     /// from its joint poses. The legs (<see cref="Legs"/>, PER-110) carry the thigh and foot zones and the leg
-    /// silhouette. The body zone, the head and the back arm are fixed to the stance.
+    /// silhouette; the body zone's bottom (the pelvis) moves with their hips, its top stays at the shoulders (PER-111).
+    /// The head and the back arm are fixed to the stance.
     ///
     /// Hand: the Dummy holds its blade in the same hand as the Fencer, so a right-handed Fencer faces a
     /// right-handed Dummy and a left-handed Fencer a left-handed one ("left mirrors everything", Settings).
@@ -32,6 +33,10 @@ namespace VrFencing.Dummy
         private readonly ZoneCapsule[] _zones;
         private readonly Capsule[] _silhouetteParts;
 
+        // The body zone and the hip joints' center in en garde: the body zone's bottom moves with the hips (PER-111).
+        private readonly Capsule _restBody;
+        private readonly Vector3 _restHipCenter;
+
         private DummyLayout(float heightMeters, SwordArm arm, DummyLegs legs)
         {
             HeightMeters = heightMeters;
@@ -43,6 +48,9 @@ namespace VrFencing.Dummy
                 .Cast<TargetZone>()
                 .Select(zone => new ZoneCapsule(zone, SwordArm.IsArmZone(zone) ? arm.GetZone(zone) : Scale(StanceZoneAtUnitHeight(zone), heightMeters, arm.Hand)))
                 .ToArray();
+            _restBody = Scale(StanceZoneAtUnitHeight(TargetZone.Body), heightMeters, arm.Hand);
+            var restLegs = DummyLegs.EnGarde(heightMeters, arm.Hand);
+            _restHipCenter = (restLegs.Front.Hip + restLegs.Back.Hip) * 0.5f;
             PoseLegs(legs);
         }
 
@@ -117,7 +125,9 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the legs to <paramref name="legs"/> (in this layout's Dummy frame, already mirrored for its hand), and
-        /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110).
+        /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110). The body
+        /// zone's bottom moves as far as the hips' center moved from en garde; its top stays at the shoulders, so a
+        /// dropped or shifted pelvis tilts the body zone, not the shoulders (PER-111).
         /// </summary>
         public void PoseLegs(DummyLegs legs)
         {
@@ -134,6 +144,10 @@ namespace VrFencing.Dummy
                         break;
                     case TargetZone.Foot:
                         _zones[index] = new ZoneCapsule(TargetZone.Foot, new Capsule(legs.Front.Heel, legs.Front.Toe, footRadius));
+                        break;
+                    case TargetZone.Body:
+                        var hipShift = ((legs.Front.Hip + legs.Back.Hip) * 0.5f) - _restHipCenter;
+                        _zones[index] = new ZoneCapsule(TargetZone.Body, new Capsule(_restBody.Start + hipShift, _restBody.End, _restBody.RadiusMeters));
                         break;
                 }
             }
