@@ -344,7 +344,7 @@ namespace VrFencing.UI
             _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Partner), () => OpenPage(MenuScreen.Settings),
                 () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance);
             _partnerScreen = new PartnerScreen(_mainPanel, () => _partner?.Host(), () => _partner?.BeginEnteringCode(), code => _partner?.Join(code),
-                () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
+                () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), ResetPairedPracticeTally, () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
             _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings);
             _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenSettingsGroup(SettingGroup.Blade));
             _calibrationTarget = new CalibrationTargetView(transform);
@@ -481,6 +481,15 @@ namespace VrFencing.UI
             }
 
             _isDirty = true;
+        }
+
+        /// <summary>The Partner page's Reset tally (Paired Practice, PER-83).</summary>
+        private void ResetPairedPracticeTally()
+        {
+            if (_partner != null && _partner.TryGetComponent<BoutBehaviour>(out var bout))
+            {
+                bout.ResetTally();
+            }
         }
 
         private string FormatStrip()
