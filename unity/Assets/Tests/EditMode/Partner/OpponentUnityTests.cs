@@ -98,7 +98,7 @@ namespace VrFencing.Tests.Partner
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(BodyModelPath);
             Assert.That(model, Is.Not.Null);
             root = new GameObject("Opponent test");
-            var material = Resources.Load<Material>("VrFencingDummy");
+            var material = Resources.Load<Material>("VrFencingSuit");
             var rig = DummyBodyRig.TryCreate(model, root.transform, material, DummyLayout.Create(1.7f, Hand.Right));
             Assert.That(rig, Is.Not.Null);
             return rig;

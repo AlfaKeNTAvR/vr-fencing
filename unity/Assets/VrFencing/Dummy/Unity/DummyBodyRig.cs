@@ -52,34 +52,56 @@ namespace VrFencing.Dummy
             HumanBodyBones.UpperChest,
             HumanBodyBones.LeftMiddleProximal,
             HumanBodyBones.RightMiddleProximal,
+            HumanBodyBones.LeftToes,
+            HumanBodyBones.RightToes,
         };
+
+        private const string MaskModelResourcePath = "DummyModels/FencingMask";
+        private const string MaskWireMaterialResourcePath = "VrFencingMaskWire";
+
+        /// <summary>The head sphere the mask model is built round (<c>MASK_HEAD_RADIUS</c> in tools/models/build_fencing_models.py).</summary>
+        private const float MaskModelHeadRadiusMeters = 0.11f;
+
+        /// <summary>
+        /// How much bigger than the Dummy's head sphere (<see cref="EnGardePose.HeadRadius"/>) the mask is drawn, so the
+        /// rig's head stays inside it, and how far its centre sits from the head sphere's (fractions of height; +y up,
+        /// +z where the face looks).
+        /// </summary>
+        private const float MaskFitScale = 1.0f;
+
+        private const int MaskSortingOrder = 1;
+
+        private static readonly Vector3 MaskCenterOffsetPerHeight = new Vector3(0.0f, -0.002f, 0.007f);
 
         private readonly Transform _partsRoot;
         private readonly Dictionary<HumanBodyBones, Transform> _bones;
         private readonly Dictionary<HumanBodyBones, Pose> _restPoses = new Dictionary<HumanBodyBones, Pose>();
 
-        private DummyBodyRig(GameObject instance, Transform partsRoot, Dictionary<HumanBodyBones, Transform> bones, Renderer[] renderers)
+        private readonly List<Renderer> _renderers;
+        private DummySuitRegions _suitRegions;
+
+        private DummyBodyRig(GameObject instance, Transform partsRoot, Dictionary<HumanBodyBones, Transform> bones, List<Renderer> renderers)
         {
             Instance = instance;
             _partsRoot = partsRoot;
             _bones = bones;
-            Renderers = renderers;
+            _renderers = renderers;
         }
 
         /// <summary>The model's instance under the parts root.</summary>
         public GameObject Instance { get; }
 
-        /// <summary>The body's skinned meshes, all drawn with the Dummy material.</summary>
-        public IReadOnlyList<Renderer> Renderers { get; }
+        /// <summary>The body's skinned meshes (drawn with the rig's suit material) and the mask's meshes.</summary>
+        public IReadOnlyList<Renderer> Renderers => _renderers;
 
         /// <summary>Every material slot of every skinned mesh, with the body part it draws.</summary>
         public IReadOnlyList<RigMeshSlot> MeshSlots { get; private set; } = new RigMeshSlot[0];
 
         /// <summary>
-        /// Instantiates <paramref name="model"/> under <paramref name="partsRoot"/>, draws it with
-        /// <paramref name="material"/> and poses it on <paramref name="layout"/>. Returns null, after logging why, if
-        /// the model is not a valid Humanoid with every bone the pose needs or has no skinned mesh; the caller then
-        /// draws the capsule silhouette instead.
+        /// Instantiates <paramref name="model"/> under <paramref name="partsRoot"/>, dresses it in the fencing suit
+        /// (PER-41: <paramref name="material"/>, the suit shader, with shoes, a glove and a mask) and poses it on
+        /// <paramref name="layout"/>. Returns null, after logging why, if the model is not a valid Humanoid with every
+        /// bone the pose needs or has no skinned mesh; the caller then draws the capsule silhouette instead.
         /// </summary>
         public static DummyBodyRig TryCreate(GameObject model, Transform partsRoot, Material material, DummyLayout layout)
         {
@@ -107,18 +129,20 @@ namespace VrFencing.Dummy
             var animator = instance.GetComponent<Animator>();
             animator.enabled = false;
 
+            // The rig's own copy of the suit material carries its shoe, glove and head regions (DummySuitRegions).
+            var bodyMaterial = new Material(material) { name = material.name + " (rig)" };
             var meshSlots = new List<RigMeshSlot>();
             foreach (var skinnedRenderer in renderers)
             {
                 // The model's own materials name its parts (Armature.fbx: M_Body, M_Arms, M_Legs); keep them before
-                // every slot is given the Dummy material, so a part can be faded on its own (the opponent, PER-81).
+                // every slot is given the suit material, so a part can be faded on its own (the opponent, PER-81).
                 var modelMaterials = skinnedRenderer.sharedMaterials;
                 for (var slot = 0; slot < modelMaterials.Length; slot++)
                 {
                     meshSlots.Add(new RigMeshSlot(skinnedRenderer, slot, RigMeshSlot.GetPart(modelMaterials[slot] != null ? modelMaterials[slot].name : skinnedRenderer.name)));
                 }
 
-                skinnedRenderer.sharedMaterials =Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
+                skinnedRenderer.sharedMaterials = Enumerable.Repeat(bodyMaterial, skinnedRenderer.sharedMaterials.Length).ToArray();
                 skinnedRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 skinnedRenderer.receiveShadows = false;
 
@@ -126,10 +150,72 @@ namespace VrFencing.Dummy
                 skinnedRenderer.updateWhenOffscreen = true;
             }
 
-            var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToArray()) { MeshSlots = meshSlots };
+            var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToList()) { MeshSlots = meshSlots };
             rig.ScaleToHeight(layout.HeightMeters);
             rig.Pose(layout);
+            var maskCenter = rig.AttachMask(layout, material, meshSlots);
+            rig._suitRegions = instance.AddComponent<DummySuitRegions>();
+            var sword = layout.Hand == Hand.Left ? BodySide.Left : BodySide.Right;
+            var swordIsRight = sword == BodySide.Right;
+            rig._suitRegions.Configure(
+                bodyMaterial,
+                layout.HeightMeters,
+                maskCenter,
+                rig.GetBone(swordIsRight ? HumanBodyBones.RightLowerArm : HumanBodyBones.LeftLowerArm),
+                rig.GetBone(swordIsRight ? HumanBodyBones.RightHand : HumanBodyBones.LeftHand),
+                rig.GetBone(swordIsRight ? HumanBodyBones.RightMiddleProximal : HumanBodyBones.LeftMiddleProximal),
+                rig.GetBone(swordIsRight ? HumanBodyBones.RightFoot : HumanBodyBones.LeftFoot),
+                rig.GetBone(swordIsRight ? HumanBodyBones.RightToes : HumanBodyBones.LeftToes),
+                rig.GetBone(swordIsRight ? HumanBodyBones.LeftFoot : HumanBodyBones.RightFoot),
+                rig.GetBone(swordIsRight ? HumanBodyBones.LeftToes : HumanBodyBones.RightToes));
             return rig;
+        }
+
+        /// <summary>Puts the suit's shoes, glove and head where the bones are now (Play mode does it every frame).</summary>
+        public void RefreshSuitRegions()
+        {
+            _suitRegions?.Refresh();
+        }
+
+        /// <summary>
+        /// Puts the fencing mask (Blender model, PER-41) on the head bone, over the head sphere of the en garde pose the
+        /// rig was just posed in, facing where the head looks; it then follows the head. The wire front is drawn with
+        /// the mask wire material, the trim, bib and strap with <paramref name="fabricMaterial"/>. Its renderers join
+        /// the body's (so the body's colour and opacity reach it) as body slots. Returns the mask's centre, or null
+        /// if the model is missing (the body is then drawn without a mask).
+        /// </summary>
+        private Transform AttachMask(DummyLayout layout, Material fabricMaterial, List<RigMeshSlot> meshSlots)
+        {
+            var model = Resources.Load<GameObject>(MaskModelResourcePath);
+            var wireMaterial = Resources.Load<Material>(MaskWireMaterialResourcePath);
+            var head = GetBone(HumanBodyBones.Head);
+            if (model == null || wireMaterial == null)
+            {
+                Debug.LogError($"[Dummy] The mask model 'Resources/{MaskModelResourcePath}' or material 'Resources/{MaskWireMaterialResourcePath}' is missing; drawing no mask.");
+                return null;
+            }
+
+            var mask = Object.Instantiate(model, head, false);
+            mask.name = "Mask";
+            var centerInParts = DummySkeleton.GetJointPosition(layout, SkeletonJoint.HeadCenter).ToUnity() + (MaskCenterOffsetPerHeight * layout.HeightMeters);
+            mask.transform.SetPositionAndRotation(_partsRoot.TransformPoint(centerInParts), _partsRoot.rotation);
+            var worldScale = EnGardePose.HeadRadius * layout.HeightMeters * MaskFitScale / MaskModelHeadRadiusMeters;
+            mask.transform.localScale = Vector3.one * (worldScale / Mathf.Max(head.lossyScale.x, 1e-6f));
+
+            foreach (var maskRenderer in mask.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                maskRenderer.sharedMaterial = maskRenderer.name.StartsWith("MaskMesh", System.StringComparison.Ordinal) ? wireMaterial : fabricMaterial;
+                maskRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                maskRenderer.receiveShadows = false;
+
+                // Nothing here writes depth, so translucent parts draw in sort order: the mask after the body, or
+                // the back arm behind the head would draw over it.
+                maskRenderer.sortingOrder = MaskSortingOrder;
+                _renderers.Add(maskRenderer);
+                meshSlots.Add(new RigMeshSlot(maskRenderer, 0, RigMeshPart.Body));
+            }
+
+            return mask.transform;
         }
 
         /// <summary>Puts every mapped bone on its joint for <paramref name="layout"/>, e.g. after the sword arm moved.</summary>
@@ -193,6 +279,7 @@ namespace VrFencing.Dummy
             PoseArm(backSide, backShoulder, getJoint(SkeletonJoint.BackElbow), getJoint(SkeletonJoint.BackHand), backHandEnd);
             PoseLeg(swordSide, swordHip, getJoint(SkeletonJoint.FrontKnee), getJoint(SkeletonJoint.FrontAnkle), getJoint(SkeletonJoint.FrontToe));
             PoseLeg(backSide, backHip, getJoint(SkeletonJoint.BackKnee), getJoint(SkeletonJoint.BackAnkle), getJoint(SkeletonJoint.BackToe));
+            _suitRegions?.Refresh();
         }
 
         /// <summary>The bone's transform, or null if the model has no such bone.</summary>

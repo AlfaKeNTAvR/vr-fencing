@@ -35,8 +35,12 @@ namespace VrFencing.Dummy
     {
         private const string MaterialResourcePath = "VrFencingDummy";
 
-        // Lit zones bright amber, a Touch flashes white. The body's and dim zones' opacity come from the look.
-        private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f);
+        /// <summary>The rigged body's fencing suit (PER-41): the suit shader, lit without scene lights.</summary>
+        private const string SuitMaterialResourcePath = "VrFencingSuit";
+
+        // A white fencing suit; lit zones bright amber, a Touch flashes white. The body's and dim zones' opacity come
+        // from the look.
+        private static readonly Color SilhouetteColor = new Color(0.97f, 0.97f, 0.95f);
         private static readonly Color DimZoneColor = new Color(0.55f, 0.8f, 1.0f);
         private static readonly Color LitZoneColor = new Color(1.0f, 0.75f, 0.1f, 0.8f);
         private static readonly Color FlashZoneColor = new Color(1.0f, 1.0f, 1.0f, 0.95f);
@@ -339,7 +343,7 @@ namespace VrFencing.Dummy
                 _shownLights[zone.Zone] = ZoneLight.Dim;
             }
 
-            _bodyRig = _bodyModel != null ? DummyBodyRig.TryCreate(_bodyModel, _partsRoot, material, Layout) : null;
+            _bodyRig = _bodyModel != null ? DummyBodyRig.TryCreate(_bodyModel, _partsRoot, LoadSuitMaterial(material), Layout) : null;
             if (_bodyRig != null)
             {
                 _bodyRenderers.AddRange(_bodyRig.Renderers);
@@ -356,6 +360,19 @@ namespace VrFencing.Dummy
             {
                 SetColor(bodyRenderer, GetBodyColor());
             }
+        }
+
+        /// <summary>The suit material for the rigged body, or the silhouette material if it is missing.</summary>
+        private static Material LoadSuitMaterial(Material fallback)
+        {
+            var suit = Resources.Load<Material>(SuitMaterialResourcePath);
+            if (suit == null)
+            {
+                Debug.LogError($"[Dummy] Material 'Resources/{SuitMaterialResourcePath}' is missing; the body is drawn in the plain silhouette material.");
+                return fallback;
+            }
+
+            return suit;
         }
 
         /// <summary>Shoulder under the Dummy, Elbow under Shoulder, Wrist under Elbow.</summary>
