@@ -161,13 +161,20 @@ namespace VrFencing.Blade
             return Vector3.Lerp(_shape[piece], _shape[piece + 1], along - piece);
         }
 
-        /// <summary>Adds this blade, as drawn this frame, to the Fencer's obstacles (nothing before the first <see cref="Step"/>).</summary>
+        /// <summary>
+        /// Adds this blade, as drawn this frame, to the Fencer's obstacles (nothing before the first <see cref="Step"/>):
+        /// its blade, and its bell guard on the drawn hilt (PER-120), so a press near its guard meets the bell. The hand
+        /// behind the bell is the Dummy's body's.
+        /// </summary>
         public void AddObstacles(ICollection<BladeObstacle> obstacles)
         {
-            if (_hasShape)
+            if (!_hasShape)
             {
-                _bind.AddObstacles(_shape, obstacles);
+                return;
             }
+
+            _bind.AddObstacles(_shape, obstacles);
+            obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection));
         }
 
         /// <summary>After the Fencer's drawn blade moved this frame: updates which side of this blade it is on.</summary>

@@ -6,7 +6,7 @@ namespace VrFencing.Blade
     /// <summary>
     /// Two thin straight pieces of blade (PER-104): where they come closest, whether they lie across each other there
     /// (the spot where their lines pass closest lies inside both pieces), and how far one reaches into the strip behind
-    /// the other (<see cref="TryFindLeastSide"/>), where it can only be by passing through it. Past an end, one can go
+    /// the other (<see cref="TryFindSideAtCrossing"/>), where it can only be by passing through it. Past an end, one can go
     /// round the other's end freely. A piece end that joins the next piece of the same blade (a joint, not a blade end)
     /// counts a little past its end as inside, so a crossing right at a joint is not lost between two pieces. Positions
     /// in any one frame, meters.
@@ -23,6 +23,12 @@ namespace VrFencing.Blade
         private const float ParallelSineSquared = 1e-4f;
 
         private const float DegenerateLengthSquared = 1e-12f;
+
+        /// <summary>
+        /// A piece whose direction leans less than this sine (about 6 degrees) across the other's side direction runs
+        /// alongside it: it has no one crossing (<see cref="TryFindSideAtCrossing"/>).
+        /// </summary>
+        public const float AlongsideSine = 0.1f;
 
         /// <summary>
         /// The closest points of piece A (<paramref name="a0"/> to <paramref name="a1"/>) and piece B. When they lie across
@@ -83,14 +89,35 @@ namespace VrFencing.Blade
         /// Whether piece A reaches into the strip behind piece B: along B within its length, within
         /// <paramref name="halfWidth"/> of B's axis across the side direction, on any depth of <paramref name="side"/>.
         /// That strip is where A can only be by having passed through B, if it was on <paramref name="side"/> of it when
-        /// they met. Returns the least side coordinate (from B's axis along <paramref name="side"/>) of A's part in the
-        /// strip, the point there and its fraction along A; false when A misses the strip.
+        /// they met. Returns the side coordinate (from B's axis along <paramref name="side"/>) of A where it crosses B's
+        /// axis across the side direction, the point there and its fraction along A; false when A misses the strip or
+        /// crosses B's axis in the next piece of its blade.
+        /// <para>Taken at the crossing, not as the least anywhere in the strip (PER-120). A blade lying against B at a
+        /// slant (bent round it, or pressed in at an angle) dips below B's axis level toward the strip's edges while it is
+        /// still clear of B, and that must not read as through it: the push out of it was divided by a short lever near
+        /// the Dummy's guard and kicked its point 7 to 12 cm a frame. At the crossing the side coordinate runs on
+        /// smoothly into the distance apart, so a blade just touching and one just past B's axis need about the same
+        /// push. A piece whose crossing is past a joint leaves it to the next piece; a blade end (the point or the guard)
+        /// short of the crossing is taken where it ends, so a point that went through still counts. A piece running
+        /// alongside B (within <see cref="AlongsideSine"/>) has no clear crossing: its deepest part in the strip.</para>
         /// </summary>
+        /// <param name="aJoints">Whether A's start (bit 0) and end (bit 1) join more of its blade.</param>
         /// <param name="side">Unit vector square to B: the side A belongs on.</param>
         /// <param name="bJoints">Whether B's start (bit 0) and end (bit 1) join more of its blade: the strip runs a little past a joint.</param>
-        public static bool TryFindLeastSide(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1, int bJoints, Vector3 side, float halfWidth, out float leastSide, out Vector3 at, out float fractionOnA)
+        public static bool TryFindSideAtCrossing(
+            Vector3 a0,
+            Vector3 a1,
+            int aJoints,
+            Vector3 b0,
+            Vector3 b1,
+            int bJoints,
+            Vector3 side,
+            float halfWidth,
+            out float sideAtCrossing,
+            out Vector3 at,
+            out float fractionOnA)
         {
-            leastSide = float.MaxValue;
+            sideAtCrossing = float.MaxValue;
             at = a0;
             fractionOnA = 0.0f;
             var axis = b1 - b0;
@@ -108,22 +135,38 @@ namespace VrFencing.Blade
             var high = 1.0f;
             var alongLow = (bJoints & 1) != 0 ? -StripJointSlack * length : 0.0f;
             var alongHigh = (bJoints & 2) != 0 ? length * (1.0f + StripJointSlack) : length;
+            var acrossStart = Vector3.Dot(startOffset, across);
+            var acrossStep = Vector3.Dot(step, across);
             if (!ClipToSlab(Vector3.Dot(startOffset, axis), Vector3.Dot(step, axis), alongLow, alongHigh, ref low, ref high)
-                || !ClipToSlab(Vector3.Dot(startOffset, across), Vector3.Dot(step, across), -halfWidth, halfWidth, ref low, ref high))
+                || !ClipToSlab(acrossStart, acrossStep, -halfWidth, halfWidth, ref low, ref high))
             {
                 return false;
             }
 
             var sideStart = Vector3.Dot(startOffset, side);
             var sideStep = Vector3.Dot(step, side);
-            fractionOnA = sideStep >= 0.0f ? low : high;
-            leastSide = sideStart + (sideStep * fractionOnA);
+            if (Math.Abs(acrossStep) <= AlongsideSine * step.Length())
+            {
+                fractionOnA = sideStep >= 0.0f ? low : high;
+            }
+            else
+            {
+                var crossing = -acrossStart / acrossStep;
+                if ((crossing > 1.0f && (aJoints & 2) != 0) || (crossing < 0.0f && (aJoints & 1) != 0))
+                {
+                    return false;
+                }
+
+                fractionOnA = Math.Clamp(crossing, low, high);
+            }
+
+            sideAtCrossing = sideStart + (sideStep * fractionOnA);
             at = a0 + (step * fractionOnA);
             return true;
         }
 
         /// <summary>Narrows [low, high] (fractions along a line value(t) = start + t * step) to where value is within [min, max].</summary>
-        private static bool ClipToSlab(float start, float step, float min, float max, ref float low, ref float high)
+        internal static bool ClipToSlab(float start, float step, float min, float max, ref float low, ref float high)
         {
             if (Math.Abs(step) < 1e-9f)
             {
