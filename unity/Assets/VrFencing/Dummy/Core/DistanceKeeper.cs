@@ -83,6 +83,11 @@ namespace VrFencing.Dummy
     /// - The target never leaves <see cref="DummyStripLimits"/>: at its end of the Strip the Dummy stays put, and the
     ///   Fencer can close the distance on it.
     /// - Frames with no Fencer position (no headset pose) change nothing.
+    /// - Across the Strip (PER-118), the Dummy follows the Fencer's side a little: its target side
+    ///   (<see cref="TargetSideMeters"/>) is <see cref="DistanceKeeperTuning.SideFollowFraction"/> of the Fencer's,
+    ///   never more than <see cref="DistanceKeeperTuning.MaxSideMeters"/> off the center line, so it stays well inside the
+    ///   Strip's corridor. A side change past <see cref="DistanceKeeperTuning.SideToleranceMeters"/> starts a reaction as
+    ///   a move along the Strip does, with the same delay; a move both ways makes the Dummy step diagonally.
     /// </summary>
     public sealed class DistanceKeeper
     {
@@ -91,6 +96,7 @@ namespace VrFencing.Dummy
 
         private readonly double[] _sampleSeconds = new double[HistoryCapacity];
         private readonly float[] _sampleFrontFootZ = new float[HistoryCapacity];
+        private readonly float[] _sampleSide = new float[HistoryCapacity];
         private readonly Random _random;
         private int _newestIndex = -1;
         private int _sampleCount;
@@ -129,6 +135,12 @@ namespace VrFencing.Dummy
         /// <summary>The intent: where the Dummy's front foot should stand on the Strip now (Strip-frame z).</summary>
         public float TargetFrontFootZ { get; private set; }
 
+        /// <summary>
+        /// The intent across the Strip (PER-118): where the Dummy's body should stand to the side of the center line
+        /// (Strip-frame x, + the Fencer's right, as <see cref="DummyFootwork.SideMeters"/>). 0 until the Fencer moves aside.
+        /// </summary>
+        public float TargetSideMeters { get; private set; }
+
         public DistanceKeeperState State { get; private set; } = DistanceKeeperState.Holding;
 
         public DummyDifficulty Difficulty { get; private set; }
@@ -150,20 +162,23 @@ namespace VrFencing.Dummy
         public ReactionTiming Timing { get; private set; }
 
         /// <summary>
-        /// One frame: takes where the Fencer's front foot is along the Strip (Strip-frame z), or null without a pose,
-        /// and updates <see cref="TargetFrontFootZ"/> and <see cref="State"/>.
+        /// One frame: takes where the Fencer's front foot is along the Strip (Strip-frame z), or null without a pose, and
+        /// how far the Fencer stands to the side of the center line (Strip-frame x), or null when unknown (the side
+        /// target then stays as it was), and updates <see cref="TargetFrontFootZ"/>, <see cref="TargetSideMeters"/> and
+        /// <see cref="State"/>.
         /// </summary>
         /// <exception cref="ArgumentException">Time went backwards.</exception>
-        public void Step(double nowSeconds, float? fencerFrontFootZ)
+        public void Step(double nowSeconds, float? fencerFrontFootZ, float? fencerSideMeters = null)
         {
             if (_sampleCount > 0 && nowSeconds < _sampleSeconds[_newestIndex])
             {
                 throw new ArgumentException("Time must not go backwards.", nameof(nowSeconds));
             }
 
-            if (fencerFrontFootZ.HasValue && !float.IsNaN(fencerFrontFootZ.Value) && !float.IsInfinity(fencerFrontFootZ.Value))
+            if (IsFinite(fencerFrontFootZ))
             {
-                AddSample(nowSeconds, fencerFrontFootZ.Value);
+                var side = IsFinite(fencerSideMeters) ? fencerSideMeters.Value : (_sampleCount > 0 ? _sampleSide[_newestIndex] : 0.0f);
+                AddSample(nowSeconds, fencerFrontFootZ.Value, side);
             }
 
             if (_sampleCount == 0)
@@ -172,7 +187,10 @@ namespace VrFencing.Dummy
             }
 
             var wanted = GetTargetFor(_sampleFrontFootZ[_newestIndex]);
-            if (State == DistanceKeeperState.Holding && Math.Abs(wanted - TargetFrontFootZ) > DistanceKeeperTuning.ToleranceMeters)
+            var wantedSide = GetSideTargetFor(_sampleSide[_newestIndex]);
+            var hasMoved = Math.Abs(wanted - TargetFrontFootZ) > DistanceKeeperTuning.ToleranceMeters
+                           || Math.Abs(wantedSide - TargetSideMeters) > DistanceKeeperTuning.SideToleranceMeters;
+            if (State == DistanceKeeperState.Holding && hasMoved)
             {
                 ReactionDelaySeconds = Math.Max(0.0f, Timing.DrawDelaySeconds(_random));
                 _reactionStartedAtSeconds = nowSeconds;
@@ -189,13 +207,22 @@ namespace VrFencing.Dummy
                 return;
             }
 
-            TargetFrontFootZ = GetTargetFor(GetFencerFrontFootZAt(nowSeconds - ReactionDelaySeconds));
-            if (Math.Abs(wanted - TargetFrontFootZ) <= DistanceKeeperTuning.SettledMeters)
+            var seenAt = nowSeconds - ReactionDelaySeconds;
+            TargetFrontFootZ = GetTargetFor(GetSampleAt(_sampleFrontFootZ, seenAt));
+            TargetSideMeters = GetSideTargetFor(GetSampleAt(_sampleSide, seenAt));
+            if (Math.Abs(wanted - TargetFrontFootZ) <= DistanceKeeperTuning.SettledMeters
+                && Math.Abs(wantedSide - TargetSideMeters) <= DistanceKeeperTuning.SettledMeters)
             {
-                // Caught up: hold the exact distance from where the Fencer now stands.
+                // Caught up: hold the exact distance and side from where the Fencer now stands.
                 TargetFrontFootZ = wanted;
+                TargetSideMeters = wantedSide;
                 State = DistanceKeeperState.Holding;
             }
+        }
+
+        private static bool IsFinite(float? meters)
+        {
+            return meters.HasValue && !float.IsNaN(meters.Value) && !float.IsInfinity(meters.Value);
         }
 
         private float GetTargetFor(float fencerFrontFootZ)
@@ -203,19 +230,27 @@ namespace VrFencing.Dummy
             return Limits.Clamp(fencerFrontFootZ + GapMeters);
         }
 
-        private void AddSample(double nowSeconds, float frontFootZ)
+        private static float GetSideTargetFor(float fencerSideMeters)
+        {
+            var side = fencerSideMeters * DistanceKeeperTuning.SideFollowFraction;
+            return Math.Min(Math.Max(side, -DistanceKeeperTuning.MaxSideMeters), DistanceKeeperTuning.MaxSideMeters);
+        }
+
+        private void AddSample(double nowSeconds, float frontFootZ, float sideMeters)
         {
             _newestIndex = (_newestIndex + 1) % HistoryCapacity;
             _sampleSeconds[_newestIndex] = nowSeconds;
             _sampleFrontFootZ[_newestIndex] = frontFootZ;
+            _sampleSide[_newestIndex] = sideMeters;
             _sampleCount = Math.Min(_sampleCount + 1, HistoryCapacity);
         }
 
         /// <summary>
-        /// Where the Fencer's front foot was at <paramref name="atSeconds"/>, between the two samples around it; the
-        /// oldest kept sample before them, the newest after.
+        /// Where the Fencer was at <paramref name="atSeconds"/> in one of the sample histories (<paramref name="samples"/>:
+        /// front foot along, or side across), between the two samples around it; the oldest kept sample before them, the
+        /// newest after.
         /// </summary>
-        private float GetFencerFrontFootZAt(double atSeconds)
+        private float GetSampleAt(float[] samples, double atSeconds)
         {
             var later = _newestIndex;
             for (var step = 1; step < _sampleCount; step++)
@@ -226,13 +261,13 @@ namespace VrFencing.Dummy
                     var span = _sampleSeconds[later] - _sampleSeconds[earlier];
                     var fraction = span > 0.0 ? (float)((atSeconds - _sampleSeconds[earlier]) / span) : 1.0f;
                     fraction = Math.Min(Math.Max(fraction, 0.0f), 1.0f);
-                    return _sampleFrontFootZ[earlier] + ((_sampleFrontFootZ[later] - _sampleFrontFootZ[earlier]) * fraction);
+                    return samples[earlier] + ((samples[later] - samples[earlier]) * fraction);
                 }
 
                 later = earlier;
             }
 
-            return _sampleFrontFootZ[later];
+            return samples[later];
         }
     }
 }

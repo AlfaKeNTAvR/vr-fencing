@@ -9,7 +9,10 @@ namespace VrFencing.Partner
         /// <summary>Both feet planted in en garde.</summary>
         Standing,
 
-        /// <summary>Stepping toward the opponent: the front foot first, then the back foot.</summary>
+        /// <summary>
+        /// Stepping toward the opponent: the front foot first, then the back foot. Also a step mostly across the Strip
+        /// (PER-118), which the front foot leads too; the feet's spots say which way it goes.
+        /// </summary>
         Advancing,
 
         /// <summary>Stepping away from the opponent: the back foot first, then the front foot.</summary>

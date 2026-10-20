@@ -29,7 +29,8 @@ namespace VrFencing.Drills
             }
 
             _showcase = new FootworkShowcase(_dummy.Footwork, _dummy.Layout.HeightMeters);
-            _showcase.MoveStarted += move => Debug.Log($"[Dummy] Footwork test: {move} (at {_dummy.Footwork.DistanceMeters:0.00} m).");
+            _showcase.MoveStarted += move => Debug.Log(
+                $"[Dummy] Footwork test: {move} (at {_dummy.Footwork.DistanceMeters:0.00} m, side {_dummy.Footwork.SideMeters:+0.00;-0.00} m).");
             Debug.Log($"[Dummy] Footwork test from {_dummy.Footwork.DistanceMeters:0.00} m; fleche {_dummy.Footwork.FlecheLengthMeters:0.00} m.");
         }
 

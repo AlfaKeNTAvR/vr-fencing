@@ -16,6 +16,13 @@ namespace VrFencing.Dummy
         public const float MaxStridePerHeight = 0.18f;
 
         /// <summary>
+        /// The longest single step across the Strip (PER-118): about 22 cm at 1.8 m. A sideways step is shorter than an
+        /// advance, as the en garde stance is narrow across; a diagonal is at most <see cref="MaxStridePerHeight"/> over the
+        /// floor, so it is never longer or faster than a straight step.
+        /// </summary>
+        public const float MaxSideStridePerHeight = 0.12f;
+
+        /// <summary>
         /// Closer to the target than this, the Dummy does not step: the distance keeper settles within 2 cm, and a
         /// 1 cm shuffle would only look nervous.
         /// </summary>
@@ -106,6 +113,20 @@ namespace VrFencing.Dummy
 
         /// <summary>How much of the weight shift the faster wave carries; the slow wave carries the rest.</summary>
         public const float WeightShiftFastShare = 0.35f;
+
+        /// <summary>
+        /// The hips also sway from side to side (PER-118): up to this much either way, about 7 mm at 1.8 m, on two slow
+        /// waves of their own (<see cref="SideSwaySlowSeconds"/>, <see cref="SideSwayFastSeconds"/>) with seeded phases.
+        /// Small on purpose: the sword shoulder rides on the hips, and the Armed Dummy's planned thrust does not know
+        /// about it.
+        /// </summary>
+        public const float SideSwayPerHeight = 0.004f;
+
+        /// <summary>The slower of the two side-sway waves.</summary>
+        public const float SideSwaySlowSeconds = 9.1f;
+
+        /// <summary>The faster of the two side-sway waves; it carries <see cref="WeightShiftFastShare"/> of the sway.</summary>
+        public const float SideSwayFastSeconds = 4.3f;
 
         // ---- Lunge and recovery (PER-111) ----
 

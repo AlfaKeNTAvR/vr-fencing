@@ -5,7 +5,8 @@ namespace VrFencing.Dummy
 {
     /// <summary>
     /// The small motions that make the standing Dummy look alive (PER-111): it breathes, the hips rising and settling a
-    /// little with each breath, and its weight drifts between the front and back leg. Both move the hips in the Dummy
+    /// little with each breath, its weight drifts between the front and back leg, and the hips sway a little from side to
+    /// side (PER-118). All move the hips in the Dummy
     /// frame, with the feet planted; the upper body rides on them and leans a little with the weight shift (PER-115,
     /// <see cref="DummyTorso"/>).
     ///
@@ -21,6 +22,8 @@ namespace VrFencing.Dummy
         private readonly Random _random;
         private readonly float _slowPhase;
         private readonly float _fastPhase;
+        private readonly float _sideSlowPhase;
+        private readonly float _sideFastPhase;
         private float _seconds;
         private float _breathPhase;
         private float _breathSeconds;
@@ -33,6 +36,8 @@ namespace VrFencing.Dummy
             _fastPhase = (float)random.NextDouble() * FullTurn;
             _breathPhase = (float)random.NextDouble();
             _breathSeconds = DrawBreathSeconds();
+            _sideSlowPhase = (float)random.NextDouble() * FullTurn;
+            _sideFastPhase = (float)random.NextDouble() * FullTurn;
             Advance(0.0f);
         }
 
@@ -55,9 +60,12 @@ namespace VrFencing.Dummy
             var slow = (float)Math.Sin((_seconds / FootworkTuning.WeightShiftSlowSeconds * FullTurn) + _slowPhase);
             var fast = (float)Math.Sin((_seconds / FootworkTuning.WeightShiftFastSeconds * FullTurn) + _fastPhase);
             var shift = ((1.0f - FootworkTuning.WeightShiftFastShare) * slow) + (FootworkTuning.WeightShiftFastShare * fast);
+            var sideSlow = (float)Math.Sin((_seconds / FootworkTuning.SideSwaySlowSeconds * FullTurn) + _sideSlowPhase);
+            var sideFast = (float)Math.Sin((_seconds / FootworkTuning.SideSwayFastSeconds * FullTurn) + _sideFastPhase);
+            var sway = ((1.0f - FootworkTuning.WeightShiftFastShare) * sideSlow) + (FootworkTuning.WeightShiftFastShare * sideFast);
 
             HipOffset = new Vector3(
-                0.0f,
+                FootworkTuning.SideSwayPerHeight * _heightMeters * sway,
                 FootworkTuning.BreathHipRisePerHeight * _heightMeters * breath,
                 FootworkTuning.WeightShiftPerHeight * _heightMeters * shift);
         }

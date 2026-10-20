@@ -19,12 +19,19 @@ namespace VrFencing.Dummy
 
         /// <summary>A fleche toward the Fencer.</summary>
         Fleche,
+
+        /// <summary>A side step to the Fencer's right (PER-118).</summary>
+        SideStep,
+
+        /// <summary>A diagonal advance back onto the Strip's center line (PER-118).</summary>
+        Diagonal,
     }
 
     /// <summary>
     /// The footwork feel test's script (PER-111, development builds only): drives a <see cref="DummyFootwork"/> through
     /// every move it has, over and over, so the moves can be watched on the headset. Stand, two advances, stand, retreat
-    /// home, stand, lunge and recover, stand, fleche, stand, retreat home, and again. The lunge is timed here, as long as
+    /// home, stand, lunge and recover, stand, fleche, stand, retreat home, stand, a side step, stand, a diagonal advance
+    /// back to the center line (PER-118), stand, retreat home, and again. The lunge is timed here, as long as
     /// the Armed Dummy's (<see cref="ArmedDummyAttack.GetLungeMeters"/>), on a minimum-jerk curve.
     /// </summary>
     public sealed class FootworkShowcase
@@ -54,12 +61,14 @@ namespace VrFencing.Dummy
         {
             ShowcaseMove.Stand, ShowcaseMove.Advance, ShowcaseMove.Stand, ShowcaseMove.Retreat,
             ShowcaseMove.Stand, ShowcaseMove.Lunge, ShowcaseMove.Stand, ShowcaseMove.Fleche,
-            ShowcaseMove.Stand, ShowcaseMove.Retreat,
+            ShowcaseMove.Stand, ShowcaseMove.Retreat, ShowcaseMove.Stand, ShowcaseMove.SideStep,
+            ShowcaseMove.Stand, ShowcaseMove.Diagonal, ShowcaseMove.Stand, ShowcaseMove.Retreat,
         };
 
         private readonly DummyFootwork _footwork;
         private readonly float _homeMeters;
         private readonly float _advanceMeters;
+        private readonly float _sideStepMeters;
         private readonly float _lungeMeters;
         private int _scriptIndex;
         private float _moveSeconds;
@@ -75,6 +84,7 @@ namespace VrFencing.Dummy
             _homeMeters = footwork.DistanceMeters;
             _advanceMeters = AdvanceCount * FootworkTuning.MaxStridePerHeight * heightMeters;
             _lungeMeters = ArmedDummyAttack.GetLungeMeters(heightMeters);
+            _sideStepMeters = FootworkTuning.MaxSideStridePerHeight * heightMeters;
         }
 
         /// <summary>The move under way.</summary>
@@ -117,11 +127,18 @@ namespace VrFencing.Dummy
             switch (CurrentMove)
             {
                 case ShowcaseMove.Advance:
-                    _footwork.Step(_homeMeters - _advanceMeters, deltaSeconds);
-                    return IsStandingAt(_homeMeters - _advanceMeters);
+                    _footwork.Step(_homeMeters - _advanceMeters, 0.0f, deltaSeconds);
+                    return IsStandingAt(_homeMeters - _advanceMeters, 0.0f);
                 case ShowcaseMove.Retreat:
-                    _footwork.Step(_homeMeters, deltaSeconds);
-                    return IsStandingAt(_homeMeters);
+                    _footwork.Step(_homeMeters, 0.0f, deltaSeconds);
+                    return IsStandingAt(_homeMeters, 0.0f);
+                case ShowcaseMove.SideStep:
+                    _footwork.Step(_homeMeters, _sideStepMeters, deltaSeconds);
+                    return IsStandingAt(_homeMeters, _sideStepMeters);
+                case ShowcaseMove.Diagonal:
+                    // As far forward as across: one diagonal step, within a stride.
+                    _footwork.Step(_homeMeters - _sideStepMeters, 0.0f, deltaSeconds);
+                    return IsStandingAt(_homeMeters - _sideStepMeters, 0.0f);
                 case ShowcaseMove.Lunge:
                     _footwork.StepLunge(GetLungeOffsetMeters(_moveSeconds), _lungeMeters, deltaSeconds);
                     return _moveSeconds >= LungeOutSeconds + LungeHoldSeconds + LungeBackSeconds
@@ -135,10 +152,11 @@ namespace VrFencing.Dummy
             }
         }
 
-        private bool IsStandingAt(float distanceMeters)
+        private bool IsStandingAt(float distanceMeters, float sideMeters)
         {
             return _footwork.CurrentStep == FootworkStep.Standing
-                && Math.Abs(_footwork.DistanceMeters - distanceMeters) <= FootworkTuning.MinStepMeters;
+                && Math.Abs(_footwork.DistanceMeters - distanceMeters) <= FootworkTuning.MinStepMeters
+                && Math.Abs(_footwork.SideMeters - sideMeters) <= FootworkTuning.MinStepMeters;
         }
 
         /// <summary>Out on a minimum-jerk curve, held, then back on one.</summary>

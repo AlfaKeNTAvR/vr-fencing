@@ -678,7 +678,8 @@ namespace VrFencing.Drills
         /// <summary>
         /// The Dummy's footwork feel test (PER-111, development builds only): the Dummy stands at step-lunge distance and
         /// runs through every footwork move it has, over and over (<see cref="FootworkShowcase"/>): advances, retreats, a
-        /// lunge and recovery, a fleche, and breathing and weight shift in between. Each Rep names and lights a zone, as
+        /// lunge and recovery, a fleche, a side step and a diagonal (PER-118), and breathing, weight shift and side sway
+        /// in between. Each Rep names and lights a zone, as
         /// the distance keeper's test, so a Touch on the moving Dummy can be tried too.
         /// </summary>
         public static DrillDefinition CreateFootworkTestDrill(TrainerSettings settings)

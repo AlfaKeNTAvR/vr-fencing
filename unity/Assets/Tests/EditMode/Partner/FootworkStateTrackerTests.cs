@@ -1,6 +1,7 @@
 // The sender's footwork reading (PER-112): from the hips and head at 72 Hz it keeps the feet planted in en garde through
 // sway and leans, steps the lead foot first on an advance or retreat, kicks the front foot out in a lunge with the back
-// foot planted, brings the feet back into en garde in the recovery, and says how sure it is.
+// foot planted, brings the feet back into en garde in the recovery, and says how sure it is. Side steps and diagonals
+// (PER-118) step the feet across and diagonally the same way.
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -184,9 +185,83 @@ namespace VrFencing.Tests.Partner
         [Test]
         public void WalkingAcrossTheStripIsNotSure()
         {
-            var frames = Run(1.0, time => new Pose(HipsAtStart + new Vector3(0.8f * (float)time, 0.0f, 0.0f), 0.0f));
+            var frames = Run(1.0, time => new Pose(HipsAtStart + new Vector3(1.4f * (float)time, 0.0f, 0.0f), 0.0f));
 
             Assert.That(frames[frames.Count - 1].Confidence, Is.EqualTo(RemoteFootworkTuning.SidewaysConfidence));
+        }
+
+        [TestCase(0.22f)]
+        [TestCase(-0.22f)]
+        public void ASideStepStepsTheFrontFootFirstAcrossAndEndsInEnGarde(float side)
+        {
+            var frames = Run(1.2, time => new Pose(HipsAtStart + new Vector3(side * Smooth(time - 0.1, 0.45), 0.0f, 0.0f), 0.0f));
+
+            var frontLifts = FirstFrame(frames, state => state.Front.LiftMeters > 0.0f);
+            var backLifts = FirstFrame(frames, state => state.Back.LiftMeters > 0.0f);
+            Assert.That(frontLifts, Is.GreaterThanOrEqualTo(0), "The front foot lifts.");
+            Assert.That(backLifts, Is.GreaterThan(frontLifts), "The back foot follows.");
+            for (var frame = 0; frame < backLifts; frame++)
+            {
+                Assert.That(frames[frame].Back.X, Is.EqualTo(frames[0].Back.X), $"The back foot stays planted until it lifts (frame {frame}).");
+            }
+
+            var frontLands = frontLifts + FirstFrame(frames.GetRange(frontLifts, frames.Count - frontLifts), state => state.Front.IsPlanted);
+            Assert.That(frontLands, Is.GreaterThan(frontLifts), "The front foot lands.");
+            Assert.That(Math.Abs(frames[frontLands].Front.X - frames[0].Front.X), Is.GreaterThan(0.5f * Math.Abs(side)), "The front foot stepped across, not along.");
+            Assert.That(MaxOf(frames, state => Math.Abs(state.Front.Z - frames[0].Front.Z)), Is.LessThan(0.02f));
+            foreach (var state in frames)
+            {
+                Assert.That(state.Confidence, Is.EqualTo(RemoteFootworkTuning.TrackedConfidence), "A side step is footwork, not walking.");
+            }
+
+            var last = frames[frames.Count - 1];
+            Assert.That(last.Phase, Is.EqualTo(FootworkPhase.Standing));
+            AssertInPlace(last, HipsAtStart + new Vector3(side, 0.0f, 0.0f), Hand.Right);
+        }
+
+        [TestCase(1.0f, FootworkPhase.Advancing)]
+        [TestCase(-1.0f, FootworkPhase.Retreating)]
+        public void ADiagonalStepMovesEachFootDiagonallyInOneStep(float along, FootworkPhase phase)
+        {
+            var move = new Vector3(0.15f, 0.0f, along * 0.25f);
+            var frames = Run(1.2, time => new Pose(HipsAtStart + (move * Smooth(time - 0.1, 0.45)), 0.0f));
+
+            var lead = phase == FootworkPhase.Advancing ? (Func<FootworkState, FootPlacement>)(state => state.Front) : state => state.Back;
+            var leadLifts = FirstFrame(frames, state => lead(state).LiftMeters > 0.0f);
+            Assert.That(leadLifts, Is.GreaterThanOrEqualTo(0), "The lead foot lifts.");
+            Assert.That(frames[leadLifts].Phase, Is.EqualTo(phase));
+
+            // Midway through the lead foot's swing it has gone both along and across.
+            var midSwing = FirstFrame(frames, state => lead(state).LiftMeters >= 0.9f * FootworkTuning.FootLiftPerHeight * Height);
+            Assert.That(midSwing, Is.GreaterThanOrEqualTo(0));
+            Assert.That(lead(frames[midSwing]).X - lead(frames[0]).X, Is.GreaterThan(0.02f), "Across.");
+            Assert.That((lead(frames[midSwing]).Z - lead(frames[0]).Z) * along, Is.GreaterThan(0.03f), "Along.");
+
+            AssertInPlace(frames[frames.Count - 1], HipsAtStart + move, Hand.Right);
+        }
+
+        [TestCase(0.22f, 0.0f, 0.45)]
+        [TestCase(-0.22f, 0.0f, 0.45)]
+        [TestCase(0.15f, 0.2f, 0.45)]
+        [TestCase(0.15f, -0.2f, 0.45)]
+        [TestCase(0.0f, 0.324f, 0.45)]
+        [TestCase(0.0f, -0.324f, 0.45)]
+        [TestCase(0.2f, 0.25f, 0.3)]
+        public void NoFootMovesFurtherInAFrameThanTheBladeSweeps(float across, float along, double seconds)
+        {
+            // Side steps, diagonals and full advances and retreats at a brisk pace, and a fast diagonal.
+            var move = new Vector3(across, 0.0f, along);
+            var frames = Run(1.5, time => new Pose(HipsAtStart + (move * Smooth(time - 0.1, seconds)), 0.0f));
+
+            AssertInPlace(frames[frames.Count - 1], HipsAtStart + move, Hand.Right);
+            for (var frame = 1; frame < frames.Count; frame++)
+            {
+                foreach (var (now, before) in new[] { (frames[frame].Front, frames[frame - 1].Front), (frames[frame].Back, frames[frame - 1].Back) })
+                {
+                    var jump = new Vector3(now.X - before.X, now.LiftMeters - before.LiftMeters, now.Z - before.Z).Length();
+                    Assert.That(jump, Is.LessThan(0.05f), $"Frame {frame}");
+                }
+            }
         }
 
         [Test]

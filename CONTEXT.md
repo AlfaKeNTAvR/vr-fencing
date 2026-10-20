@@ -73,7 +73,7 @@ A virtual object the Fencer aims Touches at.
 _Avoid_: goal
 
 **Dummy**:
-A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does). It stands in en garde, breathing and shifting its weight on planted feet, unless a Drill makes it keep its Dummy Distance, stepping along the Strip (advancing and retreating on planted feet) as the Fencer advances and retreats, a reaction delay late. It moves as one connected body: the torso, head and both arms ride on its hips, so they dip, breathe and lean in a lunge with them, and no limb stretches.
+A static, translucent body silhouette standing opposite the Fencer, carrying the Target Zones. In Drills it stands at the Drill's Dummy Distance; bouts start it on the Dummy's En Garde Line. It never attacks (the Armed Dummy does). It stands in en garde, breathing, shifting its weight and swaying a little on planted feet, unless a Drill makes it keep its Dummy Distance, stepping along the Strip (advancing and retreating on planted feet) as the Fencer advances and retreats, a reaction delay late, and stepping aside or diagonally to follow a little of the Fencer's move across the Strip, never far from its center line. It moves as one connected body: the torso, head and both arms ride on its hips, so they dip, breathe and lean in a lunge with them, and no limb stretches.
 _Avoid_: Opponent (reserved for a full virtual fencer), mannequin
 
 **Target Zone**:

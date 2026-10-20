@@ -24,6 +24,12 @@ namespace VrFencing.Dummy
 
         /// <summary>Running at the Fencer (PER-111): the back foot crosses over in front, then the front foot runs past it.</summary>
         Fleching,
+
+        /// <summary>
+        /// Stepping more across the Strip than along it (PER-118): the front foot first, then the back foot. A diagonal
+        /// step that goes further along the Strip than across is an advance or a retreat.
+        /// </summary>
+        SteppingSideways,
     }
 
     /// <summary>
@@ -31,8 +37,11 @@ namespace VrFencing.Dummy
     /// Strip in real footwork and gives the legs' joints every frame.
     ///
     /// Moves, and who drives them:
-    /// - Advance and retreat (<see cref="Step"/>): to a target distance, e.g. <see cref="DistanceKeeper.TargetFrontFootZ"/>,
-    ///   in steps of at most <see cref="FootworkTuning.MaxStridePerHeight"/>, each finished before the next starts.
+    /// - Advance, retreat and side step (<see cref="Step(float, float, float)"/>): to a target distance, e.g.
+    ///   <see cref="DistanceKeeper.TargetFrontFootZ"/>, and a target side, e.g. <see cref="DistanceKeeper.TargetSideMeters"/>
+    ///   (PER-118), in steps of at most <see cref="FootworkTuning.MaxStridePerHeight"/> over the floor (at most
+    ///   <see cref="FootworkTuning.MaxSideStridePerHeight"/> of it across), each finished before the next starts. A step
+    ///   with a side part is a diagonal; one mostly across is a side step (<see cref="FootworkStep.SteppingSideways"/>).
     /// - Lunge and recovery (<see cref="StepLunge"/>): the body follows a lunge offset someone else times, e.g. the Armed
     ///   Dummy's (<see cref="ArmedDummyAttack.GetLungeOffsetMeters"/>), so the attack's timing and judging stay its own.
     /// - Fleche (<see cref="StartFleche"/>, then <see cref="Step"/>): a self-timed run of two crossing strides that
@@ -41,7 +50,9 @@ namespace VrFencing.Dummy
     ///
     /// Outputs: <see cref="DistanceMeters"/>, where the body is (what <see cref="DummyLayout.DummyToStrip"/> places the
     /// Dummy frame at: the spot under the body where its front foot stands in en garde), and <see cref="Legs"/>, the leg
-    /// joints in the Dummy frame.
+    /// joints in the Dummy frame. The body's place across the Strip, <see cref="SideMeters"/> (PER-118), is carried in
+    /// the legs, not the frame: the hips and planted feet stand that far to the side in the Dummy frame and the upper body
+    /// rides on the hips, so whatever places the Dummy frame (the Target Zones on the Strip, the Blade) is unchanged.
     ///
     /// Rules:
     /// - The body and every swinging foot move on minimum-jerk curves (Flash and Hogan 1985): no jolt at either end.
@@ -75,9 +86,11 @@ namespace VrFencing.Dummy
         private FootState _backFoot;
         private Vector3 _moveHipOffset;
 
-        // Advance and retreat.
+        // Advance, retreat and side step.
         private float _stepFrom;
         private float _stepTo;
+        private float _stepFromSide;
+        private float _stepToSide;
         private float _stepSeconds;
         private float _elapsedSeconds;
         private float _stepLiftMeters;
@@ -122,12 +135,18 @@ namespace VrFencing.Dummy
         /// <summary>Where the body is on the Strip: the Dummy frame's distance (see the class summary).</summary>
         public float DistanceMeters { get; private set; }
 
+        /// <summary>
+        /// How far the body stands to the side of the Strip's center line (PER-118): Strip-frame x, + the Fencer's right.
+        /// 0 is en garde on the center line, where <see cref="PlaceAt"/> stands it.
+        /// </summary>
+        public float SideMeters { get; private set; }
+
         /// <summary>The leg joints in the Dummy frame, mirrored for a left-handed Dummy.</summary>
         public DummyLegs Legs { get; private set; }
 
         public FootworkStep CurrentStep { get; private set; } = FootworkStep.Standing;
 
-        /// <summary>How many advances and retreats have started since the Dummy was made.</summary>
+        /// <summary>How many advances, retreats and side steps have started since the Dummy was made.</summary>
         public int StepCount { get; private set; }
 
         /// <summary>Whether the front foot is on the floor, pinned to its spot.</summary>
@@ -141,27 +160,41 @@ namespace VrFencing.Dummy
             (_front.Rest.Ankle.Z - _back.Rest.Ankle.Z) + (FootworkTuning.FlecheCrossAheadPerHeight * _heightMeters);
 
         /// <summary>
-        /// Stands the Dummy in en garde at <paramref name="distanceMeters"/> at once, ending any move: for a Drill that
-        /// places the Dummy, not for footwork.
+        /// Stands the Dummy in en garde at <paramref name="distanceMeters"/> on the Strip's center line at once, ending
+        /// any move: for a Drill that places the Dummy, not for footwork.
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">The distance is not a finite number.</exception>
         public void PlaceAt(float distanceMeters)
         {
             RequireFinite(distanceMeters, nameof(distanceMeters));
             DistanceMeters = distanceMeters;
+            SideMeters = 0.0f;
             CurrentStep = FootworkStep.Standing;
             Stand();
         }
 
         /// <summary>
-        /// One frame: moves toward <paramref name="targetDistanceMeters"/> for <paramref name="deltaSeconds"/> in advances
-        /// and retreats, or carries on a fleche, and updates <see cref="DistanceMeters"/>, <see cref="Legs"/> and
-        /// <see cref="CurrentStep"/>. A lunge is driven by <see cref="StepLunge"/> only: here it holds where it is.
+        /// One frame toward <paramref name="targetDistanceMeters"/> along the Strip, keeping the body's side
+        /// (<see cref="SideMeters"/>): see <see cref="Step(float, float, float)"/>.
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">The target is not a finite number.</exception>
         public void Step(float targetDistanceMeters, float deltaSeconds)
         {
+            Step(targetDistanceMeters, SideMeters, deltaSeconds);
+        }
+
+        /// <summary>
+        /// One frame: moves toward <paramref name="targetDistanceMeters"/> along the Strip and
+        /// <paramref name="targetSideMeters"/> across it (Strip-frame x, see <see cref="SideMeters"/>) for
+        /// <paramref name="deltaSeconds"/> in advances, retreats and side steps (diagonal when both change), or carries on
+        /// a fleche, and updates <see cref="DistanceMeters"/>, <see cref="SideMeters"/>, <see cref="Legs"/> and
+        /// <see cref="CurrentStep"/>. A lunge is driven by <see cref="StepLunge"/> only: here it holds where it is.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">A target is not a finite number.</exception>
+        public void Step(float targetDistanceMeters, float targetSideMeters, float deltaSeconds)
+        {
             RequireFinite(targetDistanceMeters, nameof(targetDistanceMeters));
+            RequireFinite(targetSideMeters, nameof(targetSideMeters));
             if (!(deltaSeconds > 0.0f))
             {
                 return;
@@ -172,16 +205,18 @@ namespace VrFencing.Dummy
             {
                 case FootworkStep.Standing:
                     var wanted = targetDistanceMeters - DistanceMeters;
-                    if (Math.Abs(wanted) <= FootworkTuning.MinStepMeters)
+                    var wantedSide = targetSideMeters - SideMeters;
+                    if (Math.Abs(wanted) <= FootworkTuning.MinStepMeters && Math.Abs(wantedSide) <= FootworkTuning.MinStepMeters)
                     {
                         break;
                     }
 
-                    StartStep(wanted);
+                    StartStep(wanted, wantedSide);
                     ContinueStep(deltaSeconds);
                     break;
                 case FootworkStep.Advancing:
                 case FootworkStep.Retreating:
+                case FootworkStep.SteppingSideways:
                     ContinueStep(deltaSeconds);
                     break;
                 case FootworkStep.Fleching:
@@ -223,6 +258,7 @@ namespace VrFencing.Dummy
             {
                 case FootworkStep.Advancing:
                 case FootworkStep.Retreating:
+                case FootworkStep.SteppingSideways:
                     ContinueStep(deltaSeconds);
                     break;
                 case FootworkStep.Fleching:
@@ -318,8 +354,8 @@ namespace VrFencing.Dummy
         /// <summary>Both feet planted under the body in en garde, hips at rest (the life layer still applies).</summary>
         private void Stand()
         {
-            _frontFoot = FootState.PlantedAt(DistanceMeters);
-            _backFoot = FootState.PlantedAt(DistanceMeters);
+            _frontFoot = FootState.PlantedAt(DistanceMeters, SideMeters);
+            _backFoot = FootState.PlantedAt(DistanceMeters, SideMeters);
             _moveHipOffset = Vector3.Zero;
             IsFrontFootPlanted = true;
             IsBackFootPlanted = true;
@@ -328,14 +364,29 @@ namespace VrFencing.Dummy
 
         private void ComposeLegs()
         {
-            var hip = _moveHipOffset + (_life?.HipOffset ?? Vector3.Zero);
-            Legs = new DummyLegs(PoseFoot(_front, _frontFoot, hip), PoseFoot(_back, _backFoot, hip));
+            Legs = new DummyLegs(PoseFoot(_front, _frontFoot, GetHipOffset()), PoseFoot(_back, _backFoot, GetHipOffset()));
+        }
+
+        /// <summary>Where the hips are from en garde on the center line (right-handed): the move, the life layer and the side.</summary>
+        private Vector3 GetHipOffset()
+        {
+            return _moveHipOffset + (_life?.HipOffset ?? Vector3.Zero) + new Vector3(ToRightHandedX(SideMeters), 0.0f, 0.0f);
         }
 
         private LegPose PoseFoot(LegRig leg, FootState foot, Vector3 hipOffset)
         {
-            var ankleOffset = new Vector3(foot.SideMeters, foot.LiftMeters, DistanceMeters - foot.Anchor);
+            var ankleOffset = new Vector3(foot.SwingOutMeters + ToRightHandedX(foot.SideAnchor), foot.LiftMeters, DistanceMeters - foot.Anchor);
             return leg.Pose(hipOffset, ankleOffset, foot.PitchRadians).ScaledForHand(1.0f, _hand);
+        }
+
+        /// <summary>
+        /// The right-handed Dummy-frame x of Strip-frame x <paramref name="stripX"/>, before the legs are mirrored for the
+        /// hand: the Dummy faces the Fencer, so its x runs the other way (<see cref="DummyLayout.DummyToStrip"/>), and a
+        /// left-handed Dummy's mirroring turns it back.
+        /// </summary>
+        private float ToRightHandedX(float stripX)
+        {
+            return _hand == Hand.Left ? stripX : -stripX;
         }
 
         /// <summary>Evenly between -1 and 1.</summary>
@@ -344,17 +395,31 @@ namespace VrFencing.Dummy
             return ((float)_random.NextDouble() * 2.0f) - 1.0f;
         }
 
-        // ---- Advance and retreat ----
+        // ---- Advance, retreat and side step ----
 
-        private void StartStep(float wantedMeters)
+        private void StartStep(float wantedMeters, float wantedSideMeters)
         {
+            // Across at most a side stride, and over the floor at most a stride: a diagonal is no longer or faster than a
+            // straight step.
             var maxStride = FootworkTuning.MaxStridePerHeight * _heightMeters;
+            var maxSideStride = FootworkTuning.MaxSideStridePerHeight * _heightMeters;
             var stride = Math.Min(Math.Max(wantedMeters, -maxStride), maxStride);
-            var strideFraction = Math.Abs(stride) / maxStride;
+            var sideStride = Math.Min(Math.Max(wantedSideMeters, -maxSideStride), maxSideStride);
+            var length = (float)Math.Sqrt((stride * stride) + (sideStride * sideStride));
+            if (length > maxStride)
+            {
+                stride *= maxStride / length;
+                sideStride *= maxStride / length;
+                length = maxStride;
+            }
+
+            var strideFraction = length / maxStride;
             var nominalSeconds = FootworkTuning.ShortStepSeconds + ((FootworkTuning.FullStepSeconds - FootworkTuning.ShortStepSeconds) * strideFraction);
 
             _stepFrom = DistanceMeters;
             _stepTo = DistanceMeters + stride;
+            _stepFromSide = SideMeters;
+            _stepToSide = SideMeters + sideStride;
             _stepSeconds = nominalSeconds * (1.0f + (DrawVariation() * FootworkTuning.DurationVariationFraction));
             _stepLiftMeters = FootworkTuning.FootLiftPerHeight * _heightMeters * (1.0f + (DrawVariation() * FootworkTuning.LiftVariationFraction));
             _stepPitchScale = 1.0f + (DrawVariation() * FootworkTuning.PitchVariationFraction);
@@ -365,7 +430,9 @@ namespace VrFencing.Dummy
             _elapsedSeconds = 0.0f;
 
             // The Dummy faces the Fencer: a smaller distance is toward them, an advance.
-            CurrentStep = stride < 0.0f ? FootworkStep.Advancing : FootworkStep.Retreating;
+            CurrentStep = Math.Abs(sideStride) > Math.Abs(stride)
+                ? FootworkStep.SteppingSideways
+                : stride < 0.0f ? FootworkStep.Advancing : FootworkStep.Retreating;
             StepCount++;
         }
 
@@ -374,9 +441,12 @@ namespace VrFencing.Dummy
             _elapsedSeconds += deltaSeconds;
             var progress = Math.Min(1.0f, _elapsedSeconds / _stepSeconds);
             DistanceMeters = _stepFrom + ((_stepTo - _stepFrom) * MinimumJerk(progress));
+            SideMeters = _stepFromSide + ((_stepToSide - _stepFromSide) * MinimumJerk(progress));
             _moveHipOffset = new Vector3(0.0f, -_stepHipDipMeters * SwingBump(progress), 0.0f);
 
-            var isAdvance = CurrentStep == FootworkStep.Advancing;
+            // The front foot leads an advance and a side step (it opens the way and the back foot closes the stance), the
+            // back foot a retreat.
+            var isAdvance = CurrentStep != FootworkStep.Retreating;
             var frontPitch = FootworkTuning.FrontFootToeUpDegrees * DegreesToRadians * _stepPitchScale;
             var backPitch = -FootworkTuning.BackFootHeelUpDegrees * DegreesToRadians * _stepPitchScale;
             _frontFoot = GetStepSwing(progress, isLeadFoot: isAdvance, frontPitch);
@@ -387,6 +457,7 @@ namespace VrFencing.Dummy
             if (progress >= 1.0f)
             {
                 DistanceMeters = _stepTo;
+                SideMeters = _stepToSide;
                 CurrentStep = FootworkStep.Standing;
                 Stand();
             }
@@ -397,8 +468,10 @@ namespace VrFencing.Dummy
             var (start, end) = GetStepSwingWindow(isLeadFoot);
             var swing = (stepProgress - start) / (end - start);
             var shape = SwingBump(swing);
-            var anchor = _stepFrom + ((_stepTo - _stepFrom) * MinimumJerk(swing));
-            return new FootState(anchor, _stepLiftMeters * shape, 0.0f, pitchRadians * shape);
+            var travelled = MinimumJerk(swing);
+            var anchor = _stepFrom + ((_stepTo - _stepFrom) * travelled);
+            var sideAnchor = _stepFromSide + ((_stepToSide - _stepFromSide) * travelled);
+            return new FootState(anchor, sideAnchor, _stepLiftMeters * shape, 0.0f, pitchRadians * shape);
         }
 
         private bool IsInStepSwing(float stepProgress, bool isLeadFoot)
@@ -460,18 +533,19 @@ namespace VrFencing.Dummy
             var frontTravel = offsetMeters + (FootworkTuning.LungeFrontFootLeadPerHeight * _heightMeters * shape);
             _frontFoot = new FootState(
                 _lungeStart - frontTravel,
+                SideMeters,
                 FootworkTuning.LungeFootLiftPerHeight * _heightMeters * shape,
                 0.0f,
                 FootworkTuning.LungeFrontFootToeUpDegrees * DegreesToRadians * shape);
 
             // The back ankle may be no further behind the hip than the leg reaches along the floor.
-            var hip = _moveHipOffset + (_life?.HipOffset ?? Vector3.Zero);
-            var reach = _back.GetFloorReachMeters(hip, FootworkTuning.LungeBackLegReachFraction, 0.0f);
+            var hip = GetHipOffset();
+            var reach = _back.GetFloorReachMeters(hip, FootworkTuning.LungeBackLegReachFraction, ToRightHandedX(SideMeters));
             var lowestAnkleOffset = (_back.Rest.Hip.Z + hip.Z - reach) - _back.Rest.Ankle.Z;
             var neededDrag = Math.Max(0.0f, offsetMeters + lowestAnkleOffset);
             var isDragging = neededDrag > _backDragMeters;
             _backDragMeters = Math.Max(_backDragMeters, neededDrag);
-            _backFoot = FootState.PlantedAt(_lungeStart - _backDragMeters);
+            _backFoot = FootState.PlantedAt(_lungeStart - _backDragMeters, SideMeters);
 
             IsFrontFootPlanted = shape <= 0.0f;
             IsBackFootPlanted = !isDragging;
@@ -498,11 +572,12 @@ namespace VrFencing.Dummy
             var footRemaining = 1.0f - footBack;
             _frontFoot = new FootState(
                 _lungeStart - (_frontTravelAtPeak * footRemaining),
+                SideMeters,
                 (_frontFootAtPeak.LiftMeters * remaining) + (FootworkTuning.RecoveryFootLiftPerHeight * _heightMeters * shape * reachedFraction),
                 0.0f,
                 (_frontFootAtPeak.PitchRadians * remaining) + (FootworkTuning.RecoveryFrontFootToeUpDegrees * DegreesToRadians * shape));
             var backLift = _backDragAtPeak > 0.0f ? FootworkTuning.RecoveryBackFootLiftPerHeight * _heightMeters * shape : 0.0f;
-            _backFoot = new FootState(_lungeStart - (_backDragAtPeak * footRemaining), backLift, 0.0f, 0.0f);
+            _backFoot = new FootState(_lungeStart - (_backDragAtPeak * footRemaining), SideMeters, backLift, 0.0f, 0.0f);
 
             IsFrontFootPlanted = false;
             IsBackFootPlanted = _backDragAtPeak <= 0.0f;
@@ -540,6 +615,7 @@ namespace VrFencing.Dummy
             var shape = SwingBump(swing);
             return new FootState(
                 _flecheFrom - (lengthMeters * MinimumJerk(swing)),
+                SideMeters,
                 FootworkTuning.FlecheFootLiftPerHeight * _heightMeters * shape,
                 sideSign * FootworkTuning.FlecheFootSidestepPerHeight * _heightMeters * shape,
                 pitchRadians * shape);
@@ -553,32 +629,39 @@ namespace VrFencing.Dummy
             }
         }
 
-        /// <summary>Where one foot is, right-handed: its spot on the Strip, how high and how far sideways it is, its pitch.</summary>
+        /// <summary>
+        /// Where one foot is: its spot along and across the Strip, how high it is and how far it swings out sideways
+        /// (right-handed), its pitch.
+        /// </summary>
         private readonly struct FootState
         {
-            public FootState(float anchor, float liftMeters, float sideMeters, float pitchRadians)
+            public FootState(float anchor, float sideAnchor, float liftMeters, float swingOutMeters, float pitchRadians)
             {
                 Anchor = anchor;
+                SideAnchor = sideAnchor;
                 LiftMeters = liftMeters;
-                SideMeters = sideMeters;
+                SwingOutMeters = swingOutMeters;
                 PitchRadians = pitchRadians;
             }
 
-            /// <summary>The foot's spot on the Strip, as the body distance at which that spot is the foot's en garde place.</summary>
+            /// <summary>The foot's spot along the Strip, as the body distance at which that spot is the foot's en garde place.</summary>
             public float Anchor { get; }
+
+            /// <summary>The foot's spot across the Strip, as the body side (<see cref="DummyFootwork.SideMeters"/>) at which that spot is the foot's en garde place.</summary>
+            public float SideAnchor { get; }
 
             /// <summary>How high the foot is off the floor.</summary>
             public float LiftMeters { get; }
 
-            /// <summary>How far the foot is to the Dummy's right of its en garde place (right-handed).</summary>
-            public float SideMeters { get; }
+            /// <summary>How far the foot swings out to the Dummy's right of its spot (right-handed): a fleche's foot passing the other.</summary>
+            public float SwingOutMeters { get; }
 
             /// <summary>The foot's pitch: positive lifts the toe.</summary>
             public float PitchRadians { get; }
 
-            public static FootState PlantedAt(float anchor)
+            public static FootState PlantedAt(float anchor, float sideAnchor)
             {
-                return new FootState(anchor, 0.0f, 0.0f, 0.0f);
+                return new FootState(anchor, sideAnchor, 0.0f, 0.0f, 0.0f);
             }
         }
     }
