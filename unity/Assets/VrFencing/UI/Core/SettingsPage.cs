@@ -42,6 +42,7 @@ namespace VrFencing.UI
         ZoneThickness,
         BodyOpacity,
         ParryRule,
+        DoubleWindow,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -64,6 +65,9 @@ namespace VrFencing.UI
 
         /// <summary>Redraw the Dummy's body and Target Zones with the new look (PER-102), without rebuilding it.</summary>
         DummyLook = 16,
+
+        /// <summary>Hand the bout (PER-82) its rules: the Touch pressure and the double window, sent to the Partner when hosting.</summary>
+        Bout = 32,
     }
 
     /// <summary>
@@ -120,6 +124,9 @@ namespace VrFencing.UI
                 settings => settings.DummyLook.ZoneThicknessFraction, (settings, value) => settings.DummyLook.ZoneThicknessFraction = value),
             [SettingId.BodyOpacity] = new NumberSetting(0.1f, 1.0f, 0.1f, "0%", string.Empty,
                 settings => settings.DummyLook.BodyOpacity, (settings, value) => settings.DummyLook.BodyOpacity = value),
+            // The bout's double window when hosting (PER-56): the rule's 50 ms up to 150 ms.
+            [SettingId.DoubleWindow] = new NumberSetting(0.05f, 0.15f, 0.025f, "0", "ms",
+                settings => settings.BoutDoubleWindowSeconds, (settings, value) => settings.BoutDoubleWindowSeconds = value, displayScale: 1000.0f),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -159,6 +166,7 @@ namespace VrFencing.UI
                 case SettingId.ZoneThickness: return "Zone thickness (of scoring)";
                 case SettingId.BodyOpacity: return "Dummy body opacity";
                 case SettingId.ParryRule: return "Parry rule";
+                case SettingId.DoubleWindow: return "Bout double window (host)";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -217,8 +225,12 @@ namespace VrFencing.UI
                 case SettingId.BladeMount:
                     // Each grip keeps its own measured reach, which sets the Dummy's distance (PER-92).
                     return SettingImpact.Blade | SettingImpact.Dummy;
-                case SettingId.TouchRule:
                 case SettingId.TouchPressure:
+                    // The Host's Touch pressure is the bout's rule for both Fencers (PER-56).
+                    return SettingImpact.Blade | SettingImpact.Bout;
+                case SettingId.DoubleWindow:
+                    return SettingImpact.Bout;
+                case SettingId.TouchRule:
                 case SettingId.ParryRule:
                 case SettingId.BladeFlex:
                 case SettingId.BladePitch:

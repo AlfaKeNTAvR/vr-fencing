@@ -17,6 +17,7 @@ namespace VrFencing.Tests.Settings
                 RestBetweenRepsSeconds = 3.0f,
                 ShrinkDrillsToFit = true,
                 LightNamedZones = false,
+                BoutDoubleWindowSeconds = 0.125f,
             };
             settings.TimeWindows.ReactionSeconds = 1.1f;
             settings.TimeWindows.CompoundSecondTouchSeconds = 1.2f;

@@ -48,6 +48,12 @@ namespace VrFencing.Settings
         /// <summary>How the Dummy's body and Target Zones are drawn (PER-102). Never changes how Touches are judged.</summary>
         public DummyLookSettings DummyLook { get; set; } = new DummyLookSettings();
 
+        /// <summary>
+        /// A Bout's double window when this Fencer hosts (PER-56): two Touches this close count as a double. 50 ms is the
+        /// rule's; up to 150 ms for beginners or a bad connection. The Partner's own value is not used in a bout.
+        /// </summary>
+        public float BoutDoubleWindowSeconds { get; set; } = 0.05f;
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -75,6 +81,7 @@ namespace VrFencing.Settings
                 Blade = Blade.Clone(),
                 LaserTiltDegrees = LaserTiltDegrees,
                 DummyLook = DummyLook.Clone(),
+                BoutDoubleWindowSeconds = BoutDoubleWindowSeconds,
             };
         }
     }

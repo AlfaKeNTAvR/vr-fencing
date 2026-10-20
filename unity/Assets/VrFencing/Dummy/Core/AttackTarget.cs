@@ -18,7 +18,7 @@ namespace VrFencing.Dummy
     /// Garde Line in the Dummy's own stance and size (the Dummy is the Fencer's height and hand), so chest and thigh
     /// are the fronts of the Dummy's body and thigh zones as seen from the Strip frame; hand and forearm follow the
     /// Fencer's live blade, behind its guard. On the headset, chest and thigh aim at the
-    /// Fencer's tracked body instead when it is known (the Blade's <c>FencerTarget</c>, PER-98).
+    /// Fencer's tracked body instead when it is known (the Partner Core's <c>FencerTarget</c>, next to the tracked body, PER-98).
     /// </summary>
     public static class AttackAim
     {
@@ -114,7 +114,7 @@ namespace VrFencing.Dummy
         /// <summary>
         /// The Fencer's body that a thrust must be turned off for a Parry (PER-97), in the Strip frame, by the stand-in
         /// alone (<see cref="GetFencerStanceOnStrip"/>), plus the sword arm (<see cref="GetFencerSwordArm"/>), left out
-        /// while the blade is unknown. On the headset the Blade's <c>FencerTarget</c> judges against the tracked body
+        /// while the blade is unknown. On the headset the Partner Core's <c>FencerTarget</c>, next to the tracked body judges against the tracked body
         /// instead, or this stand-in moved under the headset (PER-98).
         /// </summary>
         /// <exception cref="ArgumentNullException"><paramref name="layout"/> is null.</exception>

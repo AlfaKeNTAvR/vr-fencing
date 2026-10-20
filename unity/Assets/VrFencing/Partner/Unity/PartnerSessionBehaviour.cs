@@ -74,6 +74,9 @@ namespace VrFencing.Partner
             // The partner's body and blade streams and their drawing (PER-81); the window gives the view its body model.
             partnerObject.AddComponent<OpponentLinkBehaviour>();
             partnerObject.AddComponent<OpponentViewBehaviour>();
+
+            // The judge and the scoring box (PER-82).
+            partnerObject.AddComponent<BoutBehaviour>();
             partnerObject.SetActive(true);
             return partner;
         }

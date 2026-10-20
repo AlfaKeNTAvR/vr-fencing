@@ -211,6 +211,7 @@ GameObject:
   - component: {fileID: 198969984}
   - component: {fileID: 198969989}
   - component: {fileID: 198969988}
+  - component: {fileID: 198969990}
   m_Layer: 0
   m_Name: Partner
   m_TagString: Untagged
@@ -345,6 +346,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f0cd2f9cee7c5e4a802f3508cb31a65, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &198969990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 198969983}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3d87f4763a0a1ca4d90a736cfad402c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _blade: {fileID: 1425862505}
+  _strip: {fileID: 24875195}
 --- !u!1 &414892823
 GameObject:
   m_ObjectHideFlags: 0

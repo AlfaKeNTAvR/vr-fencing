@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Partner;
 using VrFencing.Settings;
 using VrFencing.Strip;
 using Random = System.Random;
@@ -280,7 +281,7 @@ namespace VrFencing.Blade
             _attack.ReportLanded(nowSeconds);
             _hasReportedLanding = true;
             _hitFlash.Show();
-            _haptics?.PlayFencerHit(_settings.Hand);
+            _haptics?.PlayBeingTouched();
             var landed = hit.Value;
             Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried.");
             _runner.ReportAttackLanded(landed);

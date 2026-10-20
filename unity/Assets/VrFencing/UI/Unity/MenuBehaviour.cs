@@ -766,6 +766,12 @@ namespace VrFencing.UI
                 _blade.ApplySettings(changed);
             }
 
+            // The bout judges with this Fencer's Touch rule and, as Host, its pressure and double window (PER-82).
+            if ((impact & (SettingImpact.Bout | SettingImpact.Blade)) != 0 && _partner != null && _partner.TryGetComponent<BoutBehaviour>(out var bout))
+            {
+                bout.ApplySettings(changed);
+            }
+
             _isDirty = true;
         }
 

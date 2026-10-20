@@ -17,7 +17,7 @@ namespace VrFencing.Blade
         private ClipPlayer _playing;
         private ClipPlayer _pressPlayer;
         private ClipPlayer _clashPlayer;
-        private ClipPlayer _fencerHitPlayer;
+        private ClipPlayer _beingTouchedPlayer;
         private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
@@ -93,10 +93,10 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// The buzz when the Armed Dummy's point lands on the Fencer (<see cref="BladeHaptics.FencerHitBuzz"/>, PER-98), at
-        /// full strength; it replaces whatever is playing.
+        /// The being-touched buzz (<see cref="BladeHaptics.BeingTouched"/>, PER-82) on both controllers at full strength;
+        /// it replaces whatever is playing.
         /// </summary>
-        public void PlayFencerHit(Hand swordHand)
+        public void PlayBeingTouched()
         {
             if (_hasFailed)
             {
@@ -105,9 +105,12 @@ namespace VrFencing.Blade
 
             try
             {
-                _fencerHitPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.FencerHitBuzz), BladeHaptics.FencerHitBuzz);
-                StartPlaying(_fencerHitPlayer, 1.0f, swordHand);
-                _eventEndsAt = Time.time + _fencerHitPlayer.DurationSeconds;
+                _beingTouchedPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.BeingTouched), BladeHaptics.BeingTouched);
+                _playing?.Player.Stop();
+                _beingTouchedPlayer.Player.amplitude = 1.0f;
+                _beingTouchedPlayer.Player.Play(Controller.Both);
+                _playing = _beingTouchedPlayer;
+                _eventEndsAt = Time.time + _beingTouchedPlayer.DurationSeconds;
             }
             catch (Exception error)
             {
@@ -142,8 +145,8 @@ namespace VrFencing.Blade
             _pressPlayer = null;
             _clashPlayer?.Dispose();
             _clashPlayer = null;
-            _fencerHitPlayer?.Dispose();
-            _fencerHitPlayer = null;
+            _beingTouchedPlayer?.Dispose();
+            _beingTouchedPlayer = null;
             _playing = null;
         }
 

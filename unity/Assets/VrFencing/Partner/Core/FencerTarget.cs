@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using VrFencing.Dummy;
-using VrFencing.Partner;
+using VrFencing.Blade;
 using VrFencing.Session;
 using VrFencing.Settings;
 
-namespace VrFencing.Blade
+namespace VrFencing.Partner
 {
     /// <summary>
     /// The Fencer's body as the Armed Dummy attacks it (PER-23 resolution, PER-98), rebuilt each frame from tracking:

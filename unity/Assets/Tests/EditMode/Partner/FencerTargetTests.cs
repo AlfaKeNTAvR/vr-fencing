@@ -10,9 +10,8 @@ using VrFencing.Dummy;
 using VrFencing.Partner;
 using VrFencing.Session;
 using VrFencing.Settings;
-using VrFencing.Tests.Partner;
 
-namespace VrFencing.Tests.Blade
+namespace VrFencing.Tests.Partner
 {
     public class FencerTargetTests
     {

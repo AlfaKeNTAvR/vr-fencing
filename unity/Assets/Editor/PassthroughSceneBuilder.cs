@@ -290,7 +290,7 @@ namespace VrFencing.EditorTools
         /// The Partner object (PER-80): Netcode for GameObjects' NetworkManager with its UnityTransport (the Relay
         /// connection), and the session that hosts or joins a second Fencer by join code. The Menu's Partner page drives it.
         /// While connected, the opponent link streams both Fencers' body and blade and the opponent view draws the partner
-        /// (PER-81) with the Dummy's body model.
+        /// (PER-81) with the Dummy's body model. The bout judges Touches between them and shows the scoring box (PER-82).
         /// </summary>
         private static PartnerSessionBehaviour FindOrCreatePartner(Scene scene, StripBehaviour strip, BladeBehaviour blade)
         {
@@ -316,6 +316,11 @@ namespace VrFencing.EditorTools
             SetReference(view, "_strip", strip);
             SetReference(view, "_myBlade", blade);
             SetReference(view, "_bodyModel", LoadBodyModel());
+
+            // The judge, the Touch claims and the scoring box (PER-82).
+            var bout = GetOrAddComponent<BoutBehaviour>(partnerObject);
+            SetReference(bout, "_blade", blade);
+            SetReference(bout, "_strip", strip);
             return partner;
         }
 
