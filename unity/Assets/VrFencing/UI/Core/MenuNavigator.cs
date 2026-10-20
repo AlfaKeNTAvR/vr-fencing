@@ -127,6 +127,16 @@ namespace VrFencing.UI
             }
         }
 
+        /// <summary>
+        /// The run was auto-paused because the Fencer went away (PER-106): the panels open, so the Running panel and its
+        /// Resume button are on view when the Fencer is back. Like a finished Drill, this does not change the remembered
+        /// folded state; the Menu button folds them again.
+        /// </summary>
+        public void OnDrillAutoPaused()
+        {
+            IsCollapsed = false;
+        }
+
         /// <param name="isAskingForNewStrip">The Strip waits for an answer to "New Strip here?" (<see cref="MenuScreen.NewStripPrompt"/>).</param>
         public MenuScreen GetVisibleScreen(bool isPlacingStrip, bool isDrillRunning, bool isAskingForNewStrip = false)
         {
