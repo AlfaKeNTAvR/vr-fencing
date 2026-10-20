@@ -123,7 +123,7 @@ The menu page next to Drills that connects two Fencers: Host, Join (the keypad),
 _Avoid_: Lobby, multiplayer menu
 
 **Opponent**:
-The Partner as shown in this Fencer's room: the Dummy's rigged body driven by the Partner's tracked body, holding a blade drawn from the Partner's hand and grip settings, standing on the far side of the shared Strip.
+The Partner as shown in this Fencer's room: the Dummy's rigged body driven by the Partner's tracked body (its legs built on the Partner's own footwork, not guessed), holding a blade drawn from the Partner's hand and grip settings, standing on the far side of the shared Strip.
 _Avoid_: Avatar, remote player, enemy
 
 **Bout**:

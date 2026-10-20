@@ -9,7 +9,7 @@ namespace VrFencing.Dummy
     /// direction, and how it is posed for hips that moved and a foot that is moved, lifted and pitched. The knee comes
     /// from <see cref="TwoBoneIk"/>, bending where it bends in en garde, so the rest pose solves back to itself.
     /// </summary>
-    internal sealed class LegRig
+    public sealed class LegRig
     {
         private readonly Vector3 _kneeDirection;
         private readonly Vector3 _pitchAxis;

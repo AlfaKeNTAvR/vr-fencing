@@ -220,21 +220,18 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
-        public void TheLegsAlwaysFadeAndTheTorsoAndArmsShow()
+        public void ABodyThatComesShowsWholeLegsIncludedAtAnyFidelity()
         {
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Torso, BodyTrackingFidelity.Low, false), Is.EqualTo(1.0f));
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Arms, BodyTrackingFidelity.Low, false), Is.EqualTo(1.0f));
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Legs, BodyTrackingFidelity.High, false), Is.EqualTo(OpponentFade.GeneratedLegsFactor));
-            Assert.That(
-                OpponentFade.GetTargetFactor(OpponentBodyPart.Legs, BodyTrackingFidelity.Low, false),
-                Is.LessThan(OpponentFade.GetTargetFactor(OpponentBodyPart.Legs, BodyTrackingFidelity.High, false)));
+            // The legs are built on the partner's footwork (PER-112), so they no longer fade as generated legs did.
+            Assert.That(OpponentFade.GetTargetFactor(BodyTrackingFidelity.High, false), Is.EqualTo(1.0f));
+            Assert.That(OpponentFade.GetTargetFactor(BodyTrackingFidelity.Low, false), Is.EqualTo(1.0f));
         }
 
         [Test]
         public void ALostBodyIsAGhost()
         {
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Torso, null, false), Is.EqualTo(OpponentFade.LostBodyFactor));
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Arms, BodyTrackingFidelity.High, true), Is.EqualTo(OpponentFade.LostBodyFactor));
+            Assert.That(OpponentFade.GetTargetFactor(null, false), Is.EqualTo(OpponentFade.LostBodyFactor));
+            Assert.That(OpponentFade.GetTargetFactor(BodyTrackingFidelity.High, true), Is.EqualTo(OpponentFade.LostBodyFactor));
         }
 
         [Test]

@@ -42,13 +42,15 @@ namespace VrFencing.Partner
     /// Strip, height and hand, and their hand and body samples (in their own Strip frame), and says what to draw each
     /// frame in this Fencer's Strip frame through the bout Strip's 180-degree turn. The body's sword hand is lined up with
     /// the blade's hand, which is drawn later in the partner's time (it is predicted, the body is not), so the drawn hand
-    /// stays on the drawn hilt. The Unity layer only moves bytes and draws.
+    /// stays on the drawn hilt. The body's legs are built on the partner's footwork (<see cref="RemoteFencerLegs"/>,
+    /// PER-112) instead of their generated ones. The Unity layer only moves bytes and draws.
     /// </summary>
     public sealed class OpponentLink
     {
         private readonly RemoteClock _clock = new RemoteClock();
         private readonly HandStream _hand = new HandStream();
         private readonly BodyStream _body = new BodyStream();
+        private readonly RemoteFencerLegs _legs = new RemoteFencerLegs();
         private StripExtent _myStrip = StripExtent.Unplaced;
         private FencerInfo? _partner;
         private double? _lastArrivalSeconds;
@@ -121,6 +123,7 @@ namespace VrFencing.Partner
             _clock.Reset();
             _hand.Clear();
             _body.Clear();
+            _legs.Reset();
             _partner = null;
             _lastArrivalSeconds = null;
         }
@@ -165,6 +168,11 @@ namespace VrFencing.Partner
                 body = MoveSwordHandOntoBlade(body, handAtBodyTime, controller.Value);
             }
 
+            if (body != null)
+            {
+                body = _legs.Apply(body, _partner.Value.HeightMeters, _partner.Value.Hand, localSeconds);
+            }
+
             var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, (float)Math.PI);
             return new OpponentView(
                 _partner.Value,
@@ -201,7 +209,7 @@ namespace VrFencing.Partner
 
             joints[(int)SkeletonJoint.SwordWrist] = Carry(wrist.Value);
             joints[(int)SkeletonJoint.SwordHandEnd] = Carry(handEnd.Value);
-            return new FencerBody(joints, body.HeadRotation, body.Fidelity);
+            return new FencerBody(joints, body.HeadRotation, body.Fidelity, body.Footwork);
         }
     }
 }
