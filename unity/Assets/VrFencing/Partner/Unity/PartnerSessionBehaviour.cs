@@ -23,6 +23,11 @@ namespace VrFencing.Partner
     /// the network calls and reports what happened. <see cref="Changed"/> fires after every change. It sits on the
     /// scene's Partner object with the NetworkManager and its UnityTransport.
     ///
+    /// Drops and sleep (PER-84, decided in PER-73): the Host keeps the session open for a dropped Partner to rejoin
+    /// within <see cref="PartnerSession.RejoinWindowSeconds"/>, then ends it; the Host leaving tells the Partner so
+    /// ("host left"); a sleep of <see cref="PartnerSession.SleepEndsSessionSeconds"/> or more ends this app's session on
+    /// waking; a failed connection ends it. Each step logs a <c>[Partner]</c> line.
+    ///
     /// Command line (PC Editor or a desktop player): <c>-partnerJoin FGR78N</c> joins at start, <c>-partnerHost</c>
     /// hosts at start.
     /// </summary>
@@ -34,8 +39,18 @@ namespace VrFencing.Partner
         private const string JoinArgument = "-partnerJoin";
         private const string HostArgument = "-partnerHost";
 
+        /// <summary>
+        /// After telling the Partner "host left", the Host waits this long before closing the session, so the message
+        /// goes out before the connection does.
+        /// </summary>
+        private const int HostLeftFlushMilliseconds = 250;
+
         private NetworkManager _network;
         private ISession _session;
+
+        // The last session this app joined as the Partner, to reconnect to it if a rejoin by code is refused.
+        private string _lastJoinedCode;
+        private string _lastJoinedSessionId;
 
         /// <summary>The Partner page's state.</summary>
         public PartnerSession State { get; } = new PartnerSession();
@@ -94,6 +109,7 @@ namespace VrFencing.Partner
             _network.ConnectionApprovalCallback = ApproveConnection;
             _network.OnClientConnectedCallback += OnClientConnected;
             _network.OnClientDisconnectCallback += OnClientDisconnected;
+            _network.OnTransportFailure += OnTransportFailure;
         }
 
         private void Start()
@@ -108,9 +124,44 @@ namespace VrFencing.Partner
                 _network.ConnectionApprovalCallback = null;
                 _network.OnClientConnectedCallback -= OnClientConnected;
                 _network.OnClientDisconnectCallback -= OnClientDisconnected;
+                _network.OnTransportFailure -= OnTransportFailure;
             }
 
             DetachSession();
+        }
+
+        private void Update()
+        {
+            switch (State.Tick(Time.realtimeSinceStartupAsDouble))
+            {
+                case PartnerTick.CountdownChanged:
+                    NotifyChanged();
+                    break;
+                case PartnerTick.RejoinWindowOver:
+                    Debug.Log($"{LogTag} The partner did not rejoin within {PartnerSession.RejoinWindowSeconds:0} s; ending the session.");
+                    _ = EndAsync(PartnerEnd.PartnerDidNotReturn);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// The headset sleeps (or is taken off) and wakes. A sleep long enough ends the session on waking: the Host's
+        /// connection and code are gone, so the session ends for both; the Partner can rejoin with the code kept.
+        /// </summary>
+        private void OnApplicationPause(bool isPaused)
+        {
+            var wallSeconds = (DateTime.UtcNow - DateTime.UnixEpoch).TotalSeconds;
+            if (isPaused)
+            {
+                State.OnPaused(wallSeconds);
+                return;
+            }
+
+            if (State.OnResumed(wallSeconds))
+            {
+                Debug.LogWarning($"{LogTag} Woke after {PartnerSession.SleepEndsSessionSeconds:0} s or more asleep; the session ends.");
+                _ = EndAsync(PartnerEnd.Slept);
+            }
         }
 
         /// <summary>Host: signs in and creates the 2-player session; the code shows once it is up.</summary>
@@ -184,7 +235,7 @@ namespace VrFencing.Partner
             {
                 Debug.LogError($"{LogTag} Hosting failed: {error}");
                 await LeaveQuietlyAsync();
-                State.OnEnded($"Could not start a session: {DescribeError(error)}");
+                State.OnEnded(PartnerEnd.Failed, $"Could not start a session: {DescribeError(error)}");
             }
 
             NotifyChanged();
@@ -205,15 +256,17 @@ namespace VrFencing.Partner
             {
                 await SignInAsync();
                 PrepareNetwork();
-                var session = await MultiplayerService.Instance.JoinSessionByCodeAsync(State.Code, new JoinSessionOptions());
+                var session = await JoinOrReconnectAsync(State.Code);
                 AttachSession(session);
+                _lastJoinedCode = State.Code;
+                _lastJoinedSessionId = session.Id;
                 if (!_network.IsConnectedClient)
                 {
                     // The Host refused the connection (a different version), or the Relay connection failed.
                     var reason = _network.DisconnectReason;
                     Debug.LogWarning($"{LogTag} Joined the session but not connected: {(string.IsNullOrEmpty(reason) ? "no reason given" : reason)}.");
                     await LeaveQuietlyAsync();
-                    State.OnEnded(VersionCheck.IsRefusal(reason) ? reason : "Could not connect to the host");
+                    State.OnEnded(PartnerEnd.Failed, VersionCheck.IsRefusal(reason) ? reason : "Could not connect to the host");
                 }
                 else
                 {
@@ -227,13 +280,13 @@ namespace VrFencing.Partner
                 Debug.LogWarning($"{LogTag} Joining {State.Code} failed: {error.Message}");
                 var reason = _network.DisconnectReason;
                 await LeaveQuietlyAsync();
-                State.OnEnded(VersionCheck.IsRefusal(reason) ? reason : $"Could not join {JoinCode.FormatForReading(State.Code)}: {DescribeError(error)}");
+                State.OnEnded(PartnerEnd.Failed, VersionCheck.IsRefusal(reason) ? reason : $"Could not join {JoinCode.FormatForReading(State.Code)}: {DescribeError(error)}");
             }
 
             NotifyChanged();
         }
 
-        /// <summary>Leaves the session; exposed for the online test.</summary>
+        /// <summary>Leaves the session; exposed for the online test. The Host tells its Partner it left first.</summary>
         public async Task LeaveAsync()
         {
             if (!State.BeginLeave())
@@ -243,9 +296,29 @@ namespace VrFencing.Partner
 
             NotifyChanged();
             Debug.Log($"{LogTag} Leaving the session.");
+            await TellPartnerHostLeftAsync();
             await LeaveQuietlyAsync();
-            State.OnEnded(string.Empty);
+            State.OnEnded(PartnerEnd.Left, string.Empty);
             NotifyChanged();
+        }
+
+        /// <summary>
+        /// PC Editor only: drops this app's connection without leaving the session, as a lost network or a sleeping
+        /// headset would, so a drop and a rejoin with the same code can be tried (PER-84).
+        /// </summary>
+        public void SimulateDrop()
+        {
+            if (State.Phase != PartnerPhase.Connected || _network == null || !_network.IsListening)
+            {
+                return;
+            }
+
+            // A shutdown by this app reports no disconnect for itself: end as a lost Host (or a dropped Host) would.
+            Debug.LogWarning($"{LogTag} Simulating a dropped connection.");
+            _network.Shutdown(true);
+            _ = State.Role == PartnerRole.Guest
+                ? EndAsync(PartnerEnd.LostHost)
+                : EndAsync(PartnerEnd.Failed, "The connection dropped; Host again for a new code");
         }
 
         private async Task SwitchModeAsync()
@@ -270,6 +343,23 @@ namespace VrFencing.Partner
             }
         }
 
+        /// <summary>
+        /// Joins by code. A rejoin after a drop that never left the session (no network to say so) can be refused as
+        /// already in it: then this reconnects to that session instead (PER-84).
+        /// </summary>
+        private async Task<ISession> JoinOrReconnectAsync(string code)
+        {
+            try
+            {
+                return await MultiplayerService.Instance.JoinSessionByCodeAsync(code, new JoinSessionOptions());
+            }
+            catch (SessionException error) when (code == _lastJoinedCode && !string.IsNullOrEmpty(_lastJoinedSessionId))
+            {
+                Debug.LogWarning($"{LogTag} Joining {code} again failed ({error.Message}); reconnecting to the session instead.");
+                return await MultiplayerService.Instance.ReconnectToSessionAsync(_lastJoinedSessionId);
+            }
+        }
+
         private static async Task SignInAsync()
         {
             if (UnityServices.State != ServicesInitializationState.Initialized)
@@ -290,6 +380,37 @@ namespace VrFencing.Partner
             _network.NetworkConfig.ConnectionData = VersionCheck.EncodeRequest(AppVersion);
         }
 
+        /// <summary>On the Host: tells a connected Partner "host left" and gives the message a moment to go out.</summary>
+        private async Task TellPartnerHostLeftAsync()
+        {
+            if (State.Role != PartnerRole.Host || _network == null || !_network.IsServer)
+            {
+                return;
+            }
+
+            var partners = new List<ulong>();
+            foreach (var clientId in _network.ConnectedClientsIds)
+            {
+                if (clientId != NetworkManager.ServerClientId)
+                {
+                    partners.Add(clientId);
+                }
+            }
+
+            if (partners.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var clientId in partners)
+            {
+                _network.DisconnectClient(clientId, PartnerSession.HostLeftReason);
+            }
+
+            Debug.Log($"{LogTag} Told the partner the host left.");
+            await Task.Delay(HostLeftFlushMilliseconds);
+        }
+
         private void ApproveConnection(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
         {
             var verdict = VersionCheck.Judge(AppVersion, request.Payload);
@@ -303,7 +424,7 @@ namespace VrFencing.Partner
 
             response.Reason = verdict.Reason;
             Debug.LogWarning($"{LogTag} Refused a partner: {verdict.Reason}.");
-            State.OnPartnerGone(verdict.Reason);
+            State.OnPartnerGone(verdict.Reason, Time.realtimeSinceStartupAsDouble);
             NotifyChanged();
         }
 
@@ -311,8 +432,10 @@ namespace VrFencing.Partner
         {
             if (State.Role == PartnerRole.Host && clientId != NetworkManager.ServerClientId)
             {
-                Debug.Log($"{LogTag} Partner connected (client {clientId}).");
-                State.OnPartnerConnected();
+                var isRejoin = State.OnPartnerConnected(Time.realtimeSinceStartupAsDouble);
+                Debug.Log(isRejoin
+                    ? $"{LogTag} Partner rejoined (client {clientId}); the session carries on."
+                    : $"{LogTag} Partner connected (client {clientId}).");
                 NotifyChanged();
             }
         }
@@ -321,16 +444,32 @@ namespace VrFencing.Partner
         {
             if (State.Role == PartnerRole.Host && clientId != NetworkManager.ServerClientId && State.Phase == PartnerPhase.Connected)
             {
-                Debug.Log($"{LogTag} Partner disconnected (client {clientId}); the session stays up with the same code.");
-                State.OnPartnerGone("Your partner left; they can join again with the same code");
+                Debug.Log($"{LogTag} Partner dropped or left (client {clientId}); the session stays up with the same code for "
+                          + $"{PartnerSession.RejoinWindowSeconds:0} s.");
+                State.OnPartnerGone(PartnerPageText.PartnerDroppedMessage, Time.realtimeSinceStartupAsDouble);
                 NotifyChanged();
             }
             else if (State.Role == PartnerRole.Guest && State.Phase == PartnerPhase.Connected && !_network.IsConnectedClient)
             {
                 var reason = _network.DisconnectReason;
-                Debug.LogWarning($"{LogTag} Lost the host: {(string.IsNullOrEmpty(reason) ? "no reason given" : reason)}.");
-                _ = EndAsync("The connection to the host ended");
+                var end = PartnerSession.GetHostLossEnd(reason);
+                Debug.LogWarning($"{LogTag} Lost the host ({end}): {(string.IsNullOrEmpty(reason) ? "no reason given" : reason)}.");
+                _ = EndAsync(end);
             }
+        }
+
+        /// <summary>The transport failed (Relay gone, network lost): the session cannot go on from this app.</summary>
+        private void OnTransportFailure()
+        {
+            if (State.Phase != PartnerPhase.Connected && State.Phase != PartnerPhase.WaitingForPartner)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"{LogTag} The network transport failed; the session ends.");
+            _ = State.Role == PartnerRole.Guest
+                ? EndAsync(PartnerEnd.LostHost)
+                : EndAsync(PartnerEnd.Failed, "The connection failed; Host again for a new code");
         }
 
         private void AttachSession(ISession session)
@@ -373,13 +512,30 @@ namespace VrFencing.Partner
             }
 
             Debug.LogWarning($"{LogTag} The session ended.");
-            _ = EndAsync(State.Role == PartnerRole.Guest ? "The host ended the session" : "The session ended");
+            _ = State.Role == PartnerRole.Guest ? EndAsync(PartnerEnd.HostLeft) : EndAsync(PartnerEnd.Failed, "The session ended");
         }
 
-        private async Task EndAsync(string message)
+        /// <summary>
+        /// Ends the session for <paramref name="end"/>, with its message (or <paramref name="message"/>). Only the first
+        /// of several reports of one end acts: the others find the session already leaving.
+        /// </summary>
+        private async Task EndAsync(PartnerEnd end, string message = null)
         {
+            var role = State.Role;
+            if (!State.BeginLeave(end))
+            {
+                return;
+            }
+
+            NotifyChanged();
+            if (end == PartnerEnd.PartnerDidNotReturn || end == PartnerEnd.Slept)
+            {
+                await TellPartnerHostLeftAsync();
+            }
+
             await LeaveQuietlyAsync();
-            State.OnEnded(message);
+            State.OnEnded(end, message ?? PartnerPageText.FormatEndMessage(end, role));
+            Debug.Log($"{LogTag} Session ended ({end}).");
             NotifyChanged();
         }
 

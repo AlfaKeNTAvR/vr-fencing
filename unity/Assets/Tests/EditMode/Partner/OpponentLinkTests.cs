@@ -113,6 +113,40 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
+        public void ALagSpikeHoldsTheLastPoseFadedWithTheConnectionIcon()
+        {
+            var link = ConnectedLink();
+            var body = PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero);
+            link.Receive(PartnerMessages.EncodeBody(new BodySample(10.0, body)), 1.0);
+            Assert.That(link.IsSignalLost(1.0 + OpponentLink.SignalLostSeconds - 0.01), Is.False);
+
+            var during = link.Sample(1.0 + OpponentLink.SignalLostSeconds + 0.1);
+
+            Assert.That(link.IsSignalLost(1.0 + OpponentLink.SignalLostSeconds), Is.True, "The icon shows after 0.5 s of nothing.");
+            Assert.That(during, Is.Not.Null, "The opponent stays drawn.");
+            Assert.That(during.IsBodyStale, Is.True, "Faded.");
+            Assert.That(during.Body.Get(SkeletonJoint.HipCenter), Is.Not.Null, "Holding its last pose.");
+            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Torso, BodyTrackingFidelity.High, during.IsBodyStale), Is.EqualTo(OpponentFade.LostBodyFactor));
+
+            link.Receive(PartnerMessages.EncodeBody(new BodySample(12.0, body)), 3.0);
+            Assert.That(link.IsSignalLost(3.0), Is.False, "Data back: the icon goes.");
+            Assert.That(link.GetSilenceSeconds(3.25), Is.EqualTo(0.25).Within(1e-9));
+        }
+
+        [Test]
+        public void NoSignalIsLostBeforeAnyCameOrAfterClear()
+        {
+            var link = ConnectedLink();
+            Assert.That(link.IsSignalLost(100.0), Is.False, "Nothing came yet: no icon.");
+
+            link.Receive(PartnerMessages.EncodeHand(PartnerTestData.Hand(10.0, Vector3.Zero, Vector3.Zero)), 1.0);
+            link.Clear();
+
+            Assert.That(link.IsSignalLost(100.0), Is.False);
+            Assert.That(link.GetSilenceSeconds(100.0), Is.Null);
+        }
+
+        [Test]
         public void TheBoutUsesTheShorterStrip()
         {
             var link = new OpponentLink();

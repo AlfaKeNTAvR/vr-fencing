@@ -157,3 +157,7 @@ _Avoid_: Collision, clash, body contact
 **Paired Practice**:
 Two connected Fencers practicing actions together with Touch detection, lights and haptics, but no roles, calls, Halts, lock-out or competition; each has a resettable tally (Touches, doubles, glances) saved with the Session log.
 _Avoid_: Free play, training mode
+
+**Rejoin**:
+The Partner joining the Host's session again with the same Join Code after a drop or a sleep, within 5 minutes; the session carries on, Paired Practice tally included. After 5 minutes, or when the Host leaves or sleeps, the session is over and the Host hosts again for a new code.
+_Avoid_: Reconnect (Netcode's term for the transport), resume

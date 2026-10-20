@@ -114,17 +114,18 @@ namespace VrFencing.Session
         }
 
         /// <summary>
-        /// Saves a Paired Practice tally that ended (reset, switched to a Bout, or the session ended), from this Fencer's
-        /// side. An empty tally is not saved. Returns the record, or null when nothing was saved.
+        /// Saves a Paired Practice tally that ended (reset, switched to a Bout, or the session ended) or was interrupted
+        /// (a drop or sleep), from this Fencer's side, as tally <paramref name="tallyNumber"/> of this session. An empty
+        /// tally is not saved. Returns the record, or null when nothing was saved.
         /// </summary>
-        public PairedPracticeRecord RecordPairedPractice(string role, PairedPracticeEnd end, PairedPracticeCounts you, PairedPracticeCounts opponent)
+        public PairedPracticeRecord RecordPairedPractice(string role, int tallyNumber, PairedPracticeEnd end, PairedPracticeCounts you, PairedPracticeCounts opponent)
         {
             if (you.IsEmpty && opponent.IsEmpty)
             {
                 return null;
             }
 
-            var record = new PairedPracticeRecord(SessionId, _clock.UtcNow, role, end, you, opponent);
+            var record = new PairedPracticeRecord(SessionId, _clock.UtcNow, role, end, you, opponent, tallyNumber);
             Write(() => PairedPracticeLogFile.Append(PairedPracticePath, record));
             return record;
         }
