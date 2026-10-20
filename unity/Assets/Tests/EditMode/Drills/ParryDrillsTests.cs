@@ -116,8 +116,8 @@ namespace VrFencing.Tests.Drills
                 Is.EqualTo(new AttackSpeed?[] { AttackSpeed.Medium, AttackSpeed.Real, AttackSpeed.Medium, AttackSpeed.Real }));
             Assert.That(_recorder.Cues.Select(cue => cue.TargetZone), Has.All.Null, "The attack is the cue: nothing named or lit.");
             Assert.That(_recorder.Cues.Select(cue => cue.CueType), Has.All.EqualTo(CueType.ArmedDummyAttack));
-            Assert.That(_recorder.Cues.Select(cue => cue.AttackTarget.Value),
-                Has.All.AnyOf(AttackTarget.Hand, AttackTarget.Forearm, AttackTarget.Chest));
+            Assert.That(_recorder.Cues.Select(cue => cue.AttackTarget.Value).Distinct(),
+                Is.SubsetOf(new[] { AttackTarget.Hand, AttackTarget.Forearm, AttackTarget.Chest }));
             Assert.That(_recorder.Judged.Select(result => result.AttackSpeed), Is.EqualTo(_recorder.Cues.Select(cue => cue.AttackSpeed)));
             Assert.That(_recorder.Judged.Select(result => result.AttackTarget), Is.EqualTo(_recorder.Cues.Select(cue => cue.AttackTarget)));
         }
