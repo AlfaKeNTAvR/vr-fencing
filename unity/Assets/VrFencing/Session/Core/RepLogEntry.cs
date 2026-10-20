@@ -36,7 +36,9 @@ namespace VrFencing.Session
             double? secondTouchSeconds = null,
             FootworkAction? footworkCall = null,
             FootworkLog footwork = null,
-            DummyDistance? dummyDistance = null)
+            DummyDistance? dummyDistance = null,
+            ParryLine? parryLine = null,
+            double? riposteSeconds = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -72,6 +74,8 @@ namespace VrFencing.Session
             FootworkCall = footworkCall;
             Footwork = footwork;
             DummyDistance = dummyDistance;
+            ParryLine = parryLine;
+            RiposteSeconds = riposteSeconds;
         }
 
         public int Schema { get; }
@@ -135,6 +139,12 @@ namespace VrFencing.Session
         /// <summary>Where the Dummy stood for the Rep. Null in lines written before it existed.</summary>
         public DummyDistance? DummyDistance { get; }
 
+        /// <summary>Parry Drills: the line of the contact that deflected the attack; null otherwise and in older lines.</summary>
+        public ParryLine? ParryLine { get; }
+
+        /// <summary>Parry Drills: from the Parry to the Riposte's contact; null without both.</summary>
+        public double? RiposteSeconds { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -161,7 +171,9 @@ namespace VrFencing.Session
                 result.SecondTouchSeconds,
                 result.RequestedFootwork,
                 FootworkLog.FromReading(result.Footwork),
-                result.DummyDistance);
+                result.DummyDistance,
+                result.ParryLine,
+                result.RiposteSeconds);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -185,7 +197,9 @@ namespace VrFencing.Session
                 SecondTouchSeconds,
                 FootworkCall,
                 Footwork,
-                DummyDistance);
+                DummyDistance,
+                ParryLine,
+                RiposteSeconds);
         }
     }
 

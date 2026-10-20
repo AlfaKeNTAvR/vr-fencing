@@ -131,6 +131,10 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingsPage.FormatValue(settings, SettingId.TouchRule), Is.EqualTo("Loose"));
             Assert.That(SettingsPage.Change(settings, SettingId.TouchRule, 1).Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
             Assert.That(SettingsPage.Change(settings, SettingId.TouchRule, -1).Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.ParryRule), Is.EqualTo("Loose"));
+            Assert.That(SettingsPage.Change(settings, SettingId.ParryRule, 1).Blade.ParryRule, Is.EqualTo(ParryRule.Strict));
+            Assert.That(SettingsPage.FormatValue(SettingsPage.Change(settings, SettingId.ParryRule, 1), SettingId.ParryRule), Is.EqualTo("Strict (forte on foible)"));
+            Assert.That(SettingsPage.GetImpact(SettingId.ParryRule), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingsPage.FormatValue(settings, SettingId.FlatHaptic), Is.EqualTo("Double tap"));
             Assert.That(SettingsPage.Change(settings, SettingId.FlatHaptic, 1).Blade.FlatHaptic, Is.EqualTo(HapticPattern.Off));
             Assert.That(SettingsPage.Change(settings, SettingId.TouchHaptic, -1).Blade.TouchHaptic, Is.EqualTo(HapticPattern.Crisp));
