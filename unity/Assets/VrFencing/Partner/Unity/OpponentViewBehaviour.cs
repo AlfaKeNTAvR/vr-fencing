@@ -76,6 +76,9 @@ namespace VrFencing.Partner
             set => _bodyModel = value;
         }
 
+        /// <summary>Paired Practice corps-a-corps (PER-83): the whole opponent fades by <see cref="OpponentFade.CorpsACorpsFactor"/>.</summary>
+        public bool IsFadedForCorpsACorps { get; set; }
+
         /// <summary>True while the opponent is drawn.</summary>
         public bool IsShown => _isShown;
 
@@ -209,7 +212,8 @@ namespace VrFencing.Partner
             foreach (var slot in _rig.MeshSlots)
             {
                 var part = ToOpponentPart(slot.Part);
-                var target = OpponentFade.GetTargetFactor(part, body.Fidelity, view.IsBodyStale);
+                var target = OpponentFade.GetTargetFactor(part, body.Fidelity, view.IsBodyStale)
+                             * (IsFadedForCorpsACorps ? OpponentFade.CorpsACorpsFactor : 1.0f);
                 var factor = _fades.TryGetValue(part, out var current) ? OpponentFade.StepToward(current, target, deltaSeconds) : target;
                 _fades[part] = factor;
                 _propertyBlock.SetColor(BaseColorId, new Color(SilhouetteColor.r, SilhouetteColor.g, SilhouetteColor.b, Mathf.Clamp01(_settings.DummyLook.BodyOpacity * factor)));

@@ -192,6 +192,16 @@ namespace VrFencing.Strip
             }
         }
 
+        /// <summary>
+        /// Draws the Strip's two En Garde Lines where a Partner bout puts them (this Fencer's and the opponent's, z in
+        /// the Strip frame, PER-83), or back on the Strip's own with null. Only the drawn lines move: the Strip frame,
+        /// its ends and its warnings stay as placed.
+        /// </summary>
+        public void ShowBoutEnGardeLines((float FencerZ, float OpponentZ)? lines)
+        {
+            _markings?.MoveEnGardeLines(lines);
+        }
+
         private void Awake()
         {
             if (_enGardeLine == null)

@@ -48,6 +48,8 @@ namespace VrFencing.Strip
         private readonly Dictionary<string, Renderer> _slabs = new Dictionary<string, Renderer>();
 
         private StripEnd? _glowingZone;
+        private StripGeometry _geometry;
+        private (float FencerZ, float OpponentZ)? _movedEnGardeLines;
 
         /// <param name="parent">The Strip frame: the En Garde Line transform.</param>
         public StripMarkings(Transform parent)
@@ -90,10 +92,37 @@ namespace VrFencing.Strip
             LayOutCrossLine("Rear End Line", geometry.RearEndZ, LineHeightMeters, LineColor);
             LayOutCrossLine("Far End Line", geometry.FarEndZ, LineHeightMeters, LineColor);
             LayOutCrossLine("Center Line", geometry.CenterLineZ, LineHeightMeters, LineColor);
-            LayOutCrossLine("En Garde Line", 0.0f, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
-            LayOutCrossLine("Dummy En Garde Line", geometry.DummyEnGardeLineZ, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
-
+            _geometry = geometry;
+            LayOutEnGardeLines();
             _glowingZone = null;
+        }
+
+        /// <summary>
+        /// Draws the two En Garde Lines at <paramref name="lines"/> (z in the Strip frame) instead of the Strip's own, as
+        /// a Partner bout places them (PER-83); null puts them back on the Strip's own.
+        /// </summary>
+        public void MoveEnGardeLines((float FencerZ, float OpponentZ)? lines)
+        {
+            if (_movedEnGardeLines == lines)
+            {
+                return;
+            }
+
+            _movedEnGardeLines = lines;
+            LayOutEnGardeLines();
+        }
+
+        private void LayOutEnGardeLines()
+        {
+            if (_geometry == null || _material == null || _lineMaterial == null)
+            {
+                return;
+            }
+
+            var fencerZ = _movedEnGardeLines?.FencerZ ?? 0.0f;
+            var opponentZ = _movedEnGardeLines?.OpponentZ ?? _geometry.DummyEnGardeLineZ;
+            LayOutCrossLine("En Garde Line", fencerZ, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
+            LayOutCrossLine("Dummy En Garde Line", opponentZ, LineHeightMeters + EnGardeLineRaiseMeters, EnGardeLineColor);
         }
 
         public void SetVisible(bool isVisible)

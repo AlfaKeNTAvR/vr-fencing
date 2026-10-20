@@ -2,6 +2,7 @@
 // session with the same join code as the headset, in Play mode. It uses the scene's Partner object, or makes one in a
 // scene without it (an empty scene or the Fencer replay scene). The command line does the same without the window:
 // -partnerJoin ABC123 or -partnerHost.
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using VrFencing.Partner;
@@ -142,6 +143,27 @@ namespace VrFencing.EditorTools
                 $"Touch pressure {link.Rules.Pressure}, double window {link.Rules.DoubleWindowSeconds * 1000.0:0} ms{(link.HasHostRules ? string.Empty : " (the host's not received yet)")}");
             var light = link.Box.LastLight;
             EditorGUILayout.LabelField("Last light", light.HasValue ? $"{light.Value.Sequence}: {ScoringBox.Describe(light.Value, link.Me)}" : "none yet");
+
+            // The bout flow (PER-83): the phase, the call or halt showing, and the prompt or Paired Practice tally.
+            if (!link.HasHostFlow)
+            {
+                EditorGUILayout.LabelField("Flow", "the host's not received yet");
+                return;
+            }
+
+            var flow = link.FlowState;
+            var showing = string.Join(" ", new[] { link.Announcer.Word, link.Announcer.Reason }.Where(text => !string.IsNullOrEmpty(text)));
+            EditorGUILayout.LabelField("Flow", $"{PartnerPageText.FormatModeName(flow.Mode)}, {flow.Phase}{(showing.Length > 0 ? $": {showing}" : string.Empty)}");
+            var info = BoutCall.FormatInfo(flow, link.Me, link.Tally, false);
+            if (info.Length > 0)
+            {
+                EditorGUILayout.HelpBox(info, MessageType.None);
+            }
+
+            if (flow.Mode == PartnerMode.PairedPractice && GUILayout.Button("Reset tally"))
+            {
+                bout.ResetTally();
+            }
         }
     }
 }

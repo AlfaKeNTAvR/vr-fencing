@@ -37,6 +37,12 @@ namespace VrFencing.Partner
         /// <summary>Every part while the partner's body is not coming (no fidelity, or stale).</summary>
         public const float LostBodyFactor = 0.25f;
 
+        /// <summary>
+        /// Every part, times this, while the two bodies are within corps-a-corps distance in Paired Practice (PER-72): the
+        /// opponent fades so this Fencer sees through a body they are standing in, instead of a halt.
+        /// </summary>
+        public const float CorpsACorpsFactor = 0.3f;
+
         /// <summary>How long a fade takes from fully shown to gone, so a fidelity flicker does not blink the legs.</summary>
         public const float FadeSeconds = 0.3f;
 

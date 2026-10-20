@@ -1,5 +1,5 @@
-// The bout judge (PER-82, rules from PER-56): first claim wins, a double within the window, a wait before lighting,
-// stale and off-Strip claims refused, nothing counting while the lamps are lit.
+// The bout judge (PER-82, rules from PER-56; phrase gate from PER-83): first claim wins, a double within the window,
+// a wait before lighting, stale and off-Strip claims refused, nothing counting outside the phrase.
 using NUnit.Framework;
 using VrFencing.Dummy;
 using VrFencing.Partner;
@@ -141,7 +141,7 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
-        public void NothingCountsWhileTheLampsAreLitThenTheNextPhraseStarts()
+        public void InABoutNothingCountsAfterALightUntilTheNextPhraseOpens()
         {
             var judge = new BoutJudge();
             judge.Submit(Claim(BoutSide.Host, Contact, TargetZone.Body), Contact);
@@ -150,12 +150,49 @@ namespace VrFencing.Tests.Partner
 
             Assert.That(judge.IsLockedOut(lit + 1.0), Is.True);
             Assert.That(judge.Submit(Claim(BoutSide.Host, lit + 1.0, TargetZone.Body), lit + 1.0), Is.EqualTo(ClaimVerdict.LockedOut));
-            Assert.That(judge.Submit(Claim(BoutSide.Partner, lit + 1.9, TargetZone.Body), lit + 1.9), Is.EqualTo(ClaimVerdict.LockedOut));
+            var lampsOff = lit + BoutJudge.LampSeconds + 0.5;
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, lampsOff, TargetZone.Body), lampsOff), Is.EqualTo(ClaimVerdict.LockedOut), "The lamps going off does not reopen a Bout (PER-83).");
 
-            var next = lit + BoutJudge.LampSeconds + 0.01;
-            Assert.That(judge.IsLockedOut(next), Is.False);
-            Assert.That(judge.Submit(Claim(BoutSide.Partner, next, TargetZone.Foot), next), Is.EqualTo(ClaimVerdict.Accepted));
-            Assert.That(judge.Step(next + 0.12).Value.Kind, Is.EqualTo(LightKind.PartnerTouch));
+            var allez = lampsOff + 3.0;
+            judge.OpenPhrase(allez);
+            Assert.That(judge.IsLockedOut(allez), Is.False);
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, allez - 0.01, TargetZone.Foot), allez), Is.EqualTo(ClaimVerdict.LockedOut), "Before \"Allez!\".");
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, allez + 0.5, TargetZone.Foot), allez + 0.5), Is.EqualTo(ClaimVerdict.Accepted));
+            Assert.That(judge.Step(allez + 0.62).Value.Kind, Is.EqualTo(LightKind.PartnerTouch));
+        }
+
+        [Test]
+        public void InPairedPracticeTheNextTouchCountsRightAfterTheLight()
+        {
+            var judge = new BoutJudge { KeepsPhraseClosedAfterLight = false };
+            judge.Submit(Claim(BoutSide.Host, Contact, TargetZone.Body), Contact);
+            var lit = Contact + 0.12;
+            judge.Step(lit);
+
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, Contact + 0.03, TargetZone.Hand), lit + 0.05), Is.EqualTo(ClaimVerdict.MadeDouble), "A late double still upgrades.");
+            judge.Step(lit + 0.05);
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, lit + 0.3, TargetZone.Body), lit + 0.3), Is.EqualTo(ClaimVerdict.Accepted), "No lock-out (PER-72).");
+            Assert.That(judge.Step(lit + 0.42).Value.Kind, Is.EqualTo(LightKind.PartnerTouch));
+        }
+
+        [Test]
+        public void InPairedPracticeAnOffStripTouchLights()
+        {
+            var judge = new BoutJudge { RefusesOffStrip = false };
+
+            Assert.That(judge.Submit(new TouchClaim(1, BoutSide.Host, TargetZone.Body, Contact, isOffStrip: true), Contact), Is.EqualTo(ClaimVerdict.Accepted));
+        }
+
+        [Test]
+        public void AHaltLocksOutLaterTouchesButOneMadeBeforeItStillLights()
+        {
+            var judge = new BoutJudge();
+            judge.Submit(Claim(BoutSide.Host, Contact, TargetZone.Body), Contact + 0.01);
+
+            judge.ClosePhrase(Contact + 0.03);
+
+            Assert.That(judge.Submit(Claim(BoutSide.Partner, Contact + 0.04, TargetZone.Body), Contact + 0.06), Is.EqualTo(ClaimVerdict.LockedOut));
+            Assert.That(judge.Step(Contact + 0.12).Value.Kind, Is.EqualTo(LightKind.HostTouch), "Made before the halt.");
         }
 
         [Test]

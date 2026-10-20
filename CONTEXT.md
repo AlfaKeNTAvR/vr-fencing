@@ -131,7 +131,7 @@ Two Fencers fencing each other freely on a shared Strip, with a virtual judge li
 _Avoid_: Match, game
 
 **Light**:
-The virtual judge's call that a Touch counted in a Bout, shown on the Scoring Box. The first Touch of a phrase lights; nothing counts again until the lamps go off.
+The virtual judge's call that a Touch counted in a Bout, shown on the Scoring Box. The first Touch of a Phrase lights; in a Bout nothing counts again until the next "Allez!".
 _Avoid_: Point, score, hit
 
 **Double**:
@@ -142,6 +142,18 @@ _Avoid_: Trade, simultaneous hit
 The two lamps floating above the shared Strip's centre in a Bout. In each headset the Fencer's own lamp is green and on their left, the Opponent's red; the round-trip time shows under it.
 _Avoid_: Scoreboard, lights panel
 
+**Phrase**:
+One exchange of a Bout, from the referee's "En garde! Prets? Allez!" (called once both Fencers have stood behind their En Garde Lines for a second) until the Halt that ends it. Touches count only inside it.
+_Avoid_: Round, rally, point
+
+**Halt**:
+The referee's "Halte!" that ends a Phrase, with its reason shown: a Light, a Fencer leaving their own Strip, or Corps-a-corps. Nothing counts until the next Phrase. Paired Practice has no Halts.
+_Avoid_: Stop, pause, break
+
+**Corps-a-corps**:
+The two Fencers' bodies coming within about half a metre of each other. It halts a Bout; in Paired Practice the Opponent only fades.
+_Avoid_: Collision, clash, body contact
+
 **Paired Practice**:
-Two connected Fencers practicing actions together with Touch detection, lights and haptics, but no roles, lock-out or competition; each has a resettable tally.
+Two connected Fencers practicing actions together with Touch detection, lights and haptics, but no roles, calls, Halts, lock-out or competition; each has a resettable tally (Touches, doubles, glances) saved with the Session log.
 _Avoid_: Free play, training mode

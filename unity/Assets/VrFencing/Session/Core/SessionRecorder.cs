@@ -53,12 +53,13 @@ namespace VrFencing.Session
             SessionStartedAt = clock.UtcNow;
             RepLogPath = Path.Combine(dataFolder, RepLogFile.FileName);
             HistoryPath = Path.Combine(dataFolder, SessionHistoryFile.FileName);
+            PairedPracticePath = Path.Combine(dataFolder, PairedPracticeLogFile.FileName);
         }
 
         /// <summary>A Drill run finished and was saved to the history (raised even if saving failed).</summary>
         public event Action<DrillRunRecord> DrillRunRecorded;
 
-        /// <summary>Writing the rep log or the history failed (IOException or UnauthorizedAccessException).</summary>
+        /// <summary>Writing the rep log, the history or the Paired Practice log failed (IOException or UnauthorizedAccessException).</summary>
         public event Action<Exception> WriteFailed;
 
         public string SessionId { get; }
@@ -68,6 +69,9 @@ namespace VrFencing.Session
         public string RepLogPath { get; }
 
         public string HistoryPath { get; }
+
+        /// <summary>The Paired Practice log (PER-83), beside the history.</summary>
+        public string PairedPracticePath { get; }
 
         public void Attach(DrillRunner runner)
         {
@@ -107,6 +111,22 @@ namespace VrFencing.Session
             var rep = _pendingRep;
             _pendingRep = null;
             Write(() => RepLogFile.Append(RepLogPath, rep));
+        }
+
+        /// <summary>
+        /// Saves a Paired Practice tally that ended (reset, switched to a Bout, or the session ended), from this Fencer's
+        /// side. An empty tally is not saved. Returns the record, or null when nothing was saved.
+        /// </summary>
+        public PairedPracticeRecord RecordPairedPractice(string role, PairedPracticeEnd end, PairedPracticeCounts you, PairedPracticeCounts opponent)
+        {
+            if (you.IsEmpty && opponent.IsEmpty)
+            {
+                return null;
+            }
+
+            var record = new PairedPracticeRecord(SessionId, _clock.UtcNow, role, end, you, opponent);
+            Write(() => PairedPracticeLogFile.Append(PairedPracticePath, record));
+            return record;
         }
 
         private void OnRepCued(RepCue cue)

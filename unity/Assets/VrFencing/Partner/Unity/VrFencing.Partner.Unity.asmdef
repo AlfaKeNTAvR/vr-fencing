@@ -12,6 +12,7 @@
         "VrFencing.Blade.Core",
         "VrFencing.Blade.Unity",
         "VrFencing.Session.Core",
+        "VrFencing.Session.Unity",
         "VrFencing.Drills.Core",
         "VrFencing.Drills.Unity",
         "VrFencing.Tracking.Core",
