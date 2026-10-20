@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace VrFencing.Blade
@@ -45,9 +44,6 @@ namespace VrFencing.Blade
 
         /// <summary>Unit vector square to the Dummy's blade: the way the Fencer's blade pushes it. Zero if it did not move.</summary>
         public Vector3 PushDirection { get; }
-
-        /// <summary>The clash buzz's strength, from <see cref="BladeClashDetector.HapticFloor"/> to 1 with the contact's speed.</summary>
-        public float HapticStrength => BladeClashDetector.GetHapticStrength(RelativeSpeedMetersPerSecond);
     }
 
     /// <summary>
@@ -74,33 +70,12 @@ namespace VrFencing.Blade
         /// <summary>Most steps in one frame: a 15 m/s point moves 21 cm in a 72 Hz frame, 42 steps of 5 mm.</summary>
         public const int MaxSweepSteps = 64;
 
-        /// <summary>The clash buzz at the lightest contact, as a fraction of full: still felt.</summary>
-        public const float HapticFloor = 0.35f;
-
-        /// <summary>Relative speed at which the clash buzz is full (a firm parry is about 1 to 2 m/s at the blade).</summary>
-        public const float HapticFullSpeedMetersPerSecond = 2.0f;
-
-        /// <summary>The clash buzz: a sharp, high hit that rings down, unlike the Touch's single thump.</summary>
-        public static IReadOnlyList<HapticSegment> HapticSegments { get; } = new[]
-        {
-            new HapticSegment(1.0f, 1.0f, 0.015f),
-            new HapticSegment(0.55f, 0.85f, 0.030f),
-            new HapticSegment(0.25f, 0.7f, 0.040f),
-        };
-
         private BladeSegment? _lastFencer;
         private BladeSegment? _lastOpponent;
         private double _lastTimeSeconds;
 
         /// <summary>True from a contact until the blades part by <see cref="ReleaseDistanceMeters"/>.</summary>
         public bool IsInContact { get; private set; }
-
-        /// <summary>From <see cref="HapticFloor"/> at no speed, rising in a straight line to 1 at <see cref="HapticFullSpeedMetersPerSecond"/>.</summary>
-        public static float GetHapticStrength(float relativeSpeedMetersPerSecond)
-        {
-            var fraction = Math.Clamp(relativeSpeedMetersPerSecond / HapticFullSpeedMetersPerSecond, 0.0f, 1.0f);
-            return HapticFloor + ((1.0f - HapticFloor) * fraction);
-        }
 
         /// <summary>Forget the last poses, e.g. after a jump or when the Dummy's blade appears.</summary>
         public void Reset()

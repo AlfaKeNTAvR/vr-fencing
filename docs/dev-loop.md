@@ -307,7 +307,7 @@ The Settings groups, in order (`SettingGroups` in the UI Core; an Edit-mode test
 | Strip | Warning Zone on a full piste, Warning Zone at least, Off-strip tolerance, Shrink Drills to fit the Strip, and "Bout double window (host)" (PER-82): 50 to 150 ms in 25 ms steps, used when this Fencer hosts a bout (here because Touch is full) |
 | Touch | Touch rule, Touch pressure, and the Dummy's look (PER-102): Show Target Zones, Zone opacity, Zone thickness (of scoring), Dummy body opacity. The look only changes how the Dummy is drawn, never how Touches are judged; hidden zones still show while lit or flashing. |
 | Blade | Grip, Blade pitch, Blade yaw, Blade set (curve), Blade flex, and the "Calibrate grip" button (opens the grip page) |
-| Haptics | Haptic Touch, flat contact, glance, strength when slow, full strength at |
+| Haptics | Haptic Touch, flat contact, glance, strength when slow, full strength at, and the Armed Dummy's clash (PER-99): Haptic: blade clash, Clash strength when light. Full (7), so the Armed Dummy's hit buzz has no Setting |
 
 A group holds at most 7 Settings, so each fits on one page. Folding the panels with the Menu button keeps the open group.
 
@@ -363,7 +363,18 @@ The onset (reaction time of a footwork call) is when the head first moved 0.02 H
 - **IOBT** (`Iobt`) when body tracking reports high fidelity and gives every joint of the 14 body capsules (`FencerBodyShape`, the same capsules a Partner's blade bends against).
 - **Headset capsules** (`HeadsetCapsules`) otherwise (fidelity Low, tracking stopped, a joint missing): the en garde stand-in (`AttackAim.GetFencerStanceOnStrip`) slid along the floor so its head is under the headset's head center (5% of height behind the eyes, `HeadCenterBehindEyesPerHeight`), heights kept, plus a sword arm from its shoulder to the live guard.
 - **Aims:** chest and thigh thrusts aim 3 cm inside the front of that body's torso or front thigh (`AimDepthMeters`), so they follow where the Fencer really stands; hand and forearm still follow the blade.
-- **On a hit:** the thrust stops where the point met the body, holds 0.3 s, then recovers (`ArmedDummyAttack.ReportLanded`); a red flash fills the view for 0.25 s (`HitFlash`) and the being-touched buzz plays on both controllers, the same as being touched in a bout (`BladeHaptics.BeingTouched`, unlike any Touch); the Rep fails as `NotParried`. The rep log adds `hitSource` (`Iobt`, `HeadsetCapsules`) and `hitPart` (`Head`, `Torso`, `SwordArm`, `SwordHand`, `BackArm`, `FrontThigh`, `FrontLowerLeg`, `BackLeg`); both are null when the thrust did not land.
+- **On a hit:** the thrust stops where the point met the body, holds 0.3 s, then recovers (`ArmedDummyAttack.ReportLanded`); a red flash fills the view for 0.25 s (`HitFlash`) and the Armed Dummy's hit buzz plays on both controllers (`BladeHaptics.ArmedDummyHit`, PER-99: a hard sharp jab, then a low rumble that fades, 0.28 s; unlike a Touch, glance, flat contact, clash or the bout's being-touched buzz, and fixed, with no Setting); the Rep fails as `NotParried`. The rep log adds `hitSource` (`Iobt`, `HeadsetCapsules`) and `hitPart` (`Head`, `Torso`, `SwordArm`, `SwordHand`, `BackArm`, `FrontThigh`, `FrontLowerLeg`, `BackLeg`); both are null when the thrust did not land.
+
+**Clash haptics (Armed Dummy, PER-99).** Each blade-on-blade contact (`BladeClashDetector`, one per contact: the blades must part 3 cm before the next) plays the clash buzz on the sword hand (`ClashHaptics` in the Blade Core), at most one every 0.12 s (`ClashBuzzGate.MinIntervalSeconds`), so blades that bounce or rattle never machine-gun it. Its strength rises in a straight line with the relative blade speed square to the Dummy's blade, from the "Clash strength when light" Setting (default 35%) to full at 2 m/s (`FullStrengthSpeedMetersPerSecond`). The "Haptic: blade clash" Setting picks the pattern; each is a sharp hit that rings down, unlike the Touch, glance and flat contact:
+
+| Pattern | Clash buzz |
+|---|---|
+| Tick | A lighter hit and a short ring, 35 ms |
+| Crisp (default, the prototype's PER-95 buzz) | A sharp high hit ringing down, 85 ms |
+| Heavy | The same hit with a longer, lower ring, 130 ms |
+| Double tap | Two rings close together, like a rattle, 110 ms |
+
+The logcat clash line ends with `buzz <strength>` or `buzz skipped (rate limit)`. The defaults stay the prototype's until its feel test (PER-95) picks others.
 
 All world-space text is TextMeshPro (SDF shader, drawn in both eyes under single-pass instanced stereo). Its essentials live in `Assets/TextMesh Pro/`; `VrFencing.EditorTools.TextMeshProSetup.ImportEssentialsIfMissing` re-imports them in batchmode (run without `-quit`, it exits itself). To check the panels' layout without the headset, `VrFencing.EditorTools.MenuSnapshots.RenderAll` (menu "VR Fencing > Render menu snapshots", batchmode without `-nographics`) renders every screen with sample data to `Builds/menu-snapshots/`.
 

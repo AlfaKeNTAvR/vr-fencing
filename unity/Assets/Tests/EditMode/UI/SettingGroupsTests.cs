@@ -77,6 +77,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.Haptics), Is.EqualTo(new[]
             {
                 SettingId.TouchHaptic, SettingId.FlatHaptic, SettingId.GlanceHaptic, SettingId.HapticFloor, SettingId.HapticFullStrengthSpeed,
+                SettingId.ClashHaptic, SettingId.ClashHapticFloor,
             }));
         }
 

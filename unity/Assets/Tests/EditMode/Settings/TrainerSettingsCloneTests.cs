@@ -43,6 +43,8 @@ namespace VrFencing.Tests.Settings
             settings.Blade.GlanceHaptic = HapticPattern.Heavy;
             settings.Blade.HapticFloor = 0.2f;
             settings.Blade.HapticFullStrengthSpeedMetersPerSecond = 3.5f;
+            settings.Blade.ClashHaptic = HapticPattern.Heavy;
+            settings.Blade.ClashHapticFloor = 0.6f;
             settings.DummyLook.ShowTargetZones = false;
             settings.DummyLook.ZoneOpacity = 0.7f;
             settings.DummyLook.BodyOpacity = 0.2f;

@@ -1,6 +1,6 @@
 // The Fencer's blade meeting the Armed Dummy's (PER-40, prototype PER-95): the swept segment-to-segment contact,
-// the clash event it raises (where on each blade, how hard), the clash buzz's strength, and the Dummy's blade
-// swinging away and recovering.
+// the clash event it raises (where on each blade, how hard), and the Dummy's blade swinging away and recovering.
+// The clash buzz is in ClashHapticsTests.
 using System;
 using System.Numerics;
 using NUnit.Framework;
@@ -105,29 +105,6 @@ namespace VrFencing.Tests.Blade
             Assert.That(clash.HasValue, Is.True);
             Assert.That(clash.Value.RelativeSpeedMetersPerSecond, Is.EqualTo(0.008f * 72.0f).Within(0.02f));
             Assert.That(Vector3.Dot(clash.Value.PushDirection, -Vector3.UnitY), Is.GreaterThan(0.999f));
-        }
-
-        [Test]
-        public void ClashBuzzRisesFromTheFloorToFull()
-        {
-            Assert.That(BladeClashDetector.GetHapticStrength(0.0f), Is.EqualTo(BladeClashDetector.HapticFloor));
-            Assert.That(BladeClashDetector.GetHapticStrength(1.0f), Is.EqualTo((BladeClashDetector.HapticFloor + 1.0f) * 0.5f).Within(1e-5f));
-            Assert.That(BladeClashDetector.GetHapticStrength(BladeClashDetector.HapticFullSpeedMetersPerSecond), Is.EqualTo(1.0f));
-            Assert.That(BladeClashDetector.GetHapticStrength(10.0f), Is.EqualTo(1.0f));
-            Assert.That(BladeClashDetector.GetHapticStrength(-1.0f), Is.EqualTo(BladeClashDetector.HapticFloor));
-        }
-
-        [Test]
-        public void ClashBuzzIsAShortSharpPattern()
-        {
-            var total = 0.0f;
-            foreach (var segment in BladeClashDetector.HapticSegments)
-            {
-                total += segment.DurationSeconds;
-            }
-
-            Assert.That(BladeClashDetector.HapticSegments[0].Amplitude, Is.EqualTo(1.0f), "It starts at its hardest.");
-            Assert.That(total, Is.LessThan(0.15f), "Short enough not to blur into the riposte's Touch.");
         }
 
         [Test]
