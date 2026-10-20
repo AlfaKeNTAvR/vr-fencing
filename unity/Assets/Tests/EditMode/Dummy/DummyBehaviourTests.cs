@@ -1,5 +1,6 @@
 // Dummy rendering (PER-32): every part uses the URP transparent material (the default primitive material renders
 // magenta on the Quest), parts have no physics colliders, and the Dummy stands at its distance facing the Fencer.
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using VrFencing.Dummy;
@@ -115,6 +116,40 @@ namespace VrFencing.Tests.Dummy
             Assert.That(FindPart($"Zone {TargetZone.Hand}"), Is.SameAs(handPart), "The hand part was rebuilt.");
             Assert.That(Vector3.Distance(handPart.position, handBefore), Is.GreaterThan(0.05f));
             AssertRenderedZonesMatchCore(dummy);
+        }
+
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void SteppingLegsMoveTheFootZoneAndTheLegSilhouetteWithoutRebuilding(Hand hand)
+        {
+            var dummy = CreateDummy();
+            dummy.Configure(1.65f, hand);
+            dummy.SetDistanceMeters(2.0f);
+            var footPart = FindPart($"Zone {TargetZone.Foot}");
+            var footBefore = footPart.position;
+            var renderersBefore = _dummyObject.GetComponentsInChildren<MeshRenderer>().Length;
+            var footwork = new DummyFootwork(1.65f, hand, 2.0f, new System.Random(1));
+            for (var frame = 0; frame < 10; frame++)
+            {
+                footwork.Step(1.6f, 1.0f / 72.0f);
+            }
+
+            dummy.SetLegs(footwork.Legs);
+
+            Assert.That(FindPart($"Zone {TargetZone.Foot}"), Is.SameAs(footPart), "The foot part was rebuilt.");
+            Assert.That(Vector3.Distance(footPart.position, footBefore), Is.GreaterThan(0.02f));
+            Assert.That(_dummyObject.GetComponentsInChildren<MeshRenderer>(), Has.Length.EqualTo(renderersBefore));
+            AssertRenderedZonesMatchCore(dummy);
+            var silhouette = _dummyObject.GetComponentsInChildren<MeshRenderer>()
+                .Where(partRenderer => partRenderer.name == "Silhouette")
+                .Select(partRenderer => partRenderer.transform)
+                .ToArray();
+            for (var index = 0; index < dummy.Layout.SilhouetteParts.Count; index++)
+            {
+                var part = dummy.Layout.SilhouetteParts[index];
+                var center = dummy.transform.TransformPoint(((part.Start + part.End) * 0.5f).ToUnity());
+                Assert.That(Vector3.Distance(silhouette[index].position, center), Is.LessThan(Tolerance), $"Silhouette part {index}");
+            }
         }
 
         [Test]

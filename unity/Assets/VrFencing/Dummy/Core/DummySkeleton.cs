@@ -33,8 +33,9 @@ namespace VrFencing.Dummy
     /// <summary>
     /// The joints a rigged body is posed on, so its mesh wraps the same en garde stance as the Target Zones
     /// (PER-78). Positions are in the Dummy frame (see <see cref="DummyLayout"/>), scaled to its height and mirrored
-    /// for a left-handed Dummy. The sword arm joints follow the layout's <see cref="SwordArm"/> pose; the rest are
-    /// fixed to the stance, at the ends of the capsules the Target Zones and the silhouette are built from.
+    /// for a left-handed Dummy. The sword arm joints follow the layout's <see cref="SwordArm"/> pose and the leg joints
+    /// its <see cref="DummyLayout.Legs"/> (PER-110); the rest are fixed to the stance, at the ends of the capsules the
+    /// Target Zones and the silhouette are built from.
     /// </summary>
     public static class DummySkeleton
     {
@@ -60,6 +61,24 @@ namespace VrFencing.Dummy
                     var wrist = layout.Arm.GetPose(ArmJoint.Wrist);
                     var handAlongWrist = new Vector3(0.0f, 0.0f, EnGardePose.HandLength * layout.HeightMeters);
                     return wrist.Position + Vector3.Transform(handAlongWrist, wrist.Rotation);
+                case SkeletonJoint.HipCenter:
+                    return (layout.Legs.Front.Hip + layout.Legs.Back.Hip) * 0.5f;
+                case SkeletonJoint.FrontHip:
+                    return layout.Legs.Front.Hip;
+                case SkeletonJoint.FrontKnee:
+                    return layout.Legs.Front.Knee;
+                case SkeletonJoint.FrontAnkle:
+                    return layout.Legs.Front.Ankle;
+                case SkeletonJoint.FrontToe:
+                    return layout.Legs.Front.Toe;
+                case SkeletonJoint.BackHip:
+                    return layout.Legs.Back.Hip;
+                case SkeletonJoint.BackKnee:
+                    return layout.Legs.Back.Knee;
+                case SkeletonJoint.BackAnkle:
+                    return layout.Legs.Back.Ankle;
+                case SkeletonJoint.BackToe:
+                    return layout.Legs.Back.Toe;
                 default:
                     var position = GetStanceJointAtUnitHeight(joint) * layout.HeightMeters;
                     return layout.Hand == Hand.Left ? HandMirroring.MirrorPosition(position) : position;
@@ -71,8 +90,6 @@ namespace VrFencing.Dummy
         {
             switch (joint)
             {
-                case SkeletonJoint.HipCenter:
-                    return (EnGardePose.FrontHip + EnGardePose.BackHip) * 0.5f;
                 case SkeletonJoint.ShoulderCenter:
                     return (EnGardePose.SwordShoulder + EnGardePose.BackShoulder) * 0.5f;
                 case SkeletonJoint.HeadCenter:
@@ -83,22 +100,6 @@ namespace VrFencing.Dummy
                     return EnGardePose.BackElbow;
                 case SkeletonJoint.BackHand:
                     return EnGardePose.BackHand;
-                case SkeletonJoint.FrontHip:
-                    return EnGardePose.FrontHip;
-                case SkeletonJoint.FrontKnee:
-                    return EnGardePose.FrontKnee;
-                case SkeletonJoint.FrontAnkle:
-                    return EnGardePose.FrontAnkle;
-                case SkeletonJoint.FrontToe:
-                    return EnGardePose.FrontToe;
-                case SkeletonJoint.BackHip:
-                    return EnGardePose.BackHip;
-                case SkeletonJoint.BackKnee:
-                    return EnGardePose.BackKnee;
-                case SkeletonJoint.BackAnkle:
-                    return EnGardePose.BackAnkle;
-                case SkeletonJoint.BackToe:
-                    return EnGardePose.BackToe;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(joint), joint, "Not a stance skeleton joint.");
             }

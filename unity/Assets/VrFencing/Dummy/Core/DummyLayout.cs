@@ -9,11 +9,13 @@ namespace VrFencing.Dummy
     /// <summary>
     /// The Dummy as data: its Target Zones and the rest of its silhouette, as capsules in the Dummy frame
     /// (origin on the floor under the front foot, +x the Dummy's right, +y up, +z toward the Fencer),
-    /// scaled to <see cref="HeightMeters"/>. Only the sword arm ever changes: <see cref="PoseArm"/> moves it in place
-    /// (the Armed Dummy does every frame, so it must not allocate), <see cref="WithArmPose"/> gives a separate layout.
+    /// scaled to <see cref="HeightMeters"/>. The sword arm and the legs move: <see cref="PoseArm"/> and
+    /// <see cref="PoseLegs"/> move them in place (the Armed Dummy and the stepping Dummy do every frame, so neither
+    /// allocates), <see cref="WithArmPose"/> gives a separate layout.
     ///
     /// The sword arm is a joint chain (<see cref="Arm"/>): the hand, wrist, forearm and upper arm zones are derived
-    /// from its joint poses. The body, thigh and foot zones and the silhouette are fixed to the stance.
+    /// from its joint poses. The legs (<see cref="Legs"/>, PER-110) carry the thigh and foot zones and the leg
+    /// silhouette. The body zone, the head and the back arm are fixed to the stance.
     ///
     /// Hand: the Dummy holds its blade in the same hand as the Fencer, so a right-handed Fencer faces a
     /// right-handed Dummy and a left-handed Fencer a left-handed one ("left mirrors everything", Settings).
@@ -21,18 +23,27 @@ namespace VrFencing.Dummy
     /// </summary>
     public sealed class DummyLayout
     {
+        // Indices in SilhouetteParts of the parts the legs carry (see SilhouetteBodyParts).
+        private const int FrontShinPart = 3;
+        private const int BackThighPart = 4;
+        private const int BackShinPart = 5;
+        private const int BackFootPart = 6;
+
         private readonly ZoneCapsule[] _zones;
         private readonly Capsule[] _silhouetteParts;
 
-        private DummyLayout(float heightMeters, SwordArm arm, Capsule[] silhouetteParts)
+        private DummyLayout(float heightMeters, SwordArm arm, DummyLegs legs)
         {
             HeightMeters = heightMeters;
             Arm = arm;
-            _silhouetteParts = silhouetteParts;
+            _silhouetteParts = SilhouetteAtUnitHeight()
+                .Select(part => Scale(part, heightMeters, arm.Hand))
+                .ToArray();
             _zones = Enum.GetValues(typeof(TargetZone))
                 .Cast<TargetZone>()
                 .Select(zone => new ZoneCapsule(zone, SwordArm.IsArmZone(zone) ? arm.GetZone(zone) : Scale(StanceZoneAtUnitHeight(zone), heightMeters, arm.Hand)))
                 .ToArray();
+            PoseLegs(legs);
         }
 
         public float HeightMeters { get; }
@@ -42,6 +53,9 @@ namespace VrFencing.Dummy
 
         /// <summary>The sword arm's joints and its pose.</summary>
         public SwordArm Arm { get; }
+
+        /// <summary>The legs' joints: en garde unless <see cref="PoseLegs"/> moved them.</summary>
+        public DummyLegs Legs { get; private set; }
 
         /// <summary>One capsule per <see cref="TargetZone"/>, in enum order.</summary>
         public IReadOnlyList<ZoneCapsule> Zones => _zones;
@@ -74,16 +88,13 @@ namespace VrFencing.Dummy
         {
             RequirePositiveHeight(heightMeters);
 
-            var silhouetteParts = SilhouetteAtUnitHeight()
-                .Select(part => Scale(part, heightMeters, hand))
-                .ToArray();
-            return new DummyLayout(heightMeters, new SwordArm(heightMeters, hand, armPose), silhouetteParts);
+            return new DummyLayout(heightMeters, new SwordArm(heightMeters, hand, armPose), DummyLegs.EnGarde(heightMeters, hand));
         }
 
-        /// <summary>The same Dummy with the sword arm moved to <paramref name="armPose"/>.</summary>
+        /// <summary>The same Dummy, legs as they are now, with the sword arm moved to <paramref name="armPose"/>.</summary>
         public DummyLayout WithArmPose(SwordArmPose armPose)
         {
-            return new DummyLayout(HeightMeters, new SwordArm(HeightMeters, Hand, armPose), _silhouetteParts);
+            return new DummyLayout(HeightMeters, new SwordArm(HeightMeters, Hand, armPose), Legs);
         }
 
         /// <summary>
@@ -102,6 +113,35 @@ namespace VrFencing.Dummy
                     _zones[index] = new ZoneCapsule(zone, Arm.GetZone(zone));
                 }
             }
+        }
+
+        /// <summary>
+        /// Moves the legs to <paramref name="legs"/> (in this layout's Dummy frame, already mirrored for its hand), and
+        /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110).
+        /// </summary>
+        public void PoseLegs(DummyLegs legs)
+        {
+            Legs = legs;
+            var hipRadius = EnGardePose.ThighRadius * HeightMeters;
+            var shinRadius = EnGardePose.ShinRadius * HeightMeters;
+            var footRadius = EnGardePose.FootRadius * HeightMeters;
+            for (var index = 0; index < _zones.Length; index++)
+            {
+                switch (_zones[index].Zone)
+                {
+                    case TargetZone.Thigh:
+                        _zones[index] = new ZoneCapsule(TargetZone.Thigh, new Capsule(legs.Front.Knee, legs.Front.Hip, hipRadius));
+                        break;
+                    case TargetZone.Foot:
+                        _zones[index] = new ZoneCapsule(TargetZone.Foot, new Capsule(legs.Front.Heel, legs.Front.Toe, footRadius));
+                        break;
+                }
+            }
+
+            _silhouetteParts[FrontShinPart] = new Capsule(legs.Front.Ankle, legs.Front.Knee, shinRadius);
+            _silhouetteParts[BackThighPart] = new Capsule(legs.Back.Knee, legs.Back.Hip, hipRadius);
+            _silhouetteParts[BackShinPart] = new Capsule(legs.Back.Ankle, legs.Back.Knee, shinRadius);
+            _silhouetteParts[BackFootPart] = new Capsule(legs.Back.Heel, legs.Back.Toe, footRadius);
         }
 
         public Capsule GetZone(TargetZone zone)

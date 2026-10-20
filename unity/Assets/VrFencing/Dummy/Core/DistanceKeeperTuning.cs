@@ -86,14 +86,6 @@ namespace VrFencing.Dummy
         /// <summary>The Dummy stops following once its target is this close to where the Fencer now is.</summary>
         public const float SettledMeters = 0.02f;
 
-        // ---- The rigid glide (no legs yet; PER-110 steps the same target) ----
-
-        /// <summary>Top glide speed: a brisk advance or retreat, one step (about 33 cm) in about 0.3 s.</summary>
-        public const float GlideTopSpeedMetersPerSecond = 1.2f;
-
-        /// <summary>Speeds up and slows down at this, so a glide starts and stops like a step, not a jump.</summary>
-        public const float GlideAccelerationMetersPerSecondSquared = 6.0f;
-
         /// <summary>The reaction timing for <paramref name="difficulty"/>.</summary>
         /// <exception cref="ArgumentOutOfRangeException">Not a difficulty.</exception>
         public static ReactionTiming GetReaction(DummyDifficulty difficulty)
