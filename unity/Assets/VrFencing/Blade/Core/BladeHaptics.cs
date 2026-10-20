@@ -126,6 +126,19 @@ namespace VrFencing.Blade
             new HapticSegment(1.0f, 1.0f, 0.070f),
         };
 
+        /// <summary>
+        /// The Armed Dummy's point landing on the Fencer (PER-99, decided in PER-23 as a sharp buzz unlike a Touch): on
+        /// both controllers, a hard sharp jab and then a low rumble that fades, 0.28 s in all. The reverse of
+        /// <see cref="BeingTouched"/> (rumble first, jab last), longer and lower than any blade event or the clash.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> ArmedDummyHit { get; } = new[]
+        {
+            new HapticSegment(1.0f, 1.0f, 0.040f),
+            new HapticSegment(0.8f, 0.3f, 0.080f),
+            new HapticSegment(0.5f, 0.2f, 0.080f),
+            new HapticSegment(0.25f, 0.15f, 0.080f),
+        };
+
         /// <summary>How often the press buzz repeats while pinned.</summary>
         public const float PressPulseIntervalSeconds = 0.06f;
 

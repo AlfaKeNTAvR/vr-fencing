@@ -79,6 +79,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.Haptics), Is.EqualTo(new[]
             {
                 SettingId.TouchHaptic, SettingId.FlatHaptic, SettingId.GlanceHaptic, SettingId.HapticFloor, SettingId.HapticFullStrengthSpeed,
+                SettingId.ClashHaptic, SettingId.ClashHapticFloor,
             }));
 
             // PER-100: the Parry rule and each Parry Drill's Riposte switch.

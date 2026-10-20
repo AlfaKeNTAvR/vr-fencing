@@ -235,6 +235,8 @@ namespace VrFencing.Tests.Settings
             Assert.That(blade.TouchHaptic, Is.EqualTo(HapticPattern.Heavy));
             Assert.That(blade.FlatHaptic, Is.EqualTo(HapticPattern.DoubleTap));
             Assert.That(blade.GlanceHaptic, Is.EqualTo(HapticPattern.Tick));
+            Assert.That(blade.ClashHaptic, Is.EqualTo(HapticPattern.Crisp));
+            Assert.That(blade.ClashHapticFloor, Is.EqualTo(0.35f));
         }
 
         [Test]

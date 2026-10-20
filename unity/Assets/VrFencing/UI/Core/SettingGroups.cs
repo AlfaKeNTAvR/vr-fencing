@@ -51,9 +51,11 @@ namespace VrFencing.UI
                 SettingId.BodyOpacity,
             },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
+            // The Armed Dummy's clash buzz (PER-99) fills the group to 7; the hit-on-Fencer buzz is fixed, with no Setting.
             [SettingGroup.Haptics] = new[]
             {
                 SettingId.TouchHaptic, SettingId.FlatHaptic, SettingId.GlanceHaptic, SettingId.HapticFloor, SettingId.HapticFullStrengthSpeed,
+                SettingId.ClashHaptic, SettingId.ClashHapticFloor,
             },
 
             // The Armed Dummy's Parry Drills (PER-100): the Parry rule moved here from Touch, beside each Drill's Riposte switch.
