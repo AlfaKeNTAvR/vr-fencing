@@ -5,8 +5,8 @@ using VrFencing.Dummy;
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// Something the drawn blade cannot pass (PER-48, PER-49): a capsule (a part of the Dummy, another blade later)
-    /// or a plane with solid space under it (the floor). <see cref="BladeContactBend"/> and <see cref="DrawnBlade"/>
+    /// Something the drawn blade cannot pass (PER-48, PER-49): a capsule (a part of the Dummy), a plane with solid
+    /// space under it (the floor), or a piece of another blade (the Armed Dummy's, PER-104). <see cref="BladeContactBend"/> and <see cref="DrawnBlade"/>
     /// only ask an obstacle how far a point is from its surface, which way is out, where a moving point meets it and
     /// where a point rests on it, so both kinds follow the same rule. Each has a friction coefficient for the pressed
     /// point (PER-69): the point holds while the blade's push on it stays inside the friction cone round the surface
@@ -27,19 +27,42 @@ namespace VrFencing.Blade
         /// </summary>
         public const float JacketFriction = 0.7f;
 
+        /// <summary>
+        /// Friction of the point on another blade: steel on steel, low, so a point pressed on the Armed Dummy's blade
+        /// slides along it unless pushed in nearly square (about 11 degrees off its normal or less).
+        /// </summary>
+        public const float BladeFriction = 0.2f;
+
+        /// <summary>
+        /// Half the width of the Armed Dummy's blade: its centerline and the drawn blade's keep this plus
+        /// <see cref="DrawnBlade.BladeRadiusMeters"/> apart.
+        /// </summary>
+        public const float BladeRadiusMeters = 0.004f;
+
         private readonly bool _isPlane;
+        private readonly bool _isBlade;
         private readonly Capsule _capsule;
         private readonly Vector3 _planePoint;
         private readonly Vector3 _planeNormal;
         private readonly float _friction;
+        private readonly Vector3 _side;
+        private readonly int _joints;
 
         private BladeObstacle(bool isPlane, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction)
+            : this(isPlane, false, capsule, planePoint, planeNormal, friction, Vector3.Zero, 0)
+        {
+        }
+
+        private BladeObstacle(bool isPlane, bool isBlade, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction, Vector3 side, int joints)
         {
             _isPlane = isPlane;
+            _isBlade = isBlade;
             _capsule = capsule;
             _planePoint = planePoint;
             _planeNormal = planeNormal;
             _friction = friction;
+            _side = side;
+            _joints = joints;
         }
 
         /// <summary>
@@ -50,6 +73,12 @@ namespace VrFencing.Blade
 
         /// <summary>True for a plane (solid on one side); planes always hold where they overlap a capsule.</summary>
         public bool IsPlane => _isPlane;
+
+        /// <summary>
+        /// True for a piece of another blade (<see cref="FromBladePiece"/>): thin, so it is tested against the drawn
+        /// blade's pieces, not only its points, and the drawn blade keeps to its side of it.
+        /// </summary>
+        public bool IsBlade => _isBlade;
 
         /// <summary>
         /// The point's friction coefficient on this surface: the pressed point holds while the part of the blade's push
@@ -80,6 +109,83 @@ namespace VrFencing.Blade
             return new BladeObstacle(true, default, point, Vector3.Normalize(outwardNormal), CheckFriction(friction));
         }
 
+        /// <summary>
+        /// A straight piece of another blade (the Armed Dummy's, PER-104), <see cref="BladeRadiusMeters"/> thick, from
+        /// <paramref name="start"/> (toward its guard) to <paramref name="end"/>. The drawn blade must stay on
+        /// <paramref name="side"/> of it, the side it was on before the two met (see <see cref="BladeBind"/>): any of it
+        /// found behind this blade (alongside it, past its axis, within <see cref="BladeBind.StripHalfWidthMeters"/>)
+        /// got there through it, so a fast move between frames cannot carry it through. With no side (zero), it only
+        /// keeps its distance.
+        /// </summary>
+        /// <param name="side">Which way from this blade the drawn blade is; made square to the piece.</param>
+        /// <param name="startIsJoint">The start joins the blade's previous piece (it is not the blade's guard).</param>
+        /// <param name="endIsJoint">The end joins the blade's next piece (it is not the blade's point).</param>
+        /// <exception cref="ArgumentOutOfRangeException">The friction is negative.</exception>
+        public static BladeObstacle FromBladePiece(Vector3 start, Vector3 end, Vector3 side, bool startIsJoint, bool endIsJoint, float friction = BladeFriction)
+        {
+            var axis = end - start;
+            var square = axis.LengthSquared() > 1e-12f ? side - (Vector3.Dot(side, axis) / axis.LengthSquared() * axis) : side;
+            var unitSide = square.LengthSquared() > 1e-10f ? Vector3.Normalize(square) : Vector3.Zero;
+            var joints = (startIsJoint ? 1 : 0) | (endIsJoint ? 2 : 0);
+            return new BladeObstacle(false, true, new Capsule(start, end, BladeRadiusMeters), Vector3.Zero, Vector3.UnitY, CheckFriction(friction), unitSide, joints);
+        }
+
+        /// <summary>
+        /// True when the drawn blade's piece from <paramref name="start"/> to <paramref name="end"/> keeps
+        /// <paramref name="marginMeters"/> out of this blade piece and is nowhere behind it (<see cref="FromBladePiece"/>).
+        /// True for any obstacle that is not a blade piece.
+        /// </summary>
+        /// <param name="joints">Whether the drawn piece's start (bit 0) and end (bit 1) join more of the drawn blade.</param>
+        public bool IsPieceClear(Vector3 start, Vector3 end, int joints, float marginMeters)
+        {
+            if (!_isBlade)
+            {
+                return true;
+            }
+
+            // A piece wholly before or past this one along its axis (by more than touching) is neither close nor
+            // behind it: skip the closest-point work, which most of the drawn blade's pieces need not do.
+            var axis = _capsule.End - _capsule.Start;
+            var lengthSquared = axis.LengthSquared();
+            if (lengthSquared > 1e-12f)
+            {
+                var length = (float)Math.Sqrt(lengthSquared);
+                var startAlong = Vector3.Dot(start - _capsule.Start, axis) / length;
+                var endAlong = Vector3.Dot(end - _capsule.Start, axis) / length;
+                var reach = _capsule.RadiusMeters + marginMeters + (length * BladeCrossing.StripJointSlack);
+                if (Math.Max(startAlong, endAlong) < -reach || Math.Min(startAlong, endAlong) > length + reach)
+                {
+                    return true;
+                }
+            }
+
+            return FindPieceSeparation(start, end, joints, out _, out _) >= marginMeters - 1e-5f;
+        }
+
+        /// <summary>
+        /// How far a straight piece from <paramref name="start"/> to <paramref name="end"/> is out of this blade piece's
+        /// surface where the two come closest: negative when it is in it, or behind it (then by how far past its
+        /// axis, plus its half-width). <paramref name="closest"/> is that spot on the given piece, at
+        /// <paramref name="fraction"/> of the way from its start.
+        /// </summary>
+        /// <param name="joints">Whether the given piece's start (bit 0) and end (bit 1) join more of its blade.</param>
+        public float FindPieceSeparation(Vector3 start, Vector3 end, int joints, out Vector3 closest, out float fraction)
+        {
+            BladeCrossing.FindClosest(start, end, joints, _capsule.Start, _capsule.End, _joints, out closest, out var onThis, out fraction, out _);
+            var separation = Vector3.Distance(closest, onThis) - _capsule.RadiusMeters;
+            if (_side != Vector3.Zero
+                && BladeCrossing.TryFindLeastSide(start, end, _capsule.Start, _capsule.End, _joints, _side, BladeBind.StripHalfWidthMeters, out var leastSide, out var behind, out var behindFraction)
+                && leastSide < 0.0f)
+            {
+                // Behind this blade (past its axis, in the strip behind it): passed through it, by this much.
+                closest = behind;
+                fraction = behindFraction;
+                return leastSide - _capsule.RadiusMeters;
+            }
+
+            return separation;
+        }
+
         public static implicit operator BladeObstacle(Capsule capsule)
         {
             return FromCapsule(capsule);
@@ -93,6 +199,24 @@ namespace VrFencing.Blade
             }
 
             return friction;
+        }
+
+        /// <summary>
+        /// False only when no point in the box from <paramref name="boxMin"/> to <paramref name="boxMax"/> can be within
+        /// <paramref name="marginMeters"/> of a capsule or blade piece (its bounding sphere misses the box): a cheap test
+        /// that skips far bodies without changing any answer. Always true for a plane.
+        /// </summary>
+        public bool IsNearBox(Vector3 boxMin, Vector3 boxMax, float marginMeters)
+        {
+            if (_isPlane)
+            {
+                return true;
+            }
+
+            var center = (_capsule.Start + _capsule.End) * 0.5f;
+            var reach = (Vector3.Distance(_capsule.Start, _capsule.End) * 0.5f) + _capsule.RadiusMeters + marginMeters;
+            var nearest = Vector3.Clamp(center, boxMin, boxMax);
+            return Vector3.DistanceSquared(center, nearest) <= reach * reach;
         }
 
         /// <summary>Distance from a point to the surface: negative inside.</summary>
@@ -160,6 +284,16 @@ namespace VrFencing.Blade
         /// </summary>
         public Vector3 PushOut(Vector3 point, float marginMeters, Vector3? previous)
         {
+            if (_isBlade && _side != Vector3.Zero)
+            {
+                // Another blade: out on the side the drawn blade keeps to, also from a point across it on the other side.
+                var onBlade = SegmentMath.FindClosestPointOnSegment(point, _capsule.Start, _capsule.End);
+                var isOnSide = Vector3.Dot(point - onBlade, _side) >= 0.0f;
+                return isOnSide && FindDistance(point) >= marginMeters - 1e-5f
+                    ? point
+                    : onBlade + (_side * (_capsule.RadiusMeters + marginMeters));
+            }
+
             if (FindDistance(point) >= marginMeters - 1e-5f)
             {
                 return point;

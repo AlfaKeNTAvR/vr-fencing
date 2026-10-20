@@ -8,7 +8,10 @@ namespace VrFencing.Blade
     /// Fencer's blade speed and contact point, then recovers"; prototype PER-95). The swing is an offset of the Dummy's
     /// point, square to its blade, on a damped spring back to zero: a <see cref="Kick"/> sends the point out to a peak
     /// that grows with the contact's speed and with how far out along the Dummy's blade the contact was (less leverage
-    /// for the Dummy's hand), then it settles back in line in about half a second.
+    /// for the Dummy's hand), then it settles back in line in about half a second. Pressed by the Fencer's blade
+    /// (PER-104), the spring pulls toward the press's yield instead of the line (<see cref="HoldAt"/>), and the blade is
+    /// pushed out of the Fencer's at once (<see cref="Push"/>); let go, it springs back the same way. The point never
+    /// goes further than <see cref="MaxPeakMeters"/> off the line: the arm's limit.
     /// Meters, seconds.
     /// </summary>
     public sealed class BladeSwing
@@ -32,6 +35,7 @@ namespace VrFencing.Blade
         private const float MaxStepSeconds = 0.002f;
 
         private Vector3 _velocity;
+        private Vector3 _heldOffset;
 
         /// <summary>The point's offset now, square to the blade it was kicked off.</summary>
         public Vector3 TipOffset { get; private set; }
@@ -65,10 +69,44 @@ namespace VrFencing.Blade
             _velocity += clash.PushDirection * GetKickSpeed(peak);
         }
 
+        /// <summary>
+        /// Where the spring pulls the point while the Fencer's blade presses on it (PER-104): the press's yield
+        /// (<see cref="BladeBind.FindYieldTipOffset"/>), zero when nothing presses, so the blade springs back to its line
+        /// on release at the swing's own pace. At most <see cref="MaxPeakMeters"/>, the arm's limit.
+        /// </summary>
+        public void HoldAt(Vector3 tipOffset)
+        {
+            _heldOffset = LimitToArm(tipOffset);
+        }
+
+        /// <summary>
+        /// Moves the point at once by <paramref name="tipOffset"/> (the Fencer's blade in the way, PER-104) and stops its
+        /// motion back the other way, as a blade knocked against another does not pass through it. The offset stays
+        /// within the arm's limit, <see cref="MaxPeakMeters"/>.
+        /// </summary>
+        public void Push(Vector3 tipOffset)
+        {
+            var length = tipOffset.Length();
+            if (length < 1e-7f)
+            {
+                return;
+            }
+
+            var direction = tipOffset / length;
+            var back = Vector3.Dot(_velocity, direction);
+            if (back < 0.0f)
+            {
+                _velocity -= back * direction;
+            }
+
+            TipOffset = LimitToArm(TipOffset + tipOffset);
+        }
+
         public void Reset()
         {
             TipOffset = Vector3.Zero;
             _velocity = Vector3.Zero;
+            _heldOffset = Vector3.Zero;
         }
 
         public void Step(float deltaSeconds)
@@ -85,12 +123,18 @@ namespace VrFencing.Blade
             for (var index = 0; index < steps; index++)
             {
                 // Semi-implicit Euler: stable for a spring at this step.
-                var acceleration = (-omega * omega * offset) - (2.0f * DampingRatio * omega * _velocity);
+                var acceleration = (-omega * omega * (offset - _heldOffset)) - (2.0f * DampingRatio * omega * _velocity);
                 _velocity += acceleration * step;
                 offset += _velocity * step;
             }
 
-            TipOffset = offset;
+            TipOffset = LimitToArm(offset);
+        }
+
+        private static Vector3 LimitToArm(Vector3 tipOffset)
+        {
+            var length = tipOffset.Length();
+            return length > MaxPeakMeters ? tipOffset * (MaxPeakMeters / length) : tipOffset;
         }
 
         /// <summary>The blade turned about its guard so its point carries the offset, keeping its length.</summary>
