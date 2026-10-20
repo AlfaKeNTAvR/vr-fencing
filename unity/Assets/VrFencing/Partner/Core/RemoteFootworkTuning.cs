@@ -18,7 +18,8 @@ namespace VrFencing.Partner
         public const double SpeedWindowSeconds = 0.05;
 
         /// <summary>
-        /// The hips moving along the Strip at least this fast start a step. En garde sway and breathing stay under it.
+        /// The hips moving over the floor at least this fast, along the Strip, across it or diagonally (PER-118), start a
+        /// step. En garde sway and breathing stay under it.
         /// The hips, not the head, carry the feet: leaning the torso to dodge a point moves the head but not the feet.
         /// </summary>
         public const float StepOnsetMetersPerSecond = 0.25f;
@@ -53,6 +54,14 @@ namespace VrFencing.Partner
 
         /// <summary>A foot lands (lowered and settled on its spot) over this long.</summary>
         public const double LandingSeconds = 0.08;
+
+        /// <summary>
+        /// A swinging or landing foot never moves faster than this over the floor (PER-118): about 4 cm in a 72 Hz frame,
+        /// under the Blade's 5 cm sweep, so the thigh and foot zones never jump past a point. A foot asked to go faster
+        /// lags a frame or two and catches up; a fast step's foot peaks near this anyway. Before this cap, the trailing
+        /// foot of a step whose lead foot landed late covered its whole stride in a few frames (up to 8 cm a frame).
+        /// </summary>
+        public const float MaxFootSpeedMetersPerSecond = 3.0f;
 
         /// <summary>
         /// A planted foot more than this far from its en garde place under the hips (about 13 cm at 1.8 m), with no step
@@ -118,11 +127,15 @@ namespace VrFencing.Partner
         /// <summary>Only the head: the hips are guessed from the head's last offset to them.</summary>
         public const float HeadOnlyConfidence = 0.6f;
 
-        /// <summary>The hips move across the Strip faster than along it: walking, not fencing footwork.</summary>
+        /// <summary>The hips move across the Strip fast and faster than along it: walking, not fencing footwork.</summary>
         public const float SidewaysConfidence = 0.3f;
 
-        /// <summary>Moving across the Strip faster than this, and faster than along it, reads as walking.</summary>
-        public const float SidewaysMetersPerSecond = 0.4f;
+        /// <summary>
+        /// Moving across the Strip faster than this, and faster than along it, reads as walking. Raised from 0.4 m/s in
+        /// PER-118: side steps and diagonals are now stepped like advances (their hips peak near 0.5 to 0.9 m/s), so only
+        /// a walking pace across is left unsure.
+        /// </summary>
+        public const float SidewaysMetersPerSecond = 1.0f;
 
         /// <summary>No head: nothing to read the feet from (headset off, asleep, not tracked).</summary>
         public const float NoConfidence = 0.0f;

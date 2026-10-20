@@ -12,7 +12,8 @@ namespace VrFencing.Drills
     /// <see cref="DistanceKeeper"/> (the intent: where the Dummy should stand), steps the Dummy there with its Core
     /// <see cref="DummyBehaviour.Footwork"/> (PER-110: advances and retreats on planted feet) and poses the Dummy where
     /// the footwork has it, body and legs, so its Target Zones move with it. The Fencer's front
-    /// foot is taken to be <see cref="StartMark.HeadBehindFrontFootPerHeight"/> ahead of the headset, as at the Start Mark.
+    /// foot is taken to be <see cref="StartMark.HeadBehindFrontFootPerHeight"/> ahead of the headset, as at the Start Mark,
+    /// and the Fencer's side across the Strip is the headset's (PER-118: the Dummy follows it a little, in side steps).
     /// Logs each reaction with a <c>[Dummy]</c> tag. All rules are in the Core; this only reads, forwards and places.
     /// </summary>
     internal sealed class DistanceKeeperDriver
@@ -84,10 +85,11 @@ namespace VrFencing.Drills
                 return;
             }
 
-            var fencerFrontFootZ = ReadFencerFrontFootZ();
-            _keeper.Step(nowSeconds, fencerFrontFootZ);
+            var headInStrip = ReadHeadInStrip();
+            var fencerFrontFootZ = headInStrip.HasValue ? headInStrip.Value.Z - StartMark.GetHeadZ(_dummy.Layout.HeightMeters) : (float?)null;
+            _keeper.Step(nowSeconds, fencerFrontFootZ, headInStrip?.X);
             LogStateChange(fencerFrontFootZ);
-            _dummy.Footwork.Step(_keeper.TargetFrontFootZ, deltaSeconds);
+            _dummy.Footwork.Step(_keeper.TargetFrontFootZ, _keeper.TargetSideMeters, deltaSeconds);
             _dummy.ApplyFootwork();
         }
 
@@ -100,8 +102,11 @@ namespace VrFencing.Drills
             _keeper = null;
         }
 
-        /// <summary>Strip-frame z of the Fencer's front foot, from the headset; null without a headset or Strip.</summary>
-        private float? ReadFencerFrontFootZ()
+        /// <summary>
+        /// The headset in the Strip frame; null without a headset or Strip. Its z, less the en garde offset, is the
+        /// front foot along the Strip; its x the Fencer's side (the head is over the front foot's line in en garde).
+        /// </summary>
+        private System.Numerics.Vector3? ReadHeadInStrip()
         {
             if (_head == null || _strip == null || _strip.EnGardeLine == null)
             {
@@ -109,8 +114,7 @@ namespace VrFencing.Drills
             }
 
             var enGardeLine = new Pose(_strip.EnGardeLine.position, _strip.EnGardeLine.rotation).ToTrackedPose();
-            var headInStrip = StripFrame.ToStripFrame(enGardeLine, _head.position.ToNumerics());
-            return headInStrip.Z - StartMark.GetHeadZ(_dummy.Layout.HeightMeters);
+            return StripFrame.ToStripFrame(enGardeLine, _head.position.ToNumerics());
         }
 
         private void LogStateChange(float? fencerFrontFootZ)
@@ -129,11 +133,11 @@ namespace VrFencing.Drills
                     Debug.Log($"[Dummy] Fencer moved (front foot at {fencer}): reacting in {_keeper.ReactionDelaySeconds * 1000.0f:0} ms.");
                     break;
                 case DistanceKeeperState.Following:
-                    Debug.Log($"[Dummy] Reacted: stepping toward {_keeper.TargetFrontFootZ:0.00} m (Fencer at {fencer}).");
+                    Debug.Log($"[Dummy] Reacted: stepping toward {_keeper.TargetFrontFootZ:0.00} m, side {_keeper.TargetSideMeters:+0.00;-0.00} m (Fencer at {fencer}).");
                     break;
                 default:
                     var gap = fencerFrontFootZ.HasValue ? $", gap {_keeper.TargetFrontFootZ - fencerFrontFootZ.Value:0.00} m" : string.Empty;
-                    Debug.Log($"[Dummy] Holding at {_keeper.TargetFrontFootZ:0.00} m (Fencer at {fencer}{gap}).");
+                    Debug.Log($"[Dummy] Holding at {_keeper.TargetFrontFootZ:0.00} m, side {_keeper.TargetSideMeters:+0.00;-0.00} m (Fencer at {fencer}{gap}).");
                     break;
             }
         }

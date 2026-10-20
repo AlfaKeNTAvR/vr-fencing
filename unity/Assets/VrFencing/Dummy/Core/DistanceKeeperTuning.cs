@@ -86,6 +86,26 @@ namespace VrFencing.Dummy
         /// <summary>The Dummy stops following once its target is this close to where the Fencer now is.</summary>
         public const float SettledMeters = 0.02f;
 
+        // ---- Across the Strip (PER-118) ----
+
+        /// <summary>
+        /// The Dummy follows this share of the Fencer's side position (measured from the Strip's center line): enough to
+        /// see it answer a move aside, not so much that it mirrors every lean.
+        /// </summary>
+        public const float SideFollowFraction = 0.5f;
+
+        /// <summary>
+        /// The Dummy's body stays within this of the Strip's center line. The Strip is 1.5 m wide and the en garde stance
+        /// reaches about 0.13 of the height to the side of the front foot, so this keeps the feet 0.2 m or more inside it.
+        /// </summary>
+        public const float MaxSideMeters = 0.25f;
+
+        /// <summary>
+        /// The Dummy reacts once its wanted side is this far from where it last set it: about a 16 cm move aside by the
+        /// Fencer. Looser than along the Strip, so sway and a small dodge do not make it shuffle.
+        /// </summary>
+        public const float SideToleranceMeters = 0.08f;
+
         /// <summary>The reaction timing for <paramref name="difficulty"/>.</summary>
         /// <exception cref="ArgumentOutOfRangeException">Not a difficulty.</exception>
         public static ReactionTiming GetReaction(DummyDifficulty difficulty)

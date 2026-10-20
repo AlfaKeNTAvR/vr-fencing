@@ -24,18 +24,20 @@ namespace VrFencing.Tests.Dummy
             var stepsSeen = new HashSet<FootworkStep>();
             showcase.MoveStarted += moves.Add;
 
-            for (var frame = 0; frame < 72 * 60 && moves.Count < 11; frame++)
+            for (var frame = 0; frame < 72 * 90 && moves.Count < 17; frame++)
             {
                 showcase.Step(FrameSeconds);
                 stepsSeen.Add(footwork.CurrentStep);
             }
 
-            Assert.That(moves.GetRange(0, 11), Is.EqualTo(new[]
+            Assert.That(moves.GetRange(0, 17), Is.EqualTo(new[]
             {
                 ShowcaseMove.Stand, ShowcaseMove.Advance, ShowcaseMove.Stand, ShowcaseMove.Retreat, ShowcaseMove.Stand,
                 ShowcaseMove.Lunge, ShowcaseMove.Stand, ShowcaseMove.Fleche, ShowcaseMove.Stand, ShowcaseMove.Retreat,
-                ShowcaseMove.Stand,
+                ShowcaseMove.Stand, ShowcaseMove.SideStep, ShowcaseMove.Stand, ShowcaseMove.Diagonal, ShowcaseMove.Stand,
+                ShowcaseMove.Retreat, ShowcaseMove.Stand,
             }));
+            Assert.That(footwork.SideMeters, Is.EqualTo(0.0f).Within(FootworkTuning.MinStepMeters), "Back on the center line.");
             Assert.That(stepsSeen, Is.EquivalentTo((FootworkStep[])Enum.GetValues(typeof(FootworkStep))));
             Assert.That(footwork.DistanceMeters, Is.EqualTo(Home).Within(FootworkTuning.MinStepMeters), "Home again.");
         }
@@ -49,7 +51,7 @@ namespace VrFencing.Tests.Dummy
             var layout = DummyLayout.Create(height, Hand.Left);
             var before = layout.GetBodyOnStrip(footwork.DistanceMeters);
 
-            for (var frame = 0; frame < 72 * 40; frame++)
+            for (var frame = 0; frame < 72 * 60; frame++)
             {
                 showcase.Step(FrameSeconds);
                 layout.PoseLegs(footwork.Legs);
