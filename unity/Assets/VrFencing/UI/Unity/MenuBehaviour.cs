@@ -31,6 +31,10 @@ namespace VrFencing.UI
     /// (<see cref="DrillIntro"/>, PER-92), then starts the run on the runner, so the Fencer knows what to do before the
     /// first cue. Cancel in that time cancels the start.
     ///
+    /// When the Fencer goes away mid-Drill (headset asleep, Meta menu open, headset off) the run pauses as if they
+    /// pressed Pause and the panels open on Resume; a start still showing its task line is dropped
+    /// (<see cref="DrillAwayPause"/>, PER-106).
+    ///
     /// The Partner page (PER-80) hosts or joins a session through the scene's <see cref="PartnerSessionBehaviour"/>.
     /// While in a session, solo Drills cannot start and the Dummy is hidden, so it never stands where the opponent
     /// stands (PER-58).
@@ -162,6 +166,11 @@ namespace VrFencing.UI
             {
                 Debug.LogError("[UI] No Partner object; the Partner page cannot host or join.");
             }
+
+            OVRManager.InputFocusLost += OnInputFocusLost;
+            OVRManager.VrFocusLost += OnInputFocusLost;
+            OVRManager.HMDUnmounted += OnHeadsetRemoved;
+            OVRManager.HMDLost += OnHeadsetRemoved;
         }
 
         private void OnDestroy()
@@ -187,6 +196,10 @@ namespace VrFencing.UI
                 _partner.Changed -= OnPartnerChanged;
             }
 
+            OVRManager.InputFocusLost -= OnInputFocusLost;
+            OVRManager.VrFocusLost -= OnInputFocusLost;
+            OVRManager.HMDUnmounted -= OnHeadsetRemoved;
+            OVRManager.HMDLost -= OnHeadsetRemoved;
             _cueDisplay?.Dispose();
         }
 
@@ -731,10 +744,64 @@ namespace VrFencing.UI
             if (Runner.IsPausedByFencer)
             {
                 Runner.ResumeByFencer();
+                var outcome = Runner.IsPaused ? "waits for the Fencer back on the Strip" : "goes on";
+                Debug.Log($"[Drills] Resume pressed: Drill '{Runner.Drill.Id}' {outcome}, Rep {Runner.CurrentRepIndex + 1}.");
             }
             else
             {
                 Runner.PauseByFencer();
+                Debug.Log($"[Drills] Pause pressed: Drill '{Runner.Drill.Id}' paused at Rep {Runner.CurrentRepIndex + 1}.");
+            }
+        }
+
+        private void OnApplicationPause(bool isPaused)
+        {
+            if (isPaused)
+            {
+                PauseForAway(AwayReason.AppPaused);
+            }
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            // In the Editor, clicking another window takes the focus; only the headset's focus loss means the Fencer is away.
+            if (!hasFocus && !Application.isEditor)
+            {
+                PauseForAway(AwayReason.FocusLost);
+            }
+        }
+
+        private void OnInputFocusLost() => PauseForAway(AwayReason.FocusLost);
+
+        private void OnHeadsetRemoved() => PauseForAway(AwayReason.HeadsetRemoved);
+
+        /// <summary>
+        /// The Fencer went away (PER-106): pauses a running Drill as the Pause button would and opens the panels on
+        /// Resume, or drops a start still showing its task line. One sleep raises several callbacks; the later ones find
+        /// the run already paused and do nothing.
+        /// </summary>
+        private void PauseForAway(AwayReason reason)
+        {
+            // Start may have turned the menu off (missing scene objects); the callbacks still arrive.
+            if (!isActiveAndEnabled || _drillRunner == null || Runner == null)
+            {
+                return;
+            }
+
+            var why = DrillAwayPause.Describe(reason);
+            switch (DrillAwayPause.Decide(_intro != null, Runner.IsRunning, Runner.IsPausedByFencer))
+            {
+                case AwayAction.DropIntro:
+                    Debug.Log($"[Drills] Auto-pause: the start of Drill '{_intro.Drill.Id}' is dropped ({why}).");
+                    CancelIntro();
+                    break;
+
+                case AwayAction.PauseRun:
+                    Runner.PauseByFencer();
+                    _navigator.OnDrillAutoPaused();
+                    _isDirty = true;
+                    Debug.Log($"[Drills] Auto-paused Drill '{Runner.Drill.Id}' at Rep {Runner.CurrentRepIndex + 1}, state {Runner.State} ({why}); waiting for Resume.");
+                    break;
             }
         }
 
