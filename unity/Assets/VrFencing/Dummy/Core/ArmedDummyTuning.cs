@@ -25,6 +25,15 @@ namespace VrFencing.Dummy
         /// <summary>Back to en garde after the hold, or after a Parry cut the thrust short.</summary>
         public const float RecoverSeconds = 0.6f;
 
+        /// <summary>
+        /// The body's peak speed back in a lunge's recovery, at most (PER-114): 4.5 cm in a 72 Hz frame, 10% under the
+        /// 5 cm the Blade sweeps (a Dummy that moves further in a frame restarts the Blade's sweep, and a Touch can be
+        /// missed). A Dummy taller than about 1.73 m lunges so far that it would come back faster than this in
+        /// <see cref="RecoverSeconds"/>, so its recovery takes longer instead: 0.62 s at 1.8 m, 0.7 s at 2.1 m. The arm
+        /// draws back at the same time; no Target Zone then moves faster than the body.
+        /// </summary>
+        public const float MaximumRecoverLungeSpeedMetersPerSecond = 3.25f;
+
         /// <summary>The shortest a thrust may take, so a very short path still reads as a move.</summary>
         public const float MinimumThrustSeconds = 0.05f;
 
