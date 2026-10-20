@@ -130,6 +130,18 @@ _Avoid_: Avatar, remote player, enemy
 Two Fencers fencing each other freely on a shared Strip, with a virtual judge lighting Touches and doubles (no score or timer in v1).
 _Avoid_: Match, game
 
+**Light**:
+The virtual judge's call that a Touch counted in a Bout, shown on the Scoring Box. The first Touch of a phrase lights; nothing counts again until the lamps go off.
+_Avoid_: Point, score, hit
+
+**Double**:
+Both Fencers' Touches within the double window of each other (50 ms, up to 150 ms if the Host sets it): both lamps light.
+_Avoid_: Trade, simultaneous hit
+
+**Scoring Box**:
+The two lamps floating above the shared Strip's centre in a Bout. In each headset the Fencer's own lamp is green and on their left, the Opponent's red; the round-trip time shows under it.
+_Avoid_: Scoreboard, lights panel
+
 **Paired Practice**:
 Two connected Fencers practicing actions together with Touch detection, lights and haptics, but no roles, lock-out or competition; each has a resettable tally.
 _Avoid_: Free play, training mode
