@@ -1,6 +1,7 @@
 // Parry Drills (PER-97): the runner judges a Rep from the Blade's Parry reports, then a Riposte within 1 s when
 // the Drill requires one (PER-23: a per-Drill setting). Fake Parry reports, contacts and clock.
 using System;
+using System.Numerics;
 using NUnit.Framework;
 using VrFencing.Drills;
 using VrFencing.Dummy;
@@ -155,6 +156,29 @@ namespace VrFencing.Tests.Drills
 
             Assert.That(_recorder.Judged[0].Outcome, Is.EqualTo(RepOutcome.NotParried));
             Assert.That(_recorder.Judged[0].ParryLine, Is.Null);
+        }
+
+        [Test]
+        public void AHitOnTheFencerFailsTheRepWithWhereItLandedAndTheBodyThatJudgedIt()
+        {
+            Start();
+            Wait(2.0);
+            _runner.ReportAttackLanded(new FencerHit(FencerHitSource.HeadsetCapsules, BodyPart.FrontThigh, new Vector3(0.0f, 0.7f, 0.1f)));
+
+            Assert.That(_recorder.Judged[0].Outcome, Is.EqualTo(RepOutcome.NotParried));
+            Assert.That(_recorder.Judged[0].FencerHit?.Source, Is.EqualTo(FencerHitSource.HeadsetCapsules));
+            Assert.That(_recorder.Judged[0].FencerHit?.Part, Is.EqualTo(BodyPart.FrontThigh));
+        }
+
+        [Test]
+        public void AThrustThatEndsShortFailsTheRepWithNoHit()
+        {
+            Start();
+            Wait(2.0);
+            _runner.ReportAttackLanded();
+
+            Assert.That(_recorder.Judged[0].Outcome, Is.EqualTo(RepOutcome.NotParried));
+            Assert.That(_recorder.Judged[0].FencerHit, Is.Null);
         }
 
         [Test]

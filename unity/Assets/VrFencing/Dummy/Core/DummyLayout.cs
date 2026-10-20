@@ -49,6 +49,18 @@ namespace VrFencing.Dummy
         /// <summary>Head, back arm, front shin and back leg: drawn, but not Target Zones.</summary>
         public IReadOnlyList<Capsule> SilhouetteParts => _silhouetteParts;
 
+        /// <summary>The body part of each of <see cref="SilhouetteParts"/>, in the same order.</summary>
+        public static IReadOnlyList<BodyPart> SilhouetteBodyParts { get; } = new[]
+        {
+            BodyPart.Head,
+            BodyPart.BackArm,
+            BodyPart.BackArm,
+            BodyPart.FrontLowerLeg,
+            BodyPart.BackLeg,
+            BodyPart.BackLeg,
+            BodyPart.BackLeg,
+        };
+
         /// <summary>Lays out the Dummy in en garde with the arm in line, for a standing height and sword hand.</summary>
         /// <exception cref="ArgumentOutOfRangeException">The height is not a positive number.</exception>
         public static DummyLayout Create(float heightMeters, Hand hand)
@@ -182,6 +194,7 @@ namespace VrFencing.Dummy
             }
         }
 
+        // In the order of SilhouetteBodyParts.
         private static IEnumerable<Capsule> SilhouetteAtUnitHeight()
         {
             yield return new Capsule(EnGardePose.HeadCenter, EnGardePose.HeadCenter, EnGardePose.HeadRadius);

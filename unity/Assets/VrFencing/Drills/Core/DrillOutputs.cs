@@ -46,7 +46,10 @@ namespace VrFencing.Drills
         /// </summary>
         WrongFootwork,
 
-        /// <summary>Parry Drills: the Armed Dummy's attack reached its aim without a Parry.</summary>
+        /// <summary>
+        /// Parry Drills: the Armed Dummy's attack got through without a Parry: it landed on the Fencer
+        /// (<see cref="RepResult.FencerHit"/>), or ended its hold without reaching them.
+        /// </summary>
         NotParried,
 
         /// <summary>
@@ -115,11 +118,13 @@ namespace VrFencing.Drills
             FootworkReading? footwork = null,
             DummyDistance? dummyDistance = null,
             ParryLine? parryLine = null,
-            double? riposteSeconds = null)
+            double? riposteSeconds = null,
+            FencerHit? fencerHit = null)
         {
             DrillId = drillId;
             ParryLine = parryLine;
             RiposteSeconds = riposteSeconds;
+            FencerHit = fencerHit;
             RepIndex = repIndex;
             RequestedZone = requestedZone;
             Outcome = outcome;
@@ -184,6 +189,12 @@ namespace VrFencing.Drills
 
         /// <summary>Parry Drills: from the Parry to the Riposte's contact; null without both.</summary>
         public double? RiposteSeconds { get; }
+
+        /// <summary>
+        /// Parry Drills: where the Armed Dummy's unparried point landed on the Fencer and which body judged it; null when it
+        /// did not land.
+        /// </summary>
+        public FencerHit? FencerHit { get; }
     }
 
     /// <summary>How a run ended: every judged Rep in order, and whether the Fencer cancelled.</summary>
