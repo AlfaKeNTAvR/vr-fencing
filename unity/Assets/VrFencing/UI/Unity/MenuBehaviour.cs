@@ -111,6 +111,7 @@ namespace VrFencing.UI
         private MenuScreen _shownScreen = MenuScreen.Hidden;
         private bool _isDirty = true;
         private string _homeMessage = string.Empty;
+        private int _handledPartnerEnds;
         private string _settingsMessage = string.Empty;
         private DrillRunRecord _lastRecord;
         private string _lastDrillName = string.Empty;
@@ -477,6 +478,19 @@ namespace VrFencing.UI
                 {
                     _dummy.gameObject.SetActive(isDummyShown);
                     Debug.Log(isDummyShown ? "[UI] Dummy shown again: the Partner session ended." : "[UI] Dummy hidden while in a Partner session.");
+                }
+            }
+
+            // PER-84: the Partner who lost the Host (it left, slept or the connection dropped) goes back to solo practice.
+            var state = _partner.State;
+            if (state.EndCount != _handledPartnerEnds)
+            {
+                _handledPartnerEnds = state.EndCount;
+                if (state.IsBackToSoloMenu)
+                {
+                    OpenPage(MenuScreen.Home);
+                    _homeMessage = state.Message;
+                    Debug.Log($"[UI] Back to solo practice: {state.Message}");
                 }
             }
 

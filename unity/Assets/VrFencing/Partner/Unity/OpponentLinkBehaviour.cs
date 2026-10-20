@@ -55,6 +55,7 @@ namespace VrFencing.Partner
         private bool _wasConnected;
         private bool _hasLoggedFirstPose;
         private int _loggedRejectedMessages;
+        private double _holdSendingUntilSeconds = double.NegativeInfinity;
 
         /// <summary>The partner's streams, turned into this Fencer's Strip frame.</summary>
         public OpponentLink Link => _link;
@@ -72,6 +73,16 @@ namespace VrFencing.Partner
         public void ApplySettings(TrainerSettings settings)
         {
             _reader.ApplySettings(settings.Clone());
+        }
+
+        /// <summary>
+        /// PC Editor only: sends no body or hand for <paramref name="seconds"/>, as a lag spike would, so the other app's
+        /// connection icon and faded last pose can be seen (PER-84). The connection itself stays up.
+        /// </summary>
+        public void HoldSending(double seconds)
+        {
+            _holdSendingUntilSeconds = Time.realtimeSinceStartupAsDouble + seconds;
+            Debug.LogWarning($"{LogTag} Simulating a lag spike: nothing sent for {seconds:0.0} s.");
         }
 
         private void Awake()
@@ -116,7 +127,7 @@ namespace VrFencing.Partner
             }
 
             LogRejectedMessages();
-            if (Local == null)
+            if (Local == null || now < _holdSendingUntilSeconds)
             {
                 return;
             }
