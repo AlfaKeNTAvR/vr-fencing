@@ -154,13 +154,18 @@ namespace VrFencing.Blade
             if (isDummyShown)
             {
                 // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones.
-                _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom);
+                _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom, _drawnBlade);
                 DetectContacts(now, bladeInStrip);
             }
 
             var wasDecoupled = _drawnBlade.IsDecoupled;
             var wasOnSide = _drawnBlade.IsOnSide;
             var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(isDummyShown), gripUp, Time.deltaTime, droop);
+            if (isDummyShown)
+            {
+                _armedDummy?.UpdateSide(bladeInStrip, _drawnBlade);
+            }
+
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");
@@ -200,6 +205,12 @@ namespace VrFencing.Blade
             }
 
             _obstacles.Add(BladeObstacle.Floor);
+            if (hasDummy)
+            {
+                // The Armed Dummy's blade while it holds one (PER-104): solid against the drawn blade too.
+                _armedDummy?.AddBladeObstacles(_obstacles);
+            }
+
             return _obstacles;
         }
 

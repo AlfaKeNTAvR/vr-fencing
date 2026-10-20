@@ -14,7 +14,8 @@ namespace VrFencing.Blade
     /// back, or slid past the end of the body), and the drawn blade springs back from where it was bent. Not a Touch:
     /// detection still uses the straight blade.
     ///
-    /// Only bodies with a round side (capsules) hold the side; a blade laid on the floor is held off it as before.
+    /// Only bodies with a round side hold the side: the Dummy's capsules and the Armed Dummy's blade (PER-104, kept to
+    /// the side the drawn blade came from); a blade laid on the floor is held off it as before.
     /// Positions in any one frame (the Strip frame in the app), meters.
     /// </summary>
     public sealed class BladeSideContact
@@ -208,17 +209,39 @@ namespace VrFencing.Blade
             deepestFraction = 0.0f;
             var deepest = DrawnBlade.BladeRadiusMeters;
             var lastFraction = 1.0f - (PointZoneMeters / BladePose.BladeLengthMeters);
-            for (var sample = 1; sample <= SearchSamples; sample++)
+            foreach (var body in bodies)
             {
-                var fraction = lastFraction * sample / SearchSamples;
-                var point = Vector3.Lerp(straightBlade.GuardPosition, straightBlade.TipPosition, fraction);
-                foreach (var body in bodies)
+                // Another blade is thin: where the straight blade passes it closest (or lies across it on the wrong
+                // side), found exactly rather than at the search points, which could step over it.
+                if (!body.IsBlade)
                 {
-                    if (body.IsPlane)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
+                var distance = body.FindPieceSeparation(straightBlade.GuardPosition, straightBlade.TipPosition, 0, out var point, out var fraction);
+                if (distance < deepest && fraction > 0.0f && fraction <= lastFraction)
+                {
+                    deepest = distance;
+                    deepestBody = body;
+                    deepestPoint = point;
+                    deepestFraction = fraction;
+                }
+            }
+
+            var boxMin = Vector3.Min(straightBlade.GuardPosition, straightBlade.TipPosition);
+            var boxMax = Vector3.Max(straightBlade.GuardPosition, straightBlade.TipPosition);
+            foreach (var body in bodies)
+            {
+                // Bodies nowhere near the straight blade are skipped: the same answer, cheaper.
+                if (body.IsPlane || body.IsBlade || !body.IsNearBox(boxMin, boxMax, DrawnBlade.BladeRadiusMeters))
+                {
+                    continue;
+                }
+
+                for (var sample = 1; sample <= SearchSamples; sample++)
+                {
+                    var fraction = lastFraction * sample / SearchSamples;
+                    var point = Vector3.Lerp(straightBlade.GuardPosition, straightBlade.TipPosition, fraction);
                     var distance = body.FindDistance(point);
                     if (distance < deepest)
                     {

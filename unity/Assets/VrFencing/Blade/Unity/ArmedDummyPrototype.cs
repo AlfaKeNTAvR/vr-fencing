@@ -15,7 +15,9 @@ namespace VrFencing.Blade
     /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the Fencer's hand, forearm, chest or thigh, at slow,
     /// medium and real speed in turn. When the Fencer's blade meets its blade (<see cref="BladeClashDetector"/>) a spark
     /// shows at the contact, the clash buzz plays on the sword hand, its blade swings away and recovers
-    /// (<see cref="BladeSwing"/>), and a thrust under way is cut short and recovers. Nothing is judged yet (PER-97).
+    /// (<see cref="BladeSwing"/>), and a thrust under way is cut short and recovers. The two blades are solid against
+    /// each other (<see cref="ArmedDummyBlade"/>, PER-104): the Fencer's drawn blade bends round the Dummy's, and the
+    /// Dummy's gives way to a press and springs back. Nothing is judged yet (PER-97).
     /// All rules are in the Core; this only poses, draws and plays.
     /// </summary>
     internal sealed class ArmedDummyPrototype : IDisposable
@@ -26,15 +28,13 @@ namespace VrFencing.Blade
 
         private static readonly Color SparkColor = new Color(1.0f, 0.95f, 0.5f);
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-        private static readonly BladeObstacle[] FloorOnly = { BladeObstacle.Floor };
 
         private readonly DummyBehaviour _dummy;
         private readonly DrillRunner _runner;
         private readonly BladeHapticPlayer _haptics;
         private readonly Random _random = new Random();
         private readonly BladeClashDetector _detector = new BladeClashDetector();
-        private readonly BladeSwing _swing = new BladeSwing();
-        private readonly DrawnBlade _drawnBlade = new DrawnBlade();
+        private readonly ArmedDummyBlade _blade = new ArmedDummyBlade();
         private readonly Transform _mount;
         private readonly BladeVisual _visual;
         private readonly Renderer _spark;
@@ -60,19 +60,22 @@ namespace VrFencing.Blade
         public void ApplySettings(TrainerSettings settings)
         {
             _settings = settings.Clone();
-            _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
+            _blade.Drawn.Flex.SetSoftness(_settings.Blade.Flex);
         }
 
         /// <summary>The Strip jumped or the blade lost tracking: no sweep across the gap.</summary>
         public void Restart()
         {
             _detector.Reset();
-            _drawnBlade.Reset();
+            _blade.Reset();
             _lastFencerBlade = null;
         }
 
-        /// <summary>One frame: poses the arm, tests the blades, draws. Everything in the Strip frame.</summary>
-        public void Step(double nowSeconds, float deltaSeconds, BladeSegment fencerBlade, TrackedPose stripInRoom)
+        /// <summary>
+        /// One frame, before the Fencer's drawn blade moves: poses the arm, moves the blade (pushed aside by the Fencer's
+        /// drawn blade as drawn last frame), tests the clash, draws. Everything in the Strip frame.
+        /// </summary>
+        public void Step(double nowSeconds, float deltaSeconds, BladeSegment fencerBlade, TrackedPose stripInRoom, DrawnBlade fencerDrawn)
         {
             _lastFencerBlade = fencerBlade;
             var isActive = IsTestDrillRunning() && _dummy.Layout != null;
@@ -88,22 +91,43 @@ namespace VrFencing.Blade
 
             _dummy.SetArmPose(_attack?.GetPose(nowSeconds) ?? SwordArmReach.PoseEnGarde(_dummy.Layout.HeightMeters, BladePose.BladeLengthMeters));
             var (forte, gripUp) = GetDummyBladeOnStrip();
-            _swing.Step(deltaSeconds);
-            var swung = _swing.Apply(forte);
-            var droop = BladeDroop.Create(swung.Direction, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade);
-            var chord = droop.GetChord(swung);
+            var wasPressed = _blade.IsPressed;
+            _blade.Step(forte, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, fencerBlade, fencerDrawn, deltaSeconds);
+            if (_blade.IsPressed != wasPressed)
+            {
+                Debug.Log(_blade.IsPressed
+                    ? "[ArmedDummy] Blades pressed: the Dummy's blade gives way"
+                    : "[ArmedDummy] Blades let go: the Dummy's blade springs back");
+            }
 
-            var clash = _detector.Step(nowSeconds, fencerBlade, chord);
+            var clash = _detector.Step(nowSeconds, fencerBlade, _blade.Chord);
             if (clash.HasValue)
             {
                 OnClash(clash.Value, nowSeconds, stripInRoom);
             }
 
-            _drawnBlade.Step(chord, FloorOnly, gripUp, deltaSeconds, droop);
-            _visual.Draw(_drawnBlade, stripInRoom, (float)nowSeconds);
+            _visual.Draw(_blade.Drawn, stripInRoom, (float)nowSeconds);
             if (_spark != null && Time.time >= _sparkEndsAt && _spark.enabled)
             {
                 _spark.enabled = false;
+            }
+        }
+
+        /// <summary>Adds the Dummy's blade, as drawn this frame, to the Fencer's drawn blade's obstacles while armed.</summary>
+        public void AddBladeObstacles(System.Collections.Generic.ICollection<BladeObstacle> obstacles)
+        {
+            if (_isActive)
+            {
+                _blade.AddObstacles(obstacles);
+            }
+        }
+
+        /// <summary>After the Fencer's drawn blade moved this frame: which side of the Dummy's blade it is on.</summary>
+        public void UpdateSide(BladeSegment fencerBlade, DrawnBlade fencerDrawn)
+        {
+            if (_isActive)
+            {
+                _blade.UpdateSide(fencerBlade, fencerDrawn);
             }
         }
 
@@ -126,7 +150,6 @@ namespace VrFencing.Blade
         {
             _isActive = isActive;
             _attack = null;
-            _swing.Reset();
             Restart();
             _visual.SetVisible(isActive);
             if (!isActive && _dummy.Layout != null)
@@ -159,7 +182,7 @@ namespace VrFencing.Blade
 
         private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)
         {
-            _swing.Kick(clash);
+            _blade.Swing.Kick(clash);
             var phase = _attack?.GetPhase(nowSeconds);
             var isParried = _attack != null && _attack.ReportParried(nowSeconds);
             _haptics?.PlayClash(clash.HapticStrength, _settings.Hand);

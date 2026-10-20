@@ -21,9 +21,9 @@ namespace VrFencing.Blade
     /// <item>when a pinned point lets go, or the drawn blade catches up with the hand, it springs back ringing a few
     /// decaying cycles, like a real épée.</item>
     /// </list>
-    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules and the floor, and another blade's capsule can
-    /// join them later (the Armed Dummy, PER-40). Positions in any one frame (the Strip frame in the app), meters, time
-    /// in seconds.
+    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules and the floor, and the Armed Dummy's blade as
+    /// thin pieces the drawn blade keeps to its side of (<see cref="BladeBind"/>, PER-104). Positions in any one frame
+    /// (the Strip frame in the app), meters, time in seconds.
     /// </summary>
     public sealed class DrawnBlade
     {
@@ -38,6 +38,7 @@ namespace VrFencing.Blade
         private readonly BladeSideContact _side = new BladeSideContact();
         private readonly Vector3[] _samples = new Vector3[SampleCount + 1];
         private readonly Vector3[] _candidate = new Vector3[SampleCount + 1];
+        private readonly Vector3[] _allowed = new Vector3[SampleCount + 1];
         private readonly DrawnShape.PoseTest _tryFreeShape;
         private bool _hasSamples;
         private bool _isFreeOffHand;
@@ -65,6 +66,9 @@ namespace VrFencing.Blade
         /// hilt follows the hand, the blade lies against the body. Not a Touch.
         /// </summary>
         public bool IsOnSide { get; private set; }
+
+        /// <summary>True once the blade has been drawn (a <see cref="Step"/> since the last <see cref="Reset"/>).</summary>
+        public bool HasShape => _hasSamples;
 
         /// <summary>Where the drawn guard is: the hand's guard, unless <see cref="IsDecoupled"/>.</summary>
         public Vector3 GuardPosition => _samples[0];
@@ -190,12 +194,18 @@ namespace VrFencing.Blade
                 {
                     // Caught up with the hand, or the side let go of the body: the blade springs from where it was drawn
                     // instead of jumping, if that is clear.
+                    Array.Copy(_candidate, _allowed, _allowed.Length);
                     _flex.SpringBackFrom(straightBlade, _samples[SampleCount] - straightBlade.TipPosition);
                     FillFlexed(straightBlade, _candidate);
                     if (!DrawnShape.IsClear(_candidate, _samples, bodies, BladeRadiusMeters, 1, sweepsTip: true))
                     {
                         _flex.Reset();
                         FillFlexed(straightBlade, _candidate);
+                        if (!DrawnShape.IsClear(_candidate, _samples, bodies, BladeRadiusMeters, 1, sweepsTip: true))
+                        {
+                            // Straight is not clear either (another blade in the way): the shape found allowed stands.
+                            Array.Copy(_allowed, _candidate, _allowed.Length);
+                        }
                     }
                 }
 
