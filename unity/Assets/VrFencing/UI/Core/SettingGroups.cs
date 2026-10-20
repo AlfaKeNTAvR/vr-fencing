@@ -45,7 +45,7 @@ namespace VrFencing.UI
             [SettingGroup.Touch] = new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity,
+                SettingId.BodyOpacity, SettingId.ParryRule,
             },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]

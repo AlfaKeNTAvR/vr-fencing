@@ -192,10 +192,12 @@ namespace VrFencing.Tests.Settings
             saved.Blade.SavedAngles.Pistol.PitchDegrees = 15.0f;
             saved.Blade.GlanceHaptic = HapticPattern.Off;
             saved.Blade.HapticFloor = 0.3f;
+            saved.Blade.ParryRule = ParryRule.Strict;
 
             SettingsStorage.Save(saved, _settingsPath);
             var loaded = SettingsStorage.Load(_settingsPath);
 
+            Assert.That(loaded.Blade.ParryRule, Is.EqualTo(ParryRule.Strict));
             Assert.That(File.ReadAllText(_settingsPath), Does.Contain("\"Strict\"").And.Contain("\"Pistol\""));
             Assert.That(loaded.Blade.TouchRule, Is.EqualTo(TouchRule.Strict));
             Assert.That(loaded.Blade.Mount, Is.EqualTo(BladeMount.Pistol));
@@ -229,6 +231,7 @@ namespace VrFencing.Tests.Settings
             var blade = SettingsStorage.Load(_settingsPath).Blade;
 
             Assert.That(blade.TouchRule, Is.EqualTo(TouchRule.Loose));
+            Assert.That(blade.ParryRule, Is.EqualTo(ParryRule.Loose));
             Assert.That(blade.TouchHaptic, Is.EqualTo(HapticPattern.Heavy));
             Assert.That(blade.FlatHaptic, Is.EqualTo(HapticPattern.DoubleTap));
             Assert.That(blade.GlanceHaptic, Is.EqualTo(HapticPattern.Tick));

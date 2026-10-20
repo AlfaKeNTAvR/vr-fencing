@@ -9,16 +9,19 @@ using Random = System.Random;
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// The Armed Dummy feel-test prototype (PER-95), live only while the development Drill
-    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/> runs, so the MVP Drills never see it. The Dummy holds an épée
+    /// The Armed Dummy (PER-95 prototype), live only while a Drill that uses it runs
+    /// (<see cref="DrillDefinition.UsesArmedDummy"/>; today the development Drill
+    /// <see cref="DrillCatalog.ArmedDummyTestDrillId"/>), so the MVP Drills never see it. The Dummy holds an épée
     /// drawn and bent like the Fencer's (<see cref="DrawnBlade"/>, <see cref="BladeVisual"/>). On every Rep's cue it
     /// plans one straight thrust (<see cref="ArmedDummyAttack"/>) at the Fencer's hand, forearm, chest or thigh, at slow,
     /// medium and real speed in turn. When the Fencer's blade meets its blade (<see cref="BladeClashDetector"/>) a spark
-    /// shows at the contact, the clash buzz plays on the sword hand, its blade swings away and recovers
-    /// (<see cref="BladeSwing"/>), and a thrust under way is cut short and recovers. The two blades are solid against
-    /// each other (<see cref="ArmedDummyBlade"/>, PER-104): the Fencer's drawn blade bends round the Dummy's, and the
-    /// Dummy's gives way to a press and springs back. Nothing is judged yet (PER-97).
-    /// All rules are in the Core; this only poses, draws and plays.
+    /// shows at the contact, the clash buzz plays on the sword hand, and its blade swings away and recovers
+    /// (<see cref="BladeSwing"/>). The two blades are solid against each other (<see cref="ArmedDummyBlade"/>,
+    /// PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives way to a press and springs back.
+    /// A contact during the thrust or its hold is judged (<see cref="ParryJudge"/>, PER-97): once it has turned the point
+    /// off the Fencer's body the thrust is cut short and recovers, and the runner gets the Parry; a thrust that reaches
+    /// the end of its hold unparried is reported as landed.
+    /// All rules are in the Core; this only poses, draws, plays and forwards.
     /// </summary>
     internal sealed class ArmedDummyPrototype : IDisposable
     {
@@ -40,6 +43,10 @@ namespace VrFencing.Blade
         private readonly Renderer _spark;
         private TrainerSettings _settings = new TrainerSettings();
         private ArmedDummyAttack _attack;
+        private ParryJudge _judge;
+        private BladeClash? _lastClash;
+        private bool _hasAttackClashed;
+        private bool _hasReportedLanding;
         private BladeSegment? _lastFencerBlade;
         private bool _isActive;
         private float _sparkEndsAt = float.NegativeInfinity;
@@ -68,6 +75,8 @@ namespace VrFencing.Blade
         {
             _detector.Reset();
             _blade.Reset();
+            _judge?.Reset();
+            _lastClash = null;
             _lastFencerBlade = null;
         }
 
@@ -106,6 +115,7 @@ namespace VrFencing.Blade
                 OnClash(clash.Value, nowSeconds, stripInRoom);
             }
 
+            JudgeParry(nowSeconds, clash, fencerBlade);
             _visual.Draw(_blade.Drawn, stripInRoom, (float)nowSeconds);
             if (_spark != null && Time.time >= _sparkEndsAt && _spark.enabled)
             {
@@ -143,13 +153,78 @@ namespace VrFencing.Blade
 
         private bool IsTestDrillRunning()
         {
-            return _runner.IsRunning && !_runner.IsPaused && _runner.Drill?.Id == DrillCatalog.ArmedDummyTestDrillId;
+            return _runner.IsRunning && !_runner.IsPaused && _runner.Drill != null && _runner.Drill.UsesArmedDummy;
+        }
+
+        /// <summary>
+        /// Judges this frame's contact against the attack under way (thrust or hold, not yet parried), forwards a Parry
+        /// to the runner and cuts the thrust short, and reports a thrust that got through its hold as landed.
+        /// </summary>
+        private void JudgeParry(double nowSeconds, BladeClash? clash, BladeSegment fencerBlade)
+        {
+            if (_attack == null || _judge == null || _attack.IsParried)
+            {
+                return;
+            }
+
+            var phase = _attack.GetPhase(nowSeconds);
+            if (phase == AttackPhase.Recover || phase == AttackPhase.Done)
+            {
+                if (!_hasReportedLanding)
+                {
+                    _hasReportedLanding = true;
+                    Debug.Log("[ArmedDummy] Thrust landed: not parried.");
+                    _runner.ReportAttackLanded();
+                }
+
+                return;
+            }
+
+            if (phase != AttackPhase.Thrust && phase != AttackPhase.Hold)
+            {
+                return;
+            }
+
+            var isInContact = _detector.IsInContact || _blade.IsPressed;
+            if (clash.HasValue)
+            {
+                _hasAttackClashed = true;
+                _judge.ReportClash(clash.Value, fencerBlade);
+            }
+            else if (!_hasAttackClashed && isInContact && _lastClash.HasValue)
+            {
+                // The Fencer's blade was already on the Dummy's when the thrust began.
+                _hasAttackClashed = true;
+                _judge.ReportHeldContact(_lastClash.Value, nowSeconds, fencerBlade);
+            }
+
+            if (!_judge.IsWatching)
+            {
+                return;
+            }
+
+            var line = AttackLine.OnStrip(_attack.Path, _dummy.DistanceMeters, nowSeconds);
+            var body = AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
+            var parry = _judge.Step(nowSeconds, _blade.Swing.TipOffset, isInContact, line, body);
+            if (!parry.HasValue)
+            {
+                return;
+            }
+
+            _attack.ReportParried(nowSeconds);
+            var report = parry.Value;
+            Debug.Log($"[ArmedDummy] Parry {(int)report.Line} during the {phase}: point off the body by {report.DeflectionMeters * 100.0f:0} cm, " +
+                $"Fencer blade at {report.FencerBladeFraction:0.00}, Dummy blade at {report.DummyBladeFraction:0.00}, " +
+                $"{(report.IsForteOnFoible ? "forte on foible" : "not forte on foible")}, rule {_settings.Blade.ParryRule}: " +
+                (report.CountsAsParry ? "counts." : "does not count."));
+            _runner.ReportParry(report);
         }
 
         private void SetActive(bool isActive)
         {
             _isActive = isActive;
             _attack = null;
+            _judge = null;
             Restart();
             _visual.SetVisible(isActive);
             if (!isActive && _dummy.Layout != null)
@@ -174,6 +249,9 @@ namespace VrFencing.Blade
             var aim = AttackAim.GetAimInDummyFrame(
                 target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
             _attack = ArmedDummyAttack.Plan(Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters);
+            _judge = new ParryJudge(_settings.Blade.ParryRule, _settings.Hand);
+            _hasAttackClashed = false;
+            _hasReportedLanding = false;
             var missMeters = System.Numerics.Vector3.Distance(_attack.Path.AimPoint, aim);
             Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
                 $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms over {_attack.Path.LengthMeters * 100.0f:0} cm" +
@@ -183,13 +261,13 @@ namespace VrFencing.Blade
         private void OnClash(BladeClash clash, double nowSeconds, TrackedPose stripInRoom)
         {
             _blade.Swing.Kick(clash);
+            _lastClash = clash;
             var phase = _attack?.GetPhase(nowSeconds);
-            var isParried = _attack != null && _attack.ReportParried(nowSeconds);
             _haptics?.PlayClash(clash.HapticStrength, _settings.Hand);
             ShowSpark(StripFrame.ToRoom(stripInRoom, clash.ContactPoint).ToUnity());
             Debug.Log($"[ArmedDummy] Clash {clash.RelativeSpeedMetersPerSecond:0.00} m/s, Fencer blade at {clash.FencerBladeFraction:0.00}, " +
                 $"Dummy blade at {clash.OpponentBladeFraction:0.00}, swing {BladeSwing.GetPeakMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction) * 100.0f:0} cm, " +
-                $"buzz {clash.HapticStrength:0.00}, during {phase?.ToString() ?? "guard"}{(isParried ? ": thrust parried" : string.Empty)}");
+                $"buzz {clash.HapticStrength:0.00}, during {phase?.ToString() ?? "guard"}");
         }
 
         /// <summary>The Dummy's straight blade (guard to the undrooped point) and its grip's up, in the Strip frame.</summary>
