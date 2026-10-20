@@ -166,6 +166,25 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void ThePartnerObjectStreamsAndDrawsTheOpponent()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var partner = Object.FindFirstObjectByType<VrFencing.Partner.PartnerSessionBehaviour>();
+            var link = partner.GetComponent<VrFencing.Partner.OpponentLinkBehaviour>();
+            var view = partner.GetComponent<VrFencing.Partner.OpponentViewBehaviour>();
+
+            Assert.That(link, Is.Not.Null, "The Partner object streams the body and blade (PER-81).");
+            Assert.That(view, Is.Not.Null, "The Partner object draws the opponent (PER-81).");
+            var serializedView = new SerializedObject(view);
+            Assert.That(serializedView.FindProperty("_link").objectReferenceValue, Is.SameAs(link));
+            Assert.That(serializedView.FindProperty("_strip").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Strip.StripBehaviour>()));
+            Assert.That(serializedView.FindProperty("_myBlade").objectReferenceValue, Is.SameAs(Object.FindFirstObjectByType<VrFencing.Blade.BladeBehaviour>()));
+            var dummyModel = new SerializedObject(Object.FindFirstObjectByType<VrFencing.Dummy.DummyBehaviour>()).FindProperty("_bodyModel").objectReferenceValue;
+            Assert.That(serializedView.FindProperty("_bodyModel").objectReferenceValue, Is.SameAs(dummyModel), "The opponent wears the Dummy's rig (PER-59).");
+        }
+
+        [Test]
         public void CameraRigAsksForTheBodyTrackingPermission()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);

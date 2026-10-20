@@ -16,7 +16,7 @@ namespace VrFencing.Dummy
     /// front shin vertical, hips dropped to 0.50 by the bent knees, torso upright and turned side-on,
     /// sword arm straight toward the Fencer, back arm raised behind.
     /// </summary>
-    internal static class EnGardePose
+    public static class EnGardePose
     {
         public const float UpperArmLength = 0.186f;
         public const float ForearmLength = 0.146f;

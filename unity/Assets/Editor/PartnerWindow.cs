@@ -35,6 +35,11 @@ namespace VrFencing.EditorTools
 
             var partner = PartnerSessionBehaviour.FindOrCreate();
             var session = partner.State;
+            var view = partner.GetComponent<OpponentViewBehaviour>();
+            if (view != null && view.BodyModel == null)
+            {
+                view.BodyModel = PassthroughSceneBuilder.LoadOpponentBodyModel();
+            }
 
             EditorGUILayout.LabelField("State", $"{session.Phase} ({session.Role})");
             EditorGUILayout.LabelField(PartnerPageText.FormatHeadline(session), EditorStyles.boldLabel);
@@ -43,6 +48,8 @@ namespace VrFencing.EditorTools
             {
                 EditorGUILayout.LabelField(PartnerPageText.FormatMode(session));
             }
+
+            DrawOpponent(partner);
 
             if (!string.IsNullOrEmpty(session.Message))
             {
@@ -89,6 +96,31 @@ namespace VrFencing.EditorTools
                 {
                     partner.Leave();
                 }
+            }
+        }
+
+        /// <summary>What goes out (the Fencer replay, if the scene has one) and what comes in from the headset (PER-81).</summary>
+        private static void DrawOpponent(PartnerSessionBehaviour partner)
+        {
+            var link = partner.GetComponent<OpponentLinkBehaviour>();
+            if (link == null)
+            {
+                return;
+            }
+
+            EditorGUILayout.LabelField(
+                "Sending",
+                link.IsSendingReplay ? "the Fencer replay in this scene" : "nothing to send (open a Fencer replay to stand in for a Fencer)");
+            var partnerInfo = link.Link.Partner;
+            var bout = link.Link.Bout;
+            EditorGUILayout.LabelField(
+                "Opponent",
+                partnerInfo.HasValue
+                    ? $"{partnerInfo.Value.HeightMeters:0.00} m, {partnerInfo.Value.Hand}-handed; bout Strip {bout.LengthMeters:0.00} m, En Garde gap {bout.EnGardeGapMeters:0.00} m"
+                    : "nothing received yet");
+            if (link.Link.RejectedMessages > 0)
+            {
+                EditorGUILayout.HelpBox($"{link.Link.RejectedMessages} unreadable partner messages dropped (another build?).", MessageType.Warning);
             }
         }
     }
