@@ -52,6 +52,51 @@ namespace VrFencing.Session
         }
     }
 
+    /// <summary>A Beat Drill's Reps (PER-101): how many there were, how many Beats landed, and how many were followed by a Touch in time.</summary>
+    public readonly struct BeatHitCount : IEquatable<BeatHitCount>
+    {
+        [JsonConstructor]
+        public BeatHitCount(int attempts, int beats, int successes)
+        {
+            if (attempts < 0 || beats < 0 || beats > attempts || successes < 0 || successes > beats)
+            {
+                throw new ArgumentOutOfRangeException(nameof(successes), successes, "Need 0 <= successes <= beats <= attempts.");
+            }
+
+            Attempts = attempts;
+            Beats = beats;
+            Successes = successes;
+        }
+
+        public int Attempts { get; }
+
+        /// <summary>Reps whose Beat knocked the Dummy's blade out of line.</summary>
+        public int Beats { get; }
+
+        /// <summary>Of those, Reps judged a success: a Touch within 1 s of the Beat.</summary>
+        public int Successes { get; }
+
+        public bool Equals(BeatHitCount other)
+        {
+            return Attempts == other.Attempts && Beats == other.Beats && Successes == other.Successes;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is BeatHitCount other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return (Attempts * 397 ^ Beats) * 397 ^ Successes;
+        }
+
+        public override string ToString()
+        {
+            return $"Beats {Beats}/{Attempts}, Touches {Successes}";
+        }
+    }
+
     /// <summary>How many of a Parry Drill's Reps deflected the attack with a contact in one line (PER-100).</summary>
     public readonly struct ParryLineCount : IEquatable<ParryLineCount>
     {

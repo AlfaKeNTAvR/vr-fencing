@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using VrFencing.Drills;
 using VrFencing.Dummy;
 using VrFencing.Session;
 
@@ -76,10 +77,20 @@ namespace VrFencing.UI
                 lines.Add($"Average tip speed: {FormatOrNoTouches(results.AverageTipSpeedMetersPerSecond, "0.0", "m/s")}");
             }
 
+            // Beat Drills (PER-101): how many Beats landed.
+            if (results.BeatHits.HasValue)
+            {
+                lines.Add($"Beats: {results.BeatHits.Value.Beats} of {results.RepCount} Reps");
+            }
+
             // Parry Drills (PER-100): the lines parried, and the hits on the Fencer by the body that judged them.
             if (results.AttackHits.Count > 0)
             {
-                lines.Add("Parries: " + FormatParryLines(results.ParryLines));
+                // A Stop Hit Drill does not ask for a Parry (PER-101).
+                if (results.DrillId != DrillCatalog.StopHitDrillId)
+                {
+                    lines.Add("Parries: " + FormatParryLines(results.ParryLines));
+                }
                 lines.Add("Hits on you: " + FormatFencerHits(results.FencerHits));
             }
 
@@ -123,7 +134,16 @@ namespace VrFencing.UI
                     AttackTargetNames.Get(hits.Target),
                     $"Done {hits.Successes} of {hits.Attempts}",
                     hits.Attempts == 0 ? 0.0f : (float)hits.Successes / hits.Attempts));
-            return zoneLines.Concat(footworkLines).Concat(attackLines).ToArray();
+            var beatLines = results.BeatHits.HasValue
+                ? new[]
+                {
+                    new HitMapLine(
+                        "After the Beat",
+                        $"Touched {results.BeatHits.Value.Successes} of {results.BeatHits.Value.Beats}",
+                        results.BeatHits.Value.Beats == 0 ? 0.0f : (float)results.BeatHits.Value.Successes / results.BeatHits.Value.Beats),
+                }
+                : Array.Empty<HitMapLine>();
+            return zoneLines.Concat(footworkLines).Concat(attackLines).Concat(beatLines).ToArray();
         }
 
         /// <summary>"6 x3, 4 x2", or "none" when no attack was deflected.</summary>

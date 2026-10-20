@@ -42,7 +42,9 @@ namespace VrFencing.Session
             FencerHitSource? hitSource = null,
             BodyPart? hitPart = null,
             AttackTarget? attackTarget = null,
-            AttackSpeed? attackSpeed = null)
+            AttackSpeed? attackSpeed = null,
+            double? touchAfterBeatSeconds = null,
+            float? beatOutOfLineMeters = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -84,6 +86,8 @@ namespace VrFencing.Session
             HitPart = hitPart;
             AttackTarget = attackTarget;
             AttackSpeed = attackSpeed;
+            TouchAfterBeatSeconds = touchAfterBeatSeconds;
+            BeatOutOfLineMeters = beatOutOfLineMeters;
         }
 
         public int Schema { get; }
@@ -168,6 +172,12 @@ namespace VrFencing.Session
         /// <summary>Parry Drills: how fast the Armed Dummy thrust (PER-100); null for other Drills and in older lines.</summary>
         public AttackSpeed? AttackSpeed { get; }
 
+        /// <summary>Beat Drills (PER-101): from the Beat to the Touch's contact; null without both, and in older lines.</summary>
+        public double? TouchAfterBeatSeconds { get; }
+
+        /// <summary>Beat Drills: how far the Beat knocked the Dummy's point off its line; null without a Beat.</summary>
+        public float? BeatOutOfLineMeters { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -200,7 +210,9 @@ namespace VrFencing.Session
                 result.FencerHit?.Source,
                 result.FencerHit?.Part,
                 result.AttackTarget,
-                result.AttackSpeed);
+                result.AttackSpeed,
+                result.TouchAfterBeatSeconds,
+                result.BeatOutOfLineMeters);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -230,7 +242,9 @@ namespace VrFencing.Session
                 HitSource,
                 HitPart,
                 AttackTarget,
-                AttackSpeed);
+                AttackSpeed,
+                TouchAfterBeatSeconds,
+                BeatOutOfLineMeters);
         }
     }
 

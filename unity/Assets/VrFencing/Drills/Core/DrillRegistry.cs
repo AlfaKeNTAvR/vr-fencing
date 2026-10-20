@@ -67,7 +67,7 @@ namespace VrFencing.Drills
 
     /// <summary>
     /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38), 4 to 6 (PER-39), then the Armed Dummy's Parry
-    /// Drills 7 to 9 (PER-100). Development builds also
+    /// Drills 7 to 9 (PER-100) and its Beat, Stop Hit and lunge Drills 10 to 12 (PER-101). Development builds also
     /// list two test Drills after the real ones: one that never fits, to show a greyed-out row, and the Armed Dummy
     /// feel test (PER-95).
     ///
@@ -87,6 +87,39 @@ namespace VrFencing.Drills
         public const string SlowParryDrillId = "parry-six-four-slow";
         public const string FastParryDrillId = "parry-six-four-fast";
         public const string LowParryDrillId = "parry-eight-seven";
+        public const string BeatDrillId = "beat-then-thrust";
+        public const string StopHitDrillId = "stop-hit-arm";
+        public const string LungeParryDrillId = "dummy-lunges";
+
+        /// <summary>A Stop Hit lands on the Armed Dummy's arm (PER-23: "Touch the hand or arm").</summary>
+        public static readonly IReadOnlyList<TargetZone> StopHitZones = new[]
+        {
+            TargetZone.Hand, TargetZone.Wrist, TargetZone.Forearm, TargetZone.UpperArm,
+        };
+
+        /// <summary>
+        /// Drill 11 attacks the body and thigh, never the arm, so the Dummy stands at extension distance and its arm is in
+        /// reach for the Stop Hit.
+        /// </summary>
+        public static readonly IReadOnlyList<AttackTarget> StopHitAttackTargets = new[] { AttackTarget.Chest, AttackTarget.Thigh };
+
+        /// <summary>Drill 11: slow and medium in turn, so the arm is there to hit; a real-speed thrust leaves almost no time.</summary>
+        public static readonly IReadOnlyList<AttackSpeed> StopHitSpeeds = new[] { AttackSpeed.Slow, AttackSpeed.Medium };
+
+        /// <summary>Drill 12: the lunge goes at the chest or the thigh, so it is parried in 6/4 or 8/7.</summary>
+        public static readonly IReadOnlyList<AttackTarget> LungeAttackTargets = new[] { AttackTarget.Chest, AttackTarget.Thigh };
+
+        /// <summary>
+        /// Drill 12: medium and real in turn. The speed is the point's over the floor, lunge included; a slow lunge over
+        /// about 1.5 m would take longer than the Rep's window.
+        /// </summary>
+        public static readonly IReadOnlyList<AttackSpeed> LungeSpeeds = new[] { AttackSpeed.Medium, AttackSpeed.Real };
+
+        /// <summary>
+        /// Drill 10: time from the cue to the Beat. The Fencer comes on guard against the blade in line, then beats; long
+        /// enough to set up, short enough not to wait after a miss.
+        /// </summary>
+        public const float BeatWindowSeconds = 5.0f;
 
         /// <summary>
         /// Parry 6 and 4 close the high line (PER-23): the Armed Dummy thrusts at the hand, forearm or chest. Hand and
@@ -244,6 +277,14 @@ namespace VrFencing.Drills
 
         public const string LowParryOnlyTaskLine = "Parry 8 or 7 the low thrust. No riposte.";
 
+        public const string BeatTaskLine = "Beat the blade aside, then Touch within 1 s.";
+
+        public const string StopHitTaskLine = "Touch the arm before the thrust lands.";
+
+        public const string LungeParryTaskLine = "Parry the Dummy's lunge, then riposte in 1 s.";
+
+        public const string LungeParryOnlyTaskLine = "Parry the Dummy's lunge. No riposte.";
+
         /// <summary>Test Drills sort after every real Drill.</summary>
         private const int TestDrillOrder = 1000;
 
@@ -263,6 +304,9 @@ namespace VrFencing.Drills
             registry.Register(SlowParryDrillId, CreateSlowParryDrill);
             registry.Register(FastParryDrillId, CreateFastParryDrill);
             registry.Register(LowParryDrillId, CreateLowParryDrill);
+            registry.Register(BeatDrillId, CreateBeatDrill);
+            registry.Register(StopHitDrillId, CreateStopHitDrill);
+            registry.Register(LungeParryDrillId, CreateLungeParryDrill);
             if (includeTestDrills)
             {
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
@@ -453,6 +497,81 @@ namespace VrFencing.Drills
             return CreateParryDrill(
                 settings, LowParryDrillId, "Parry 8/7", order: 9, new AttackScript(LowLineAttackTargets, LowParrySpeeds), riposte,
                 riposte ? LowParryTaskLine : LowParryOnlyTaskLine);
+        }
+
+        /// <summary>
+        /// Drill 10, Beat then thrust (PER-101): the Armed Dummy stands at lunge distance holding its blade in line. The
+        /// Fencer beats it out of line, then lunges and Touches the Dummy anywhere within 1 s of the Beat. A Touch before the
+        /// Beat, no Beat in time, or no Touch within 1 s fails the Rep.
+        /// </summary>
+        public static DrillDefinition CreateBeatDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                BeatDrillId,
+                "Beat, then thrust",
+                order: 10,
+                requiredStripLengthMeters: LungeStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: BeatWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.BladeInLine,
+                SuccessRule.BeatThenTouch,
+                AllTargetZones,
+                DummyDistance.Lunge,
+                taskLine: BeatTaskLine);
+        }
+
+        /// <summary>
+        /// Drill 11, Stop Hit to the arm (PER-101): the Armed Dummy, at extension distance, thrusts at the chest or thigh;
+        /// the Fencer Touches its hand or arm while the attack is on the way. Its point landing first, or within the 50 ms
+        /// double window after the Stop Hit, fails the Rep.
+        /// </summary>
+        public static DrillDefinition CreateStopHitDrill(TrainerSettings settings)
+        {
+            return new DrillDefinition(
+                StopHitDrillId,
+                "Stop hit to the arm",
+                order: 11,
+                requiredStripLengthMeters: PointControlStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: ArmedDummyWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.ArmedDummyAttack,
+                SuccessRule.StopHit,
+                StopHitZones,
+                DummyDistance.Extension,
+                taskLine: StopHitTaskLine,
+                attacks: new AttackScript(StopHitAttackTargets, StopHitSpeeds));
+        }
+
+        /// <summary>
+        /// Drill 12, the Dummy lunges (PER-101): from lunge distance the Armed Dummy lunges (its feet move) with a thrust at
+        /// the chest or thigh; the Fencer parries and, with the Drill's Riposte switch on, ripostes within 1 s.
+        /// </summary>
+        public static DrillDefinition CreateLungeParryDrill(TrainerSettings settings)
+        {
+            var riposte = settings.ArmedDummy.RiposteInLungeParries;
+            return new DrillDefinition(
+                LungeParryDrillId,
+                "Dummy lunges",
+                order: 12,
+                requiredStripLengthMeters: PointControlStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: ArmedDummyWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.ArmedDummyAttack,
+                SuccessRule.Parry,
+                AllTargetZones,
+                DummyDistance.Lunge,
+                taskLine: riposte ? LungeParryTaskLine : LungeParryOnlyTaskLine,
+                requiresRiposte: riposte,
+                attacks: new AttackScript(LungeAttackTargets, LungeSpeeds, lunges: true));
         }
 
         /// <summary>Needs a full 14 m piste, so the picker shows a greyed-out Drill with its required length.</summary>

@@ -29,7 +29,8 @@ namespace VrFencing.Session
             IReadOnlyList<FootworkHitCount> footworkHits = null,
             IReadOnlyList<AttackHitCount> attackHits = null,
             IReadOnlyList<ParryLineCount> parryLines = null,
-            IReadOnlyList<FencerHitCount> fencerHits = null)
+            IReadOnlyList<FencerHitCount> fencerHits = null,
+            BeatHitCount? beatHits = null)
         {
             // Results saved before footwork calls (or the Parry Drills) existed have no such hit map.
             footworkHits = footworkHits ?? Array.Empty<FootworkHitCount>();
@@ -50,9 +51,10 @@ namespace VrFencing.Session
             }
 
             if (zoneHits == null
-                || zoneHits.Sum(hits => hits.Attempts) + footworkHits.Sum(hits => hits.Attempts) + attackHits.Sum(hits => hits.Attempts) != repCount
+                || zoneHits.Sum(hits => hits.Attempts) + footworkHits.Sum(hits => hits.Attempts) + attackHits.Sum(hits => hits.Attempts)
+                    + (beatHits?.Attempts ?? 0) != repCount
                 || zoneHits.Sum(hits => hits.Touches) + footworkHits.Sum(hits => hits.Successes) + attackHits.Sum(hits => hits.Successes)
-                    != successCount)
+                    + (beatHits?.Successes ?? 0) != successCount)
             {
                 throw new ArgumentException("The hit maps must account for every Rep and every success.", nameof(zoneHits));
             }
@@ -68,6 +70,7 @@ namespace VrFencing.Session
             AttackHits = attackHits;
             ParryLines = parryLines ?? Array.Empty<ParryLineCount>();
             FencerHits = fencerHits ?? Array.Empty<FencerHitCount>();
+            BeatHits = beatHits;
         }
 
         public string DrillId { get; }
@@ -110,6 +113,9 @@ namespace VrFencing.Session
         /// </summary>
         public IReadOnlyList<FencerHitCount> FencerHits { get; }
 
+        /// <summary>Beat Drills (PER-101): the Reps, how many Beats landed and how many were followed by a Touch; null for other Drills.</summary>
+        public BeatHitCount? BeatHits { get; }
+
         /// <summary>The hit count for a zone; zero attempts when the zone was never cued.</summary>
         public ZoneHitCount HitsFor(TargetZone zone)
         {
@@ -140,13 +146,15 @@ namespace VrFencing.Session
             }
 
             var successes = reps.Where(rep => rep.IsSuccess).ToArray();
-            var zoneHits = reps
+            var beatReps = reps.Where(IsBeatRep).ToArray();
+            var otherReps = reps.Where(rep => !IsBeatRep(rep)).ToArray();
+            var zoneHits = otherReps
                 .Where(rep => !rep.AttackTarget.HasValue && rep.TargetZone.HasValue)
                 .GroupBy(rep => rep.TargetZone.Value)
                 .OrderBy(group => group.Key)
                 .Select(group => new ZoneHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
                 .ToArray();
-            var footworkHits = reps
+            var footworkHits = otherReps
                 .Where(rep => !rep.AttackTarget.HasValue && !rep.TargetZone.HasValue)
                 .GroupBy(rep => rep.FootworkCall ?? FootworkAction.None)
                 .OrderBy(group => group.Key)
@@ -182,7 +190,10 @@ namespace VrFencing.Session
                 footworkHits,
                 attackHits,
                 parryLines,
-                fencerHits);
+                fencerHits,
+                beatReps.Length == 0
+                    ? (BeatHitCount?)null
+                    : new BeatHitCount(beatReps.Length, beatReps.Count(rep => rep.BeatOutOfLineMeters.HasValue), beatReps.Count(rep => rep.IsSuccess)));
         }
 
         /// <summary>
@@ -245,7 +256,25 @@ namespace VrFencing.Session
                 footworkHits,
                 attackHits,
                 parryLines,
-                fencerHits);
+                fencerHits,
+                CombineBeatHits(parts));
+        }
+
+        /// <summary>A Beat Drill's Rep cues no zone, attack or footwork (PER-101); it is logged with its Drill's id.</summary>
+        private static bool IsBeatRep(RepLogEntry rep)
+        {
+            return rep.DrillId == DrillCatalog.BeatDrillId;
+        }
+
+        private static BeatHitCount? CombineBeatHits(IReadOnlyList<DrillResults> parts)
+        {
+            var present = parts.Where(part => part.BeatHits.HasValue).Select(part => part.BeatHits.Value).ToArray();
+            if (present.Length == 0)
+            {
+                return null;
+            }
+
+            return new BeatHitCount(present.Sum(hits => hits.Attempts), present.Sum(hits => hits.Beats), present.Sum(hits => hits.Successes));
         }
 
         private static double? AverageOf(IEnumerable<double?> values)

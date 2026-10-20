@@ -29,6 +29,9 @@ namespace VrFencing.UI
         public const string ParryText = "Parry the thrust";
         public const string ParryThenRiposteText = "Parry, then riposte";
         public const string RiposteText = "Riposte now!";
+        public const string BeatText = "Beat the blade, then attack";
+        public const string TouchAfterBeatText = "Touch now!";
+        public const string StopHitText = "Stop hit: Touch the arm";
 
         /// <param name="isFencerOnStrip">From the Strip; tells an off-strip pause from the Fencer's own.</param>
         public static RunStatus Format(DrillRunner runner, bool isFencerOnStrip)
@@ -101,6 +104,17 @@ namespace VrFencing.UI
             if (cue.FootworkCall.HasValue)
             {
                 return FootworkNames.Get(cue.FootworkCall.Value);
+            }
+
+            // The Armed Dummy's blade in line (PER-101): beat it, then Touch.
+            if (cue.CueType == CueType.BladeInLine)
+            {
+                return runner.IsAwaitingTouchAfterBeat ? TouchAfterBeatText : BeatText;
+            }
+
+            if (runner.Drill.SuccessRule == SuccessRule.StopHit)
+            {
+                return StopHitText;
             }
 
             // The Armed Dummy's attack is the cue (PER-100): parry it, then riposte anywhere on the Dummy.

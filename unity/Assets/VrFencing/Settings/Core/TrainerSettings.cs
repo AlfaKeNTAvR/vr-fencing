@@ -105,6 +105,9 @@ namespace VrFencing.Settings
         /// <summary>Parry 8/7 asks for a Riposte.</summary>
         public bool RiposteInLowParries { get; set; } = true;
 
+        /// <summary>The Dummy lunges (PER-101) asks for a Riposte.</summary>
+        public bool RiposteInLungeParries { get; set; } = true;
+
         public ArmedDummySettings Clone()
         {
             return new ArmedDummySettings
@@ -112,6 +115,7 @@ namespace VrFencing.Settings
                 RiposteInSlowParries = RiposteInSlowParries,
                 RiposteInFastParries = RiposteInFastParries,
                 RiposteInLowParries = RiposteInLowParries,
+                RiposteInLungeParries = RiposteInLungeParries,
             };
         }
     }
