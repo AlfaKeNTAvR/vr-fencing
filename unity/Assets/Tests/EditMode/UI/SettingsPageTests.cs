@@ -192,8 +192,27 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeFlex), Is.EqualTo("Normal"));
             Assert.That(SettingsPage.Change(settings, SettingId.BladeFlex, 1).Blade.Flex, Is.EqualTo(BladeFlexSoftness.Soft));
             Assert.That(SettingsPage.Change(settings, SettingId.BladeFlex, -1).Blade.Flex, Is.EqualTo(BladeFlexSoftness.Stiff));
-            Assert.That(SettingsPage.GetImpact(SettingId.TouchPressure), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingsPage.GetImpact(SettingId.TouchPressure), Is.EqualTo(SettingImpact.Blade | SettingImpact.Bout), "The Host's pressure is the bout's rule (PER-82).");
             Assert.That(SettingsPage.GetImpact(SettingId.BladeFlex), Is.EqualTo(SettingImpact.Blade));
+        }
+
+        [Test]
+        public void TheBoutDoubleWindowStepsFrom50To150Milliseconds()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.DoubleWindow), Is.EqualTo("50 ms"));
+            Assert.That(SettingsPage.Change(settings, SettingId.DoubleWindow, -1).BoutDoubleWindowSeconds, Is.EqualTo(0.05f), "Never below the rule's.");
+            Assert.That(SettingsPage.FormatValue(SettingsPage.Change(settings, SettingId.DoubleWindow, 1), SettingId.DoubleWindow), Is.EqualTo("75 ms"));
+
+            var stepped = settings;
+            for (var step = 0; step < 10; step++)
+            {
+                stepped = SettingsPage.Change(stepped, SettingId.DoubleWindow, 1);
+            }
+
+            Assert.That(SettingsPage.FormatValue(stepped, SettingId.DoubleWindow), Is.EqualTo("150 ms"));
+            Assert.That(SettingsPage.GetImpact(SettingId.DoubleWindow), Is.EqualTo(SettingImpact.Bout));
         }
 
         [Test]

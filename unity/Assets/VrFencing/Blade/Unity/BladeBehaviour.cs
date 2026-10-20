@@ -299,24 +299,48 @@ namespace VrFencing.Blade
                 case BladeEventType.Touch:
                     Report(bladeEvent, ContactKind.PointFirst);
                     _dummy.FlashZone(bladeEvent.Zone);
-                    PlayHaptic(bladeEvent);
                     break;
                 case BladeEventType.FlatContact:
                     Report(bladeEvent, ContactKind.Flat);
-                    if (now - _lastFlatHapticAt >= FlatHapticCooldownSeconds)
-                    {
-                        PlayHaptic(bladeEvent);
-                        _lastFlatHapticAt = now;
-                    }
-
-                    break;
-                case BladeEventType.TipGlance:
-                    PlayHaptic(bladeEvent);
                     break;
             }
 
-            _visual.Flash(bladeEvent.Type, now);
+            PlayFeedback(bladeEvent, now);
             Contact?.Invoke(bladeEvent);
+        }
+
+        /// <summary>
+        /// A contact of this blade with the opponent's body in a bout (PER-82), judged by the bout: the same haptic and
+        /// point flash as on the Dummy, never reported to the Drill runner.
+        /// </summary>
+        public void PlayOpponentContact(BladeEvent bladeEvent)
+        {
+            if (_visual != null)
+            {
+                PlayFeedback(bladeEvent, Time.time);
+            }
+        }
+
+        /// <summary>The opponent's Touch lit in a bout (PER-82): a distinct short buzz on both controllers.</summary>
+        public void PlayBeingTouched()
+        {
+            _haptics?.PlayBeingTouched();
+        }
+
+        /// <summary>The event's haptic (a flat contact at most once per cooldown) and the point's flash.</summary>
+        private void PlayFeedback(BladeEvent bladeEvent, float now)
+        {
+            if (bladeEvent.Type != BladeEventType.FlatContact)
+            {
+                PlayHaptic(bladeEvent);
+            }
+            else if (now - _lastFlatHapticAt >= FlatHapticCooldownSeconds)
+            {
+                PlayHaptic(bladeEvent);
+                _lastFlatHapticAt = now;
+            }
+
+            _visual.Flash(bladeEvent.Type, now);
         }
 
         private void Report(BladeEvent bladeEvent, ContactKind kind)

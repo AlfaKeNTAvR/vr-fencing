@@ -122,6 +122,26 @@ namespace VrFencing.EditorTools
             {
                 EditorGUILayout.HelpBox($"{link.Link.RejectedMessages} unreadable partner messages dropped (another build?).", MessageType.Warning);
             }
+
+            DrawBout(partner);
+        }
+
+        /// <summary>The judge (PER-82): the ping, the rules in force, and the last light, from this app's side.</summary>
+        private static void DrawBout(PartnerSessionBehaviour partner)
+        {
+            var bout = partner.GetComponent<BoutBehaviour>();
+            var link = bout != null ? bout.Link : null;
+            if (link == null)
+            {
+                return;
+            }
+
+            EditorGUILayout.LabelField("Bout", $"judging as the {link.Me}; {ScoringBox.FormatPing(link.Clock.RoundTripSeconds)}");
+            EditorGUILayout.LabelField(
+                "Rules",
+                $"Touch pressure {link.Rules.Pressure}, double window {link.Rules.DoubleWindowSeconds * 1000.0:0} ms{(link.HasHostRules ? string.Empty : " (the host's not received yet)")}");
+            var light = link.Box.LastLight;
+            EditorGUILayout.LabelField("Last light", light.HasValue ? $"{light.Value.Sequence}: {ScoringBox.Describe(light.Value, link.Me)}" : "none yet");
         }
     }
 }

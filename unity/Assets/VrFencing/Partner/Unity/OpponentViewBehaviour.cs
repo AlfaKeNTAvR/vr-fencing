@@ -79,6 +79,9 @@ namespace VrFencing.Partner
         /// <summary>True while the opponent is drawn.</summary>
         public bool IsShown => _isShown;
 
+        /// <summary>The opponent as drawn this frame, in this Fencer's Strip frame; null while hidden. The bout judges Touches on it (PER-82).</summary>
+        public OpponentView DrawnView { get; private set; }
+
         /// <summary>Takes changed Settings: the body's opacity, and this Fencer's height for their own capsules.</summary>
         public void ApplySettings(TrainerSettings settings)
         {
@@ -131,6 +134,7 @@ namespace VrFencing.Partner
         private void LateUpdate()
         {
             var view = _link != null && _link.IsConnected ? _link.Link.Sample(Time.realtimeSinceStartupAsDouble) : null;
+            DrawnView = view;
             SetShown(view != null);
             if (view == null)
             {

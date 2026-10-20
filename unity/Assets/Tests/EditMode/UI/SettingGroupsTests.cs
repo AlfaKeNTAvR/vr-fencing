@@ -67,7 +67,7 @@ namespace VrFencing.Tests.UI
             Assert.That(SettingGroups.GetSettings(SettingGroup.Touch), Is.EqualTo(new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity,
+                SettingId.BodyOpacity, SettingId.DoubleWindow,
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]
             {

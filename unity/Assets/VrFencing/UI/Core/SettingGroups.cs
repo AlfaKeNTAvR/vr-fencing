@@ -42,10 +42,11 @@ namespace VrFencing.UI
             },
 
             // The Dummy's look (PER-102) is here: Touch is the group about the Target Zones, and it has room for all four.
+            // The bout's double window (PER-82) is here too: it decides which Touches light.
             [SettingGroup.Touch] = new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity,
+                SettingId.BodyOpacity, SettingId.DoubleWindow,
             },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]

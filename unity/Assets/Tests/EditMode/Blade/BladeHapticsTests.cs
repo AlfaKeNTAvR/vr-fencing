@@ -68,5 +68,20 @@ namespace VrFencing.Tests.Blade
             Assert.That(json, Does.Contain("{\"time\":0.09,\"amplitude\":0}]"));
             Assert.That(json, Does.Contain("\"frequency\":[{\"time\":0,\"frequency\":1}"));
         }
+
+        [Test]
+        public void BeingTouchedIsAShortBuzzUnlikeAnyTouchPattern()
+        {
+            var segments = BladeHaptics.BeingTouched;
+            var seconds = segments.Sum(segment => segment.DurationSeconds);
+
+            Assert.That(seconds, Is.InRange(0.1f, 0.25f), "Short (PER-74).");
+            Assert.That(segments.Max(segment => segment.Amplitude), Is.EqualTo(1.0f));
+            foreach (HapticPattern pattern in System.Enum.GetValues(typeof(HapticPattern)))
+            {
+                var touch = BladeHaptics.GetSegments(BladeEventType.Touch, pattern);
+                Assert.That(touch.SequenceEqual(segments), Is.False, $"Distinct from the Touch's {pattern}.");
+            }
+        }
     }
 }
