@@ -86,12 +86,17 @@ namespace VrFencing.Dummy
         private readonly TrackedPose[] _poses = new TrackedPose[JointCount];
         private readonly float _heightMeters;
 
+        // Where the shoulder is in the Dummy frame (mirrored for the hand): en garde, or where the torso carried it (PER-115).
+        private Vector3 _shoulderPosition;
+
         /// <exception cref="ArgumentException">A rotation in <paramref name="pose"/> is zero (an unset pose).</exception>
         public SwordArm(float heightMeters, Hand hand, SwordArmPose pose)
         {
             DummyLayout.RequirePositiveHeight(heightMeters);
             _heightMeters = heightMeters;
             Hand = hand;
+            var restShoulder = EnGardePose.SwordShoulder * heightMeters;
+            _shoulderPosition = hand == Hand.Left ? HandMirroring.MirrorPosition(restShoulder) : restShoulder;
             SetPose(pose);
         }
 
@@ -111,8 +116,9 @@ namespace VrFencing.Dummy
             RequireRotation(pose.Wrist, nameof(pose.Wrist));
             Pose = pose;
 
-            _localPoses[(int)ArmJoint.Shoulder] = HandMirroring.ForHand(
-                new TrackedPose(EnGardePose.SwordShoulder * _heightMeters, Quaternion.Normalize(pose.Shoulder)), Hand);
+            var shoulderRotation = Quaternion.Normalize(pose.Shoulder);
+            _localPoses[(int)ArmJoint.Shoulder] = new TrackedPose(
+                _shoulderPosition, Hand == Hand.Left ? HandMirroring.MirrorRotation(shoulderRotation) : shoulderRotation);
             _localPoses[(int)ArmJoint.Elbow] = HandMirroring.ForHand(
                 new TrackedPose(new Vector3(0.0f, 0.0f, EnGardePose.UpperArmLength * _heightMeters), Quaternion.Normalize(pose.Elbow)), Hand);
             _localPoses[(int)ArmJoint.Wrist] = HandMirroring.ForHand(
@@ -123,6 +129,16 @@ namespace VrFencing.Dummy
             {
                 _poses[joint] = Compose(_poses[joint - 1], _localPoses[joint]);
             }
+        }
+
+        /// <summary>
+        /// Moves the shoulder to <paramref name="shoulderPosition"/> (Dummy frame, mirrored for the hand) in place, the arm
+        /// keeping its pose: the torso carries it as the hips move (PER-115). The arm's bones keep their lengths.
+        /// </summary>
+        internal void SetShoulderPosition(Vector3 shoulderPosition)
+        {
+            _shoulderPosition = shoulderPosition;
+            SetPose(Pose);
         }
 
         /// <summary>The joint's pose in its parent's frame (the Dummy frame for the shoulder).</summary>

@@ -73,10 +73,19 @@ namespace VrFencing.Dummy
         /// <param name="aim">Where the point should land, in the right-handed Dummy frame.</param>
         public static SwordArmPose PoseToReach(float heightMeters, Vector3 aim, float bladeLengthMeters)
         {
+            return PoseToReach(heightMeters, GetShoulderPosition(heightMeters), aim, bladeLengthMeters);
+        }
+
+        /// <summary>
+        /// As <see cref="PoseToReach(float, Vector3, float)"/>, from the sword shoulder at <paramref name="shoulder"/>
+        /// (right-handed Dummy frame) where the torso has carried it, e.g. leaning into a lunge (PER-115).
+        /// </summary>
+        public static SwordArmPose PoseToReach(float heightMeters, Vector3 shoulder, Vector3 aim, float bladeLengthMeters)
+        {
             DummyLayout.RequirePositiveHeight(heightMeters);
             var upperArm = GetUpperArmMeters(heightMeters);
             var forearmToPoint = GetForearmToPointMeters(heightMeters, bladeLengthMeters);
-            var shoulderToAim = aim - GetShoulderPosition(heightMeters);
+            var shoulderToAim = aim - shoulder;
             var aimDistance = shoulderToAim.Length();
             var towardAim = aimDistance < 1e-6f ? EnGardePose.ArmInLineDirection : KeepNearInLine(shoulderToAim / aimDistance);
             var reach = Math.Clamp(aimDistance, GetShortestReachMeters(heightMeters, bladeLengthMeters), upperArm + forearmToPoint);
@@ -96,12 +105,12 @@ namespace VrFencing.Dummy
             var upperArmUp = (towardAim * sine) + (upInPlane * cosine);
             var upperArmRight = Vector3.Cross(upperArmUp, upperArmDirection);
 
-            var shoulder = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(new Matrix4x4(
+            var shoulderRotation = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(new Matrix4x4(
                 upperArmRight.X, upperArmRight.Y, upperArmRight.Z, 0.0f,
                 upperArmUp.X, upperArmUp.Y, upperArmUp.Z, 0.0f,
                 upperArmDirection.X, upperArmDirection.Y, upperArmDirection.Z, 0.0f,
                 0.0f, 0.0f, 0.0f, 1.0f)));
-            return new SwordArmPose(shoulder, Quaternion.CreateFromAxisAngle(-Vector3.UnitX, elbowBend), Quaternion.Identity);
+            return new SwordArmPose(shoulderRotation, Quaternion.CreateFromAxisAngle(-Vector3.UnitX, elbowBend), Quaternion.Identity);
         }
 
         /// <summary>The en garde between attacks, the blade held in line (<see cref="ArmedDummyTuning.GuardDrawBackMeters"/>).</summary>
@@ -131,6 +140,12 @@ namespace VrFencing.Dummy
         public static Vector3 GetPoint(float heightMeters, SwordArmPose pose, float bladeLengthMeters)
         {
             return new SwordArm(heightMeters, Hand.Right, pose).GetBladePoint(bladeLengthMeters);
+        }
+
+        /// <summary>The point in <paramref name="pose"/> with the shoulder at <paramref name="shoulder"/>, in the right-handed Dummy frame.</summary>
+        public static Vector3 GetPoint(float heightMeters, Vector3 shoulder, SwordArmPose pose, float bladeLengthMeters)
+        {
+            return GetPoint(heightMeters, pose, bladeLengthMeters) + (shoulder - GetShoulderPosition(heightMeters));
         }
 
         /// <summary>The elbow bend from straight, in degrees: 0 straight, positive with the forearm turned up.</summary>

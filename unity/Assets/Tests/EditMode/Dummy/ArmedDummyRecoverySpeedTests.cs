@@ -1,6 +1,7 @@
 // The Armed Dummy's lunge never moves a Target Zone further in one 72 Hz frame than the Blade sweeps (PER-114): a zone
 // that jumps more than 5 cm a frame restarts the Blade's sweep and the Armed Dummy, so a Touch can be missed. A tall
-// Dummy's lunge is long, so its recovery takes longer than the usual 0.6 s, just enough to stay under that.
+// Dummy's lunge is long, so its recovery takes longer than the usual 0.6 s, just enough to stay under that with the arm
+// riding the torso as it rises out of the lunge (PER-115).
 using System;
 using NUnit.Framework;
 using VrFencing.Drills;
@@ -92,8 +93,9 @@ namespace VrFencing.Tests.Dummy
             var recoverSeconds = attack.DoneSeconds - recoverStart;
 
             Assert.That(recoverSeconds, Is.GreaterThan(ArmedDummyTuning.RecoverSeconds));
+            // The sword arm, riding the rising torso, is the fastest part: it comes back at the limit (PER-115).
             Assert.That(
-                AttackPath.MinimumJerkPeakFactor * attack.LungeMeters / recoverSeconds,
+                AttackPath.MinimumJerkPeakFactor * attack.LungeMeters * ArmedDummyTuning.RecoverUpperBodySpeedFactor / recoverSeconds,
                 Is.EqualTo(ArmedDummyTuning.MaximumRecoverLungeSpeedMetersPerSecond).Within(1e-3f));
         }
 

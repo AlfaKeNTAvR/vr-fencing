@@ -15,8 +15,8 @@ namespace VrFencing.Dummy
     ///
     /// The sword arm is a joint chain (<see cref="Arm"/>): the hand, wrist, forearm and upper arm zones are derived
     /// from its joint poses. The legs (<see cref="Legs"/>, PER-110) carry the thigh and foot zones and the leg
-    /// silhouette; the body zone's bottom (the pelvis) moves with their hips, its top stays at the shoulders (PER-111).
-    /// The head and the back arm are fixed to the stance.
+    /// silhouette. The upper body (<see cref="Torso"/>, PER-115) rides on their hips and leans with them: the body zone,
+    /// the head, the back arm and the sword arm's shoulder move with it, every bone keeping its length.
     ///
     /// Hand: the Dummy holds its blade in the same hand as the Fencer, so a right-handed Fencer faces a
     /// right-handed Dummy and a left-handed Fencer a left-handed one ("left mirrors everything", Settings).
@@ -24,7 +24,10 @@ namespace VrFencing.Dummy
     /// </summary>
     public sealed class DummyLayout
     {
-        // Indices in SilhouetteParts of the parts the legs carry (see SilhouetteBodyParts).
+        // Indices in SilhouetteParts of the parts the body carries (see SilhouetteBodyParts).
+        private const int HeadPart = 0;
+        private const int BackUpperArmPart = 1;
+        private const int BackForearmPart = 2;
         private const int FrontShinPart = 3;
         private const int BackThighPart = 4;
         private const int BackShinPart = 5;
@@ -32,10 +35,6 @@ namespace VrFencing.Dummy
 
         private readonly ZoneCapsule[] _zones;
         private readonly Capsule[] _silhouetteParts;
-
-        // The body zone and the hip joints' center in en garde: the body zone's bottom moves with the hips (PER-111).
-        private readonly Capsule _restBody;
-        private readonly Vector3 _restHipCenter;
 
         private DummyLayout(float heightMeters, SwordArm arm, DummyLegs legs)
         {
@@ -48,9 +47,6 @@ namespace VrFencing.Dummy
                 .Cast<TargetZone>()
                 .Select(zone => new ZoneCapsule(zone, SwordArm.IsArmZone(zone) ? arm.GetZone(zone) : Scale(StanceZoneAtUnitHeight(zone), heightMeters, arm.Hand)))
                 .ToArray();
-            _restBody = Scale(StanceZoneAtUnitHeight(TargetZone.Body), heightMeters, arm.Hand);
-            var restLegs = DummyLegs.EnGarde(heightMeters, arm.Hand);
-            _restHipCenter = (restLegs.Front.Hip + restLegs.Back.Hip) * 0.5f;
             PoseLegs(legs);
         }
 
@@ -64,6 +60,9 @@ namespace VrFencing.Dummy
 
         /// <summary>The legs' joints: en garde unless <see cref="PoseLegs"/> moved them.</summary>
         public DummyLegs Legs { get; private set; }
+
+        /// <summary>The upper body on the legs' hips (PER-115): upright en garde unless <see cref="PoseLegs"/> moved them.</summary>
+        public DummyTorso Torso { get; private set; }
 
         /// <summary>One capsule per <see cref="TargetZone"/>, in enum order.</summary>
         public IReadOnlyList<ZoneCapsule> Zones => _zones;
@@ -107,7 +106,7 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the sword arm, and the hand, wrist, forearm and upper arm zones with it, to <paramref name="armPose"/>
-        /// in place, without allocating. The stance (feet, legs, body) stays put.
+        /// in place, without allocating, from wherever the torso has the shoulder. The stance (feet, legs, body) stays put.
         /// </summary>
         /// <exception cref="ArgumentException">A rotation in <paramref name="armPose"/> is zero (an unset pose).</exception>
         public void PoseArm(SwordArmPose armPose)
@@ -125,13 +124,15 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the legs to <paramref name="legs"/> (in this layout's Dummy frame, already mirrored for its hand), and
-        /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110). The body
-        /// zone's bottom moves as far as the hips' center moved from en garde; its top stays at the shoulders, so a
-        /// dropped or shifted pelvis tilts the body zone, not the shoulders (PER-111).
+        /// the thigh and foot zones and the leg silhouette with them, in place and without allocating (PER-110). The upper
+        /// body rides on the hips and leans with them (<see cref="DummyTorso"/>, PER-115): the body zone, head, back arm
+        /// and the sword arm (its shoulder, keeping the arm's pose) move with it.
         /// </summary>
         public void PoseLegs(DummyLegs legs)
         {
             Legs = legs;
+            Torso = DummyTorso.Pose(HeightMeters, Hand, (legs.Front.Hip + legs.Back.Hip) * 0.5f);
+            Arm.SetShoulderPosition(Torso.SwordShoulder);
             var hipRadius = EnGardePose.ThighRadius * HeightMeters;
             var shinRadius = EnGardePose.ShinRadius * HeightMeters;
             var footRadius = EnGardePose.FootRadius * HeightMeters;
@@ -146,11 +147,19 @@ namespace VrFencing.Dummy
                         _zones[index] = new ZoneCapsule(TargetZone.Foot, new Capsule(legs.Front.Heel, legs.Front.Toe, footRadius));
                         break;
                     case TargetZone.Body:
-                        var hipShift = ((legs.Front.Hip + legs.Back.Hip) * 0.5f) - _restHipCenter;
-                        _zones[index] = new ZoneCapsule(TargetZone.Body, new Capsule(_restBody.Start + hipShift, _restBody.End, _restBody.RadiusMeters));
+                        _zones[index] = new ZoneCapsule(TargetZone.Body, Torso.Body);
+                        break;
+                    default:
+                        _zones[index] = new ZoneCapsule(_zones[index].Zone, Arm.GetZone(_zones[index].Zone));
                         break;
                 }
             }
+
+            var headRadius = EnGardePose.HeadRadius * HeightMeters;
+            var backArmRadius = EnGardePose.BackArmRadius * HeightMeters;
+            _silhouetteParts[HeadPart] = new Capsule(Torso.HeadCenter, Torso.HeadCenter, headRadius);
+            _silhouetteParts[BackUpperArmPart] = new Capsule(Torso.BackShoulder, Torso.BackElbow, backArmRadius);
+            _silhouetteParts[BackForearmPart] = new Capsule(Torso.BackElbow, Torso.BackHand, backArmRadius);
 
             _silhouetteParts[FrontShinPart] = new Capsule(legs.Front.Ankle, legs.Front.Knee, shinRadius);
             _silhouetteParts[BackThighPart] = new Capsule(legs.Back.Knee, legs.Back.Hip, hipRadius);

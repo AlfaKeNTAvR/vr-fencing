@@ -22,7 +22,9 @@ namespace VrFencing.Dummy
     /// Dummy goes under <see cref="GetJointTransform"/>(<see cref="ArmJoint.Wrist"/>).
     ///
     /// Legs (PER-110): <see cref="SetLegs"/> moves the legs, and the thigh and foot zones and the drawn legs with them,
-    /// as the stepping Dummy's footwork poses them every frame. Nothing is rebuilt.
+    /// as the stepping Dummy's footwork poses them every frame. Nothing is rebuilt. The upper body rides on the hips
+    /// (PER-115, <see cref="DummyTorso"/>): the body zone, head, back arm and the sword arm's shoulder move and lean with
+    /// them, so the whole body moves as one and no bone stretches.
     ///
     /// Footwork (PER-111): the Dummy owns its <see cref="Footwork"/>, the one source of where its body and legs are.
     /// Whoever moves the Dummy (the distance keeper, the Armed Dummy's lunge, the footwork test Drill) steps it and
@@ -196,8 +198,8 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Moves the legs to <paramref name="legs"/> (Dummy frame, mirrored for the Dummy's hand, e.g.
-        /// <see cref="DummyFootwork.Legs"/>), and with them the thigh and foot zones and the drawn legs, without
-        /// rebuilding. <see cref="DummyLegs.EnGarde"/> stands them back in en garde.
+        /// <see cref="DummyFootwork.Legs"/>), and with them the thigh and foot zones and the drawn legs, and the upper body
+        /// riding on the hips (the body zone, head, back arm and sword arm), without rebuilding. <see cref="DummyLegs.EnGarde"/> stands them back in en garde.
         /// </summary>
         /// <exception cref="InvalidOperationException">The Dummy is not configured yet.</exception>
         public void SetLegs(DummyLegs legs)
@@ -217,7 +219,8 @@ namespace VrFencing.Dummy
                 FitCapsule(_silhouetteTransforms[index], part, part.RadiusMeters);
             }
 
-            _bodyRig?.Pose(Layout);
+            // The torso carries the sword shoulder (PER-115): the arm's joints, its zones and the body follow.
+            PoseJoints();
         }
 
         /// <summary>The transform of a sword arm joint, or null before the Dummy is configured.</summary>

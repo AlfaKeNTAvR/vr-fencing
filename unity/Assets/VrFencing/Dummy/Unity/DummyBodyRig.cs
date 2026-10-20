@@ -140,7 +140,8 @@ namespace VrFencing.Dummy
             // The back hand carries on the forearm's line.
             var backElbow = Joint(SkeletonJoint.BackElbow).Value;
             var backHand = Joint(SkeletonJoint.BackHand).Value;
-            PoseJoints(layout.Hand, layout.HeightMeters, Joint, backHand + (backHand - backElbow), Quaternion.identity);
+            // The head tilts with the leaning torso, a little less than the chest (PER-115).
+            PoseJoints(layout.Hand, layout.HeightMeters, Joint, backHand + (backHand - backElbow), layout.Torso.HeadRotation.ToUnity());
         }
 
         /// <summary>

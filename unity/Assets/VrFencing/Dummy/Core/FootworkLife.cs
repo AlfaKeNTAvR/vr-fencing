@@ -5,9 +5,9 @@ namespace VrFencing.Dummy
 {
     /// <summary>
     /// The small motions that make the standing Dummy look alive (PER-111): it breathes, the hips rising and settling a
-    /// little with each breath, and its weight drifts between the front and back leg. Both move only the hips, in the
-    /// Dummy frame; the feet stay planted and the shoulders, head and sword arm stay level (see
-    /// <see cref="FootworkTuning.StepHipDipPerHeight"/>).
+    /// little with each breath, and its weight drifts between the front and back leg. Both move the hips in the Dummy
+    /// frame, with the feet planted; the upper body rides on them and leans a little with the weight shift (PER-115,
+    /// <see cref="DummyTorso"/>).
     ///
     /// Each breath's length is drawn anew, and the weight shift is two slow waves of unrelated periods with seeded
     /// phases, so the motion never repeats exactly; the same seed repeats it exactly, for tests. Continuous in time: no

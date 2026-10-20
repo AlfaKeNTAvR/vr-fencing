@@ -1,6 +1,5 @@
 using System;
 using System.Numerics;
-using VrFencing.Settings;
 
 namespace VrFencing.Dummy
 {
@@ -33,9 +32,9 @@ namespace VrFencing.Dummy
     /// <summary>
     /// The joints a rigged body is posed on, so its mesh wraps the same en garde stance as the Target Zones
     /// (PER-78). Positions are in the Dummy frame (see <see cref="DummyLayout"/>), scaled to its height and mirrored
-    /// for a left-handed Dummy. The sword arm joints follow the layout's <see cref="SwordArm"/> pose and the leg joints
-    /// its <see cref="DummyLayout.Legs"/> (PER-110); the rest are fixed to the stance, at the ends of the capsules the
-    /// Target Zones and the silhouette are built from.
+    /// for a left-handed Dummy. The sword arm joints follow the layout's <see cref="SwordArm"/> pose, the leg joints
+    /// its <see cref="DummyLayout.Legs"/> (PER-110) and the rest its <see cref="DummyLayout.Torso"/> (PER-115), at the ends
+    /// of the capsules the Target Zones and the silhouette are built from.
     /// </summary>
     public static class DummySkeleton
     {
@@ -62,7 +61,17 @@ namespace VrFencing.Dummy
                     var handAlongWrist = new Vector3(0.0f, 0.0f, EnGardePose.HandLength * layout.HeightMeters);
                     return wrist.Position + Vector3.Transform(handAlongWrist, wrist.Rotation);
                 case SkeletonJoint.HipCenter:
-                    return (layout.Legs.Front.Hip + layout.Legs.Back.Hip) * 0.5f;
+                    return layout.Torso.HipCenter;
+                case SkeletonJoint.ShoulderCenter:
+                    return layout.Torso.ShoulderCenter;
+                case SkeletonJoint.HeadCenter:
+                    return layout.Torso.HeadCenter;
+                case SkeletonJoint.BackShoulder:
+                    return layout.Torso.BackShoulder;
+                case SkeletonJoint.BackElbow:
+                    return layout.Torso.BackElbow;
+                case SkeletonJoint.BackHand:
+                    return layout.Torso.BackHand;
                 case SkeletonJoint.FrontHip:
                     return layout.Legs.Front.Hip;
                 case SkeletonJoint.FrontKnee:
@@ -80,28 +89,7 @@ namespace VrFencing.Dummy
                 case SkeletonJoint.BackToe:
                     return layout.Legs.Back.Toe;
                 default:
-                    var position = GetStanceJointAtUnitHeight(joint) * layout.HeightMeters;
-                    return layout.Hand == Hand.Left ? HandMirroring.MirrorPosition(position) : position;
-            }
-        }
-
-        /// <summary>A joint that stays with the stance, for a right-handed Dummy of height 1.</summary>
-        private static Vector3 GetStanceJointAtUnitHeight(SkeletonJoint joint)
-        {
-            switch (joint)
-            {
-                case SkeletonJoint.ShoulderCenter:
-                    return (EnGardePose.SwordShoulder + EnGardePose.BackShoulder) * 0.5f;
-                case SkeletonJoint.HeadCenter:
-                    return EnGardePose.HeadCenter;
-                case SkeletonJoint.BackShoulder:
-                    return EnGardePose.BackShoulder;
-                case SkeletonJoint.BackElbow:
-                    return EnGardePose.BackElbow;
-                case SkeletonJoint.BackHand:
-                    return EnGardePose.BackHand;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(joint), joint, "Not a stance skeleton joint.");
+                    throw new ArgumentOutOfRangeException(nameof(joint), joint, "Not a skeleton joint.");
             }
         }
     }
