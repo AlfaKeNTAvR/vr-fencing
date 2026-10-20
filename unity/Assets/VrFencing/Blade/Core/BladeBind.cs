@@ -11,7 +11,7 @@ namespace VrFencing.Blade
     /// <item><b>Which side.</b> It remembers which side of the Dummy's blade the Fencer's is on (<see cref="Side"/>): the
     /// way from the Dummy's blade to the Fencer's hand blade where they come closest, while they are apart. Once they
     /// are within <see cref="EngagedMeters"/> of touching, or the Fencer's blade is anywhere behind the Dummy's (in the
-    /// strip behind it, <see cref="BladeCrossing.TryFindLeastSide"/>), the side is held: a hand that moved across between
+    /// strip behind it, <see cref="BladeCrossing.TryFindSideAtCrossing"/>), the side is held: a hand that moved across between
     /// two frames, at any speed, is pressing, not through. When they are apart again (pulled back off the end, or gone
     /// round its point) the side follows the hand again.</item>
     /// <item><b>The Fencer's drawn blade</b> takes the Dummy's blade as <see cref="PieceCount"/> thin obstacles kept to
@@ -138,10 +138,10 @@ namespace VrFencing.Blade
             away = distance > 1e-6f ? -apart / distance : -side;
             var square = MakeSquare(side, dummyEnd - dummyStart);
             if (square != Vector3.Zero
-                && BladeCrossing.TryFindLeastSide(start, end, dummyStart, dummyEnd, dummyJoints, square, StripHalfWidthMeters, out var leastSide, out var behind, out _)
-                && leastSide < 0.0f)
+                && BladeCrossing.TryFindSideAtCrossing(start, end, joints, dummyStart, dummyEnd, dummyJoints, square, StripHalfWidthMeters, out var sideAtCrossing, out var behind, out _)
+                && sideAtCrossing < 0.0f)
             {
-                overlap = ContactMeters - leastSide;
+                overlap = ContactMeters - sideAtCrossing;
                 away = -square;
                 onDummy = SegmentMath.FindClosestPointOnSegment(behind, dummyStart, dummyEnd);
             }

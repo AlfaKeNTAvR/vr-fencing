@@ -331,8 +331,11 @@ namespace VrFencing.Tests.Blade
             [Values(Hand.Right, Hand.Left)] Hand hand)
         {
             // PER-119: the Fencer's blade comes down at 3 m/s across the Dummy's, a tenth of the way from its guard, to
-            // 30 cm past its line. The solid push turns the Dummy's point far aside at once (a short lever), but only the
-            // wrist share is instant: the arm follows at its limit, so its Target Zones stay within the Blade's 5 cm.
+            // 30 cm past its line. A solid push can turn the Dummy's point far aside at once (a short lever; here 40 cm
+            // in one frame while pressed, as PER-120's false clearing did), but only the wrist share is instant: the arm
+            // follows at its limit, so its Target Zones stay within the Blade's 5 cm.
+            const int pushedFrame = 60;
+            var bigPush = new Vector3(0.0f, -0.40f, 0.0f);
             const float distance = 3.0f;
             const float pressFraction = 0.1f;
             const float pressMetersPerSecond = 3.0f;
@@ -347,6 +350,7 @@ namespace VrFencing.Tests.Blade
             Capsule[] last = null;
             var above = 0.10f;
             var mostPointMoved = 0.0f;
+            var mostArm = 0.0f;
 
             for (var frame = 0; frame < 144; frame++)
             {
@@ -360,8 +364,14 @@ namespace VrFencing.Tests.Blade
                 var fencerHand = new BladeSegment(crossing - (0.3f * Vector3.UnitX), crossing + ((BladePose.BladeLengthMeters - 0.3f) * Vector3.UnitX));
 
                 var pointBefore = blade.Deflection.TipOffset;
+                if (frame == pushedFrame)
+                {
+                    blade.Deflection.Push(bigPush);
+                }
+
                 blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, fencerHand, fencer, FrameSeconds);
                 mostPointMoved = Math.Max(mostPointMoved, Vector3.Distance(blade.Deflection.TipOffset, pointBefore));
+                mostArm = Math.Max(mostArm, blade.Deflection.ArmOffset.Length());
                 obstacles.Clear();
                 obstacles.Add(BladeObstacle.Floor);
                 blade.AddObstacles(obstacles);
@@ -384,7 +394,7 @@ namespace VrFencing.Tests.Blade
 
             Assert.That(blade.IsPressed, Is.True, "Setup: the Fencer's hand presses past the Dummy's line.");
             Assert.That(mostPointMoved, Is.GreaterThan(0.05f), "Setup: the solid push moved the point more than 5 cm in one frame.");
-            Assert.That(blade.Deflection.ArmOffset.Length(), Is.GreaterThan(0.1f), "Setup: the arm went with the press.");
+            Assert.That(mostArm, Is.GreaterThan(0.1f), "Setup: the arm went with the push.");
         }
 
         [Test]

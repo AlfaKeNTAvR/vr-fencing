@@ -6,7 +6,8 @@ namespace VrFencing.Blade
 {
     /// <summary>
     /// Something the drawn blade cannot pass (PER-48, PER-49): a capsule (a part of the Dummy), a plane with solid
-    /// space under it (the floor), or a piece of another blade (the Armed Dummy's, PER-104). <see cref="BladeContactBend"/> and <see cref="DrawnBlade"/>
+    /// space under it (the floor), a piece of another blade (the Armed Dummy's, PER-104), or another blade's bell guard
+    /// (PER-120). <see cref="BladeContactBend"/> and <see cref="DrawnBlade"/>
     /// only ask an obstacle how far a point is from its surface, which way is out, where a moving point meets it and
     /// where a point rests on it, so both kinds follow the same rule. Each has a friction coefficient for the pressed
     /// point (PER-69): the point holds while the blade's push on it stays inside the friction cone round the surface
@@ -39,24 +40,28 @@ namespace VrFencing.Blade
         /// </summary>
         public const float BladeRadiusMeters = 0.004f;
 
-        private readonly bool _isPlane;
-        private readonly bool _isBlade;
+        // The bell's bounding sphere about its center: the rim's edge.
+        private static readonly float BellBoundingRadiusMeters = (float)Math.Sqrt((BellGuard.RadiusMeters * BellGuard.RadiusMeters) + (BellGuard.DepthMeters * BellGuard.DepthMeters * 0.25f));
+
+        private readonly ObstacleShape _shape;
         private readonly Capsule _capsule;
+
+        // A plane's point and outward normal; a bell's center and the blade's direction through it (its front face is
+        // toward the point).
         private readonly Vector3 _planePoint;
         private readonly Vector3 _planeNormal;
         private readonly float _friction;
         private readonly Vector3 _side;
         private readonly int _joints;
 
-        private BladeObstacle(bool isPlane, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction)
-            : this(isPlane, false, capsule, planePoint, planeNormal, friction, Vector3.Zero, 0)
+        private BladeObstacle(ObstacleShape shape, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction)
+            : this(shape, capsule, planePoint, planeNormal, friction, Vector3.Zero, 0)
         {
         }
 
-        private BladeObstacle(bool isPlane, bool isBlade, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction, Vector3 side, int joints)
+        private BladeObstacle(ObstacleShape shape, Capsule capsule, Vector3 planePoint, Vector3 planeNormal, float friction, Vector3 side, int joints)
         {
-            _isPlane = isPlane;
-            _isBlade = isBlade;
+            _shape = shape;
             _capsule = capsule;
             _planePoint = planePoint;
             _planeNormal = planeNormal;
@@ -65,6 +70,16 @@ namespace VrFencing.Blade
             _joints = joints;
         }
 
+        private enum ObstacleShape
+        {
+            Capsule,
+            Plane,
+            BladePiece,
+            Bell,
+        }
+
+        private bool IsBell => _shape == ObstacleShape.Bell;
+
         /// <summary>
         /// The floor: everything below y = 0. In the Strip frame (and the room frame) y = 0 is the tracking floor,
         /// since tracking is floor-level and the En Garde Line lies on the floor.
@@ -72,13 +87,13 @@ namespace VrFencing.Blade
         public static BladeObstacle Floor => FromPlane(Vector3.Zero, Vector3.UnitY);
 
         /// <summary>True for a plane (solid on one side); planes always hold where they overlap a capsule.</summary>
-        public bool IsPlane => _isPlane;
+        public bool IsPlane => _shape == ObstacleShape.Plane;
 
         /// <summary>
         /// True for a piece of another blade (<see cref="FromBladePiece"/>): thin, so it is tested against the drawn
         /// blade's pieces, not only its points, and the drawn blade keeps to its side of it.
         /// </summary>
-        public bool IsBlade => _isBlade;
+        public bool IsBlade => _shape == ObstacleShape.BladePiece;
 
         /// <summary>
         /// The point's friction coefficient on this surface: the pressed point holds while the part of the blade's push
@@ -90,7 +105,7 @@ namespace VrFencing.Blade
         /// <exception cref="ArgumentOutOfRangeException">The friction is negative.</exception>
         public static BladeObstacle FromCapsule(Capsule capsule, float friction = JacketFriction)
         {
-            return new BladeObstacle(false, capsule, Vector3.Zero, Vector3.UnitY, CheckFriction(friction));
+            return new BladeObstacle(ObstacleShape.Capsule, capsule, Vector3.Zero, Vector3.UnitY, CheckFriction(friction));
         }
 
         /// <summary>
@@ -106,7 +121,7 @@ namespace VrFencing.Blade
                 throw new ArgumentException("A plane needs a normal with a direction.", nameof(outwardNormal));
             }
 
-            return new BladeObstacle(true, default, point, Vector3.Normalize(outwardNormal), CheckFriction(friction));
+            return new BladeObstacle(ObstacleShape.Plane, default, point, Vector3.Normalize(outwardNormal), CheckFriction(friction));
         }
 
         /// <summary>
@@ -127,7 +142,25 @@ namespace VrFencing.Blade
             var square = axis.LengthSquared() > 1e-12f ? side - (Vector3.Dot(side, axis) / axis.LengthSquared() * axis) : side;
             var unitSide = square.LengthSquared() > 1e-10f ? Vector3.Normalize(square) : Vector3.Zero;
             var joints = (startIsJoint ? 1 : 0) | (endIsJoint ? 2 : 0);
-            return new BladeObstacle(false, true, new Capsule(start, end, BladeRadiusMeters), Vector3.Zero, Vector3.UnitY, CheckFriction(friction), unitSide, joints);
+            return new BladeObstacle(ObstacleShape.BladePiece, new Capsule(start, end, BladeRadiusMeters), Vector3.Zero, Vector3.UnitY, CheckFriction(friction), unitSide, joints);
+        }
+
+        /// <summary>
+        /// Another blade's bell guard (<see cref="BellGuard"/>, the Armed Dummy's, PER-120): its front face on
+        /// <paramref name="guard"/>, square to <paramref name="bladeDirection"/>. Solid steel, with a blade's friction
+        /// unless given.
+        /// </summary>
+        /// <exception cref="ArgumentException">The blade direction has no direction.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The friction is negative.</exception>
+        public static BladeObstacle FromBell(Vector3 guard, Vector3 bladeDirection, float friction = BladeFriction)
+        {
+            if (bladeDirection.LengthSquared() < 1e-12f)
+            {
+                throw new ArgumentException("A bell needs the blade's direction.", nameof(bladeDirection));
+            }
+
+            var axis = Vector3.Normalize(bladeDirection);
+            return new BladeObstacle(ObstacleShape.Bell, default, BellGuard.FindCenter(guard, axis), axis, CheckFriction(friction));
         }
 
         /// <summary>
@@ -138,7 +171,7 @@ namespace VrFencing.Blade
         /// <param name="joints">Whether the drawn piece's start (bit 0) and end (bit 1) join more of the drawn blade.</param>
         public bool IsPieceClear(Vector3 start, Vector3 end, int joints, float marginMeters)
         {
-            if (!_isBlade)
+            if (!IsBlade)
             {
                 return true;
             }
@@ -174,13 +207,13 @@ namespace VrFencing.Blade
             BladeCrossing.FindClosest(start, end, joints, _capsule.Start, _capsule.End, _joints, out closest, out var onThis, out fraction, out _);
             var separation = Vector3.Distance(closest, onThis) - _capsule.RadiusMeters;
             if (_side != Vector3.Zero
-                && BladeCrossing.TryFindLeastSide(start, end, _capsule.Start, _capsule.End, _joints, _side, BladeBind.StripHalfWidthMeters, out var leastSide, out var behind, out var behindFraction)
-                && leastSide < 0.0f)
+                && BladeCrossing.TryFindSideAtCrossing(start, end, joints, _capsule.Start, _capsule.End, _joints, _side, BladeBind.StripHalfWidthMeters, out var sideAtCrossing, out var behind, out var behindFraction)
+                && sideAtCrossing < 0.0f)
             {
                 // Behind this blade (past its axis, in the strip behind it): passed through it, by this much.
                 closest = behind;
                 fraction = behindFraction;
-                return leastSide - _capsule.RadiusMeters;
+                return sideAtCrossing - _capsule.RadiusMeters;
             }
 
             return separation;
@@ -189,6 +222,28 @@ namespace VrFencing.Blade
         public static implicit operator BladeObstacle(Capsule capsule)
         {
             return FromCapsule(capsule);
+        }
+
+        /// <summary>
+        /// A point in the bell moved out of the face or rim <paramref name="previous"/> was off (the side it came from),
+        /// <paramref name="marginMeters"/> clear: a blade pressed on its front face stays in front.
+        /// </summary>
+        private Vector3 PushOutOfBell(Vector3 point, float marginMeters, Vector3 previous)
+        {
+            BellGuard.FindDistance(previous, _planePoint, _planeNormal, out var cameFrom);
+            var offset = point - _planePoint;
+            var along = Vector3.Dot(offset, _planeNormal);
+            var isOffFace = Math.Abs(Vector3.Dot(cameFrom, _planeNormal)) > 0.5f;
+            if (isOffFace)
+            {
+                var face = Vector3.Dot(cameFrom, _planeNormal) > 0.0f ? _planeNormal : -_planeNormal;
+                var halfDepth = BellGuard.DepthMeters * 0.5f;
+                return point + (face * (halfDepth + marginMeters - Vector3.Dot(offset, face)));
+            }
+
+            var radial = offset - (along * _planeNormal);
+            var outward = radial.LengthSquared() > 1e-12f ? Vector3.Normalize(radial) : cameFrom;
+            return _planePoint + (along * _planeNormal) + (outward * (BellGuard.RadiusMeters + marginMeters));
         }
 
         private static float CheckFriction(float friction)
@@ -203,18 +258,20 @@ namespace VrFencing.Blade
 
         /// <summary>
         /// False only when no point in the box from <paramref name="boxMin"/> to <paramref name="boxMax"/> can be within
-        /// <paramref name="marginMeters"/> of a capsule or blade piece (its bounding sphere misses the box): a cheap test
+        /// <paramref name="marginMeters"/> of a capsule, blade piece or bell (its bounding sphere misses the box): a cheap test
         /// that skips far bodies without changing any answer. Always true for a plane.
         /// </summary>
         public bool IsNearBox(Vector3 boxMin, Vector3 boxMax, float marginMeters)
         {
-            if (_isPlane)
+            if (IsPlane)
             {
                 return true;
             }
 
-            var center = (_capsule.Start + _capsule.End) * 0.5f;
-            var reach = (Vector3.Distance(_capsule.Start, _capsule.End) * 0.5f) + _capsule.RadiusMeters + marginMeters;
+            var center = IsBell ? _planePoint : (_capsule.Start + _capsule.End) * 0.5f;
+            var reach = IsBell
+                ? BellBoundingRadiusMeters + marginMeters
+                : (Vector3.Distance(_capsule.Start, _capsule.End) * 0.5f) + _capsule.RadiusMeters + marginMeters;
             var nearest = Vector3.Clamp(center, boxMin, boxMax);
             return Vector3.DistanceSquared(center, nearest) <= reach * reach;
         }
@@ -222,23 +279,44 @@ namespace VrFencing.Blade
         /// <summary>Distance from a point to the surface: negative inside.</summary>
         public float FindDistance(Vector3 point)
         {
-            return _isPlane
-                ? Vector3.Dot(point - _planePoint, _planeNormal)
-                : SegmentMath.FindDistanceToCapsule(point, _capsule);
+            switch (_shape)
+            {
+                case ObstacleShape.Plane:
+                    return Vector3.Dot(point - _planePoint, _planeNormal);
+                case ObstacleShape.Bell:
+                    return BellGuard.FindDistance(point, _planePoint, _planeNormal, out _);
+                default:
+                    return SegmentMath.FindDistanceToCapsule(point, _capsule);
+            }
         }
 
         /// <summary>Unit vector out of the surface nearest <paramref name="point"/>.</summary>
         public Vector3 FindOutwardNormal(Vector3 point)
         {
-            return _isPlane ? _planeNormal : SegmentMath.FindOutwardNormal(point, _capsule);
+            switch (_shape)
+            {
+                case ObstacleShape.Plane:
+                    return _planeNormal;
+                case ObstacleShape.Bell:
+                    BellGuard.FindDistance(point, _planePoint, _planeNormal, out var outward);
+                    return outward;
+                default:
+                    return SegmentMath.FindOutwardNormal(point, _capsule);
+            }
         }
 
         /// <summary>The point moved along the surface normal to rest <paramref name="marginMeters"/> off the surface, on the side it is on (a plane has one free side).</summary>
         public Vector3 ProjectOntoSurface(Vector3 point, float marginMeters)
         {
-            if (_isPlane)
+            if (IsPlane)
             {
                 return point + ((marginMeters - FindDistance(point)) * _planeNormal);
+            }
+
+            if (IsBell)
+            {
+                var distance = BellGuard.FindDistance(point, _planePoint, _planeNormal, out var outward);
+                return point + ((marginMeters - distance) * outward);
             }
 
             var onAxis = SegmentMath.FindClosestPointOnSegment(point, _capsule.Start, _capsule.End);
@@ -248,12 +326,12 @@ namespace VrFencing.Blade
         /// <summary>
         /// Where a blade running along <paramref name="tangent"/> touches the surface, on the side of
         /// <paramref name="near"/>, <paramref name="marginMeters"/> out of it: the spot whose normal is square to the
-        /// blade (PER-69, the blade's side pressed on a body). A plane has no such single spot: the point is just moved
-        /// onto it.
+        /// blade (PER-69, the blade's side pressed on a body). A plane or a bell's face has no such single spot: the
+        /// point is just moved onto it.
         /// </summary>
         public Vector3 FindTangentPoint(Vector3 near, Vector3 tangent, float marginMeters)
         {
-            if (_isPlane)
+            if (IsPlane || IsBell)
             {
                 return ProjectOntoSurface(near, marginMeters);
             }
@@ -280,11 +358,11 @@ namespace VrFencing.Blade
         /// <summary>
         /// A point closer than <paramref name="marginMeters"/> to the surface moved out to that margin; any other point
         /// as it is. A capsule pushes it out toward <paramref name="previous"/> (the side it was on), a plane straight up
-        /// its normal.
+        /// its normal, a bell out of the face or rim <paramref name="previous"/> was off.
         /// </summary>
         public Vector3 PushOut(Vector3 point, float marginMeters, Vector3? previous)
         {
-            if (_isBlade && _side != Vector3.Zero)
+            if (IsBlade && _side != Vector3.Zero)
             {
                 // Another blade: out on the side the drawn blade keeps to, also from a point across it on the other side.
                 var onBlade = SegmentMath.FindClosestPointOnSegment(point, _capsule.Start, _capsule.End);
@@ -299,9 +377,14 @@ namespace VrFencing.Blade
                 return point;
             }
 
-            if (_isPlane || !previous.HasValue)
+            if (IsPlane || !previous.HasValue)
             {
                 return ProjectOntoSurface(point, marginMeters);
+            }
+
+            if (IsBell)
+            {
+                return PushOutOfBell(point, marginMeters, previous.Value);
             }
 
             var onAxis = SegmentMath.FindClosestPointOnSegment(point, _capsule.Start, _capsule.End);
@@ -320,7 +403,12 @@ namespace VrFencing.Blade
         /// <param name="entryFraction">0 at start, 1 at end.</param>
         public bool TryFindEntry(Vector3 start, Vector3 end, float marginMeters, out float entryFraction)
         {
-            if (!_isPlane)
+            if (IsBell)
+            {
+                return BellGuard.TryFindEntry(start, end, _planePoint, _planeNormal, marginMeters, out entryFraction);
+            }
+
+            if (!IsPlane)
             {
                 return SegmentMath.TryFindCapsuleEntry(start, end, _capsule, marginMeters, out entryFraction);
             }
