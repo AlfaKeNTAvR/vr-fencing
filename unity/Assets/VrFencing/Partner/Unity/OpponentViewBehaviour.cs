@@ -12,9 +12,9 @@ namespace VrFencing.Partner
     /// <see cref="OpponentLinkBehaviour.Link"/>:
     /// <list type="bullet">
     /// <item>the body: the Dummy's rigged Humanoid (PER-78) in the Dummy's translucent look, posed on the partner's tracked
-    /// joints, built for their height and sword hand. Parts the partner's tracker is unsure about fade
-    /// (<see cref="OpponentFade"/>): the generated legs always, more at low fidelity; the whole body is a ghost while
-    /// it is not coming;</item>
+    /// joints, built for their height and sword hand. Its legs are built on the partner's footwork (PER-112,
+    /// <see cref="RemoteFencerLegs"/>), not Meta's generated legs, so they show as solid as the rest; the whole body is a
+    /// ghost while it is not coming (<see cref="OpponentFade"/>);</item>
     /// <item>the blade: built from the partner's hand and grip settings and drawn with the same droop, flex and bend code as
     /// this Fencer's own (<see cref="DrawnBlade"/>), bending against this Fencer's body, the floor and this Fencer's
     /// blade. Cosmetic only: no Touch is judged here.</item>
@@ -56,7 +56,6 @@ namespace VrFencing.Partner
         private readonly List<BladeObstacle> _opponentBodyObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount);
         private readonly List<BladeObstacle> _opponentBladeObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount + 2);
         private readonly DrawnBlade _drawnBlade = new DrawnBlade();
-        private readonly Dictionary<OpponentBodyPart, float> _fades = new Dictionary<OpponentBodyPart, float>();
 
         private Transform _root;
         private Transform _bladeMount;
@@ -71,6 +70,9 @@ namespace VrFencing.Partner
         private ConnectionIconView _connectionIcon;
         private bool _isSignalLost;
         private double _signalLostAtSeconds;
+        private float? _fade;
+        private FootworkPhase? _loggedPhase;
+        private bool _wasFootworkSure;
 
         /// <summary>The body model, for a scene built without one (the PC Editor's Partner window sets it).</summary>
         public GameObject BodyModel
@@ -149,6 +151,7 @@ namespace VrFencing.Partner
             }
 
             var stripInRoom = PlaceRoot();
+            LogFootwork(view.Body?.Footwork);
             DrawBody(view, Time.deltaTime);
             DrawBlade(view, stripInRoom, Time.deltaTime);
             DrawConnectionIcon(view, stripInRoom, Time.realtimeSinceStartupAsDouble);
@@ -181,6 +184,25 @@ namespace VrFencing.Partner
             _connectionIcon.Draw(isSignalLost, StripFrame.ToRoom(stripInRoom, head).ToUnity(), eyes);
         }
 
+        /// <summary>Logs each change of the opponent's footwork phase, and when the receiver stops or starts following their feet (PER-112).</summary>
+        private void LogFootwork(FootworkState? footwork)
+        {
+            if (!footwork.HasValue)
+            {
+                return;
+            }
+
+            var isSure = footwork.Value.Confidence >= RemoteFootworkTuning.MinConfidence;
+            if (footwork.Value.Phase == _loggedPhase && isSure == _wasFootworkSure)
+            {
+                return;
+            }
+
+            _loggedPhase = footwork.Value.Phase;
+            _wasFootworkSure = isSure;
+            Debug.Log($"{LogTag} Opponent footwork: {footwork.Value.Phase}, confidence {footwork.Value.Confidence:0.00}{(isSure ? string.Empty : " (unsure: feet held planted)")}.");
+        }
+
         private void SetShown(bool isShown)
         {
             if (isShown == _isShown)
@@ -206,7 +228,7 @@ namespace VrFencing.Partner
                 _myBlade.SetExtraObstacles(isShown ? _opponentBodyObstacles : null);
             }
             _drawnBlade.Reset();
-            _fades.Clear();
+            _fade = null;
             _isSignalLost = false;
             _connectionIcon.Draw(false, Vector3.zero, Vector3.zero);
             Debug.Log(isShown ? $"{LogTag} The opponent is shown." : $"{LogTag} The opponent is hidden.");
@@ -243,14 +265,13 @@ namespace VrFencing.Partner
                 body.BackHandEnd is System.Numerics.Vector3 backHandEnd ? backHandEnd.ToUnity() : (Vector3?)null,
                 body.HeadRotation is System.Numerics.Quaternion head ? head.ToUnity() : (Quaternion?)null);
 
+            var target = OpponentFade.GetTargetFactor(body.Fidelity, view.IsBodyStale)
+                         * (IsFadedForCorpsACorps ? OpponentFade.CorpsACorpsFactor : 1.0f);
+            var factor = _fade.HasValue ? OpponentFade.StepToward(_fade.Value, target, deltaSeconds) : target;
+            _fade = factor;
+            _propertyBlock.SetColor(BaseColorId, new Color(SilhouetteColor.r, SilhouetteColor.g, SilhouetteColor.b, Mathf.Clamp01(_settings.DummyLook.BodyOpacity * factor)));
             foreach (var slot in _rig.MeshSlots)
             {
-                var part = ToOpponentPart(slot.Part);
-                var target = OpponentFade.GetTargetFactor(part, body.Fidelity, view.IsBodyStale)
-                             * (IsFadedForCorpsACorps ? OpponentFade.CorpsACorpsFactor : 1.0f);
-                var factor = _fades.TryGetValue(part, out var current) ? OpponentFade.StepToward(current, target, deltaSeconds) : target;
-                _fades[part] = factor;
-                _propertyBlock.SetColor(BaseColorId, new Color(SilhouetteColor.r, SilhouetteColor.g, SilhouetteColor.b, Mathf.Clamp01(_settings.DummyLook.BodyOpacity * factor)));
                 slot.Renderer.SetPropertyBlock(_propertyBlock, slot.MaterialIndex);
             }
         }
@@ -345,19 +366,6 @@ namespace VrFencing.Partner
                 ? new Capsule(myBlade.Value.GuardPosition, myBlade.Value.TipPosition, MyBladeRadiusMeters)
                 : FencerBodyShape.Parked));
             return _opponentBladeObstacles;
-        }
-
-        private static OpponentBodyPart ToOpponentPart(RigMeshPart part)
-        {
-            switch (part)
-            {
-                case RigMeshPart.Arms:
-                    return OpponentBodyPart.Arms;
-                case RigMeshPart.Legs:
-                    return OpponentBodyPart.Legs;
-                default:
-                    return OpponentBodyPart.Torso;
-            }
         }
     }
 }

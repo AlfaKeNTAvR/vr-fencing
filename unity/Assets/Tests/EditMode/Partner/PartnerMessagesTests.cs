@@ -88,6 +88,56 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
+        public void TheFootworkComesBackToTheMillimeterAndDegree()
+        {
+            var footwork = new FootworkState(
+                FootworkPhase.Lunging,
+                new FootPlacement(0.12f, 1.234f, 0.071f, 0.35f),
+                new FootPlacement(-0.05f, 0.402f, 0.0f, -0.14f),
+                0.6f);
+            var body = PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero).WithFootwork(footwork);
+
+            var encoded = PartnerMessages.EncodeBody(new BodySample(2.0, body));
+            var decoded = PartnerMessages.DecodeBody(encoded).Body.Footwork.Value;
+
+            Assert.That(encoded.Length, Is.LessThanOrEqualTo(MaxBodyBytes));
+            Assert.That(decoded.Phase, Is.EqualTo(FootworkPhase.Lunging));
+            Assert.That(decoded.Confidence, Is.EqualTo(0.6f).Within(1.0f / 255.0f));
+            AssertFoot(decoded.Front, footwork.Front);
+            AssertFoot(decoded.Back, footwork.Back);
+        }
+
+        [Test]
+        public void ABodyWithoutFootworkComesBackWithout()
+        {
+            var body = PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero);
+
+            var decoded = PartnerMessages.DecodeBody(PartnerMessages.EncodeBody(new BodySample(2.0, body))).Body;
+
+            Assert.That(decoded.Footwork.HasValue, Is.False);
+        }
+
+        [Test]
+        public void AFootworkPhaseThatDoesNotExistIsRefused()
+        {
+            var footwork = new FootworkState(FootworkPhase.Standing, default, default, 1.0f);
+            var message = PartnerMessages.EncodeBody(new BodySample(2.0, PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero).WithFootwork(footwork)));
+
+            // The phase is the footwork's first byte, 14 bytes from the end.
+            message[message.Length - 14] = 200;
+
+            Assert.Throws<InvalidDataException>(() => PartnerMessages.DecodeBody(message));
+        }
+
+        private static void AssertFoot(FootPlacement decoded, FootPlacement sent)
+        {
+            Assert.That(decoded.X, Is.EqualTo(sent.X).Within(0.0006f));
+            Assert.That(decoded.Z, Is.EqualTo(sent.Z).Within(0.0006f));
+            Assert.That(decoded.LiftMeters, Is.EqualTo(sent.LiftMeters).Within(0.0006f));
+            Assert.That(decoded.PitchRadians, Is.EqualTo(sent.PitchRadians).Within(0.5f * (float)(System.Math.PI / 180.0)));
+        }
+
+        [Test]
         public void MissingJointsAndNoBodyStayMissing()
         {
             var joints = new Vector3?[FencerBody.JointCount];

@@ -46,6 +46,7 @@ namespace VrFencing.Partner
         private readonly SendSchedule _bodySchedule = new SendSchedule(BodyRatePerSecond);
         private readonly SendSchedule _handSchedule = new SendSchedule(HandRatePerSecond);
         private readonly HandMotion _handMotion = new HandMotion();
+        private readonly FootworkStateTracker _footwork = new FootworkStateTracker();
 
         private PartnerSessionBehaviour _partner;
         private NetworkManager _network;
@@ -65,6 +66,9 @@ namespace VrFencing.Partner
 
         /// <summary>Connected to the partner: the streams run.</summary>
         public bool IsConnected => _partner != null && _partner.State.Phase == PartnerPhase.Connected;
+
+        /// <summary>This Fencer's footwork as read this frame (PER-112), sent with each body.</summary>
+        public FootworkState SentFootwork => _footwork.State;
 
         /// <summary>True when a Fencer replay in the scene is what goes out (the PC Editor as the partner).</summary>
         public bool IsSendingReplay => _reader.IsReplay;
@@ -108,6 +112,9 @@ namespace VrFencing.Partner
             if (Local != null)
             {
                 _link.SetMyStrip(Local.Strip);
+
+                // Read every frame, at full rate, so a lunge is read on time; sent with the body.
+                _footwork.Update(now, Local.Head?.Position, Local.Body.Get(VrFencing.Dummy.SkeletonJoint.HipCenter), Local.HeightMeters, Local.Hand);
             }
 
             var isConnected = IsConnected && _network != null && _network.IsListening && _network.CustomMessagingManager != null;
@@ -136,7 +143,7 @@ namespace VrFencing.Partner
             SendHandIfDue(now);
             if (_bodySchedule.TakeIfDue(now))
             {
-                Send(PartnerMessages.EncodeBody(new BodySample(now, Local.Body)), NetworkDelivery.UnreliableSequenced);
+                Send(PartnerMessages.EncodeBody(new BodySample(now, Local.Body.WithFootwork(_footwork.State))), NetworkDelivery.UnreliableSequenced);
             }
         }
 

@@ -126,14 +126,19 @@ namespace VrFencing.Partner
     /// </summary>
     public static class PartnerMessages
     {
-        /// <summary>Bumped whenever a layout below changes; the app's Version must be bumped with it.</summary>
-        public const byte FormatVersion = 1;
+        /// <summary>
+        /// Bumped whenever a layout below changes; the app's Version must be bumped with it. 2: the body carries the
+        /// footwork state (PER-112, Version 1.4).
+        /// </summary>
+        public const byte FormatVersion = 2;
 
         public const byte InfoKind = 1;
         public const byte HandKind = 2;
         public const byte BodyKind = 3;
 
         private const float MetersPerUnit = 0.001f;
+        private const float RadiansPerPitchUnit = (float)(Math.PI / 180.0);
+        private const float ConfidencePerUnit = 1.0f / byte.MaxValue;
         private const byte NoFidelity = 0;
         private const byte LowFidelity = 1;
         private const byte HighFidelity = 2;
@@ -189,6 +194,11 @@ namespace VrFencing.Partner
                     present |= 1u << FencerBody.JointCount;
                 }
 
+                if (body.Footwork.HasValue)
+                {
+                    present |= 1u << (FencerBody.JointCount + 1);
+                }
+
                 writer.Write(present);
                 for (var index = 0; index < FencerBody.JointCount; index++)
                 {
@@ -204,6 +214,11 @@ namespace VrFencing.Partner
                 if (body.HeadRotation.HasValue)
                 {
                     WriteRotation(writer, body.HeadRotation.Value);
+                }
+
+                if (body.Footwork.HasValue)
+                {
+                    WriteFootwork(writer, body.Footwork.Value);
                 }
             });
         }
@@ -272,7 +287,8 @@ namespace VrFencing.Partner
                 }
 
                 var head = (present & (1u << FencerBody.JointCount)) != 0 ? ReadRotation(reader) : (Quaternion?)null;
-                return new BodySample(time, new FencerBody(joints, head, fidelity));
+                var footwork = (present & (1u << (FencerBody.JointCount + 1))) != 0 ? ReadFootwork(reader) : (FootworkState?)null;
+                return new BodySample(time, new FencerBody(joints, head, fidelity, footwork));
             });
         }
 
@@ -421,6 +437,39 @@ namespace VrFencing.Partner
             }
 
             return Quaternion.Normalize(rotation);
+        }
+
+        /// <summary>The footwork state in 14 bytes: phase, confidence, then each foot's spot (mm), lift (mm) and pitch (degrees).</summary>
+        private static void WriteFootwork(BinaryWriter writer, FootworkState footwork)
+        {
+            writer.Write((byte)footwork.Phase);
+            writer.Write((byte)Math.Round(footwork.Confidence / ConfidencePerUnit));
+            WriteFoot(writer, footwork.Front);
+            WriteFoot(writer, footwork.Back);
+        }
+
+        private static FootworkState ReadFootwork(BinaryReader reader)
+        {
+            var phase = ReadEnum<FootworkPhase>(reader.ReadByte());
+            var confidence = reader.ReadByte() * ConfidencePerUnit;
+            return new FootworkState(phase, ReadFoot(reader), ReadFoot(reader), confidence);
+        }
+
+        private static void WriteFoot(BinaryWriter writer, FootPlacement foot)
+        {
+            writer.Write(ToUnits(foot.X));
+            writer.Write(ToUnits(foot.Z));
+            writer.Write((byte)Math.Max(0.0, Math.Min(byte.MaxValue, Math.Round(foot.LiftMeters / MetersPerUnit))));
+            writer.Write((sbyte)Math.Max(sbyte.MinValue, Math.Min(sbyte.MaxValue, Math.Round(foot.PitchRadians / RadiansPerPitchUnit))));
+        }
+
+        private static FootPlacement ReadFoot(BinaryReader reader)
+        {
+            var x = FromUnits(reader.ReadInt16());
+            var z = FromUnits(reader.ReadInt16());
+            var lift = reader.ReadByte() * MetersPerUnit;
+            var pitch = reader.ReadSByte() * RadiansPerPitchUnit;
+            return new FootPlacement(x, z, lift, pitch);
         }
 
         private static void WritePose(BinaryWriter writer, TrackedPose pose)

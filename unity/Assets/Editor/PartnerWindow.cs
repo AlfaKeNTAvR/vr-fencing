@@ -145,6 +145,12 @@ namespace VrFencing.EditorTools
                 partnerInfo.HasValue
                     ? $"{partnerInfo.Value.HeightMeters:0.00} m, {partnerInfo.Value.Hand}-handed; bout Strip {bout.LengthMeters:0.00} m, En Garde gap {bout.EnGardeGapMeters:0.00} m"
                     : "nothing received yet");
+            var sent = link.SentFootwork;
+            EditorGUILayout.LabelField("Footwork sent", $"{sent.Phase}, confidence {sent.Confidence:0.0}");
+            var received = partner.TryGetComponent<OpponentViewBehaviour>(out var view) ? view.DrawnView?.Body?.Footwork : null;
+            EditorGUILayout.LabelField(
+                "Opponent footwork",
+                received.HasValue ? $"{received.Value.Phase}, confidence {received.Value.Confidence:0.0}" : "none received");
             if (link.Link.RejectedMessages > 0)
             {
                 EditorGUILayout.HelpBox($"{link.Link.RejectedMessages} unreadable partner messages dropped (another build?).", MessageType.Warning);

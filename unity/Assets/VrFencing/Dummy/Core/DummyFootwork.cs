@@ -279,14 +279,14 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>The minimum-jerk curve from 0 to 1: zero speed and acceleration at both ends.</summary>
-        internal static float MinimumJerk(float fraction)
+        public static float MinimumJerk(float fraction)
         {
             var t = Clamp01(fraction);
             return t * t * t * ((t * ((t * 6.0f) - 15.0f)) + 10.0f);
         }
 
         /// <summary>A bump from 0 up to 1 at the middle and back to 0, with zero speed at both ends.</summary>
-        private static float SwingBump(float fraction)
+        public static float SwingBump(float fraction)
         {
             var t = Clamp01(fraction);
             return 16.0f * t * t * (1.0f - t) * (1.0f - t);

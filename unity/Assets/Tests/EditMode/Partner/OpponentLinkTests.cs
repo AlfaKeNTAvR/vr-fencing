@@ -50,6 +50,26 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
+        public void TheOpponentsLegsStandOnTheirSentFeetTurnedToFaceMe()
+        {
+            var link = ConnectedLink();
+            var rest = DummyLegs.EnGarde(PartnerTestData.HeightMeters, Hand.Right);
+            var front = new FootPlacement(rest.Front.Ankle.X, rest.Front.Ankle.Z + 0.1f, 0.0f, 0.0f);
+            var back = new FootPlacement(rest.Back.Ankle.X, rest.Back.Ankle.Z, 0.0f, 0.0f);
+            var body = PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero)
+                .WithFootwork(new FootworkState(FootworkPhase.Standing, front, back, 1.0f));
+            link.Receive(PartnerMessages.EncodeBody(new BodySample(10.0, body)), 1.0);
+
+            var view = link.Sample(1.2);
+
+            // Turned about the bout centre: z = 6 - z, x = -x (see the test above).
+            var ankle = view.Body.Get(SkeletonJoint.FrontAnkle).Value;
+            Assert.That(ankle.Z, Is.EqualTo(6.0f - front.Z).Within(Tolerance));
+            Assert.That(ankle.X, Is.EqualTo(-front.X).Within(Tolerance));
+            Assert.That(ankle.Y, Is.EqualTo(rest.Front.Ankle.Y).Within(Tolerance));
+        }
+
+        [Test]
         public void TheBodysSwordHandFollowsTheDrawnHilt()
         {
             var link = ConnectedLink();
@@ -126,7 +146,7 @@ namespace VrFencing.Tests.Partner
             Assert.That(during, Is.Not.Null, "The opponent stays drawn.");
             Assert.That(during.IsBodyStale, Is.True, "Faded.");
             Assert.That(during.Body.Get(SkeletonJoint.HipCenter), Is.Not.Null, "Holding its last pose.");
-            Assert.That(OpponentFade.GetTargetFactor(OpponentBodyPart.Torso, BodyTrackingFidelity.High, during.IsBodyStale), Is.EqualTo(OpponentFade.LostBodyFactor));
+            Assert.That(OpponentFade.GetTargetFactor(BodyTrackingFidelity.High, during.IsBodyStale), Is.EqualTo(OpponentFade.LostBodyFactor));
 
             link.Receive(PartnerMessages.EncodeBody(new BodySample(12.0, body)), 3.0);
             Assert.That(link.IsSignalLost(3.0), Is.False, "Data back: the icon goes.");

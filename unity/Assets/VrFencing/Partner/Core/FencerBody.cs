@@ -25,7 +25,8 @@ namespace VrFencing.Partner
         private readonly Vector3?[] _joints;
 
         /// <param name="joints">One entry per <see cref="JointCount"/>; copied.</param>
-        public FencerBody(IReadOnlyList<Vector3?> joints, Quaternion? headRotation, BodyTrackingFidelity? fidelity)
+        /// <param name="footwork">What the feet are doing, as the sender read it (PER-112); null when unknown.</param>
+        public FencerBody(IReadOnlyList<Vector3?> joints, Quaternion? headRotation, BodyTrackingFidelity? fidelity, FootworkState? footwork = null)
         {
             if (joints == null)
             {
@@ -45,6 +46,7 @@ namespace VrFencing.Partner
 
             HeadRotation = headRotation;
             Fidelity = fidelity;
+            Footwork = footwork;
         }
 
         /// <summary>The headset's turn (its +z where the Fencer looks, +y up), or null when not tracked.</summary>
@@ -52,6 +54,12 @@ namespace VrFencing.Partner
 
         /// <summary>The body tracker's fidelity when this body was read; null when it gave no body (only the head then).</summary>
         public BodyTrackingFidelity? Fidelity { get; }
+
+        /// <summary>
+        /// The sender's footwork state read with this body (PER-112), which the receiver builds the legs on
+        /// (<see cref="RemoteFencerLegs"/>); null when the body came without one.
+        /// </summary>
+        public FootworkState? Footwork { get; }
 
         public Vector3? Get(SkeletonJoint joint)
         {
@@ -66,9 +74,15 @@ namespace VrFencing.Partner
 
         public Vector3? BackHandEnd => _joints[BackHandEndIndex];
 
+        /// <summary>The same body carrying <paramref name="footwork"/> (the sender's state, to send with it).</summary>
+        public FencerBody WithFootwork(FootworkState? footwork)
+        {
+            return new FencerBody(_joints, HeadRotation, Fidelity, footwork);
+        }
+
         /// <summary>
-        /// The same body with every position moved by <paramref name="movePoint"/> and the head turned by
-        /// <paramref name="turn"/> (applied first), e.g. into the other Fencer's Strip frame.
+        /// The same body with every position (the footwork's feet too) moved by <paramref name="movePoint"/> and the head
+        /// turned by <paramref name="turn"/> (applied first), e.g. into the other Fencer's Strip frame.
         /// </summary>
         public FencerBody Transform(Func<Vector3, Vector3> movePoint, Quaternion turn)
         {
@@ -84,10 +98,13 @@ namespace VrFencing.Partner
             }
 
             var head = HeadRotation.HasValue ? Quaternion.Normalize(turn * HeadRotation.Value) : (Quaternion?)null;
-            return new FencerBody(moved, head, Fidelity);
+            return new FencerBody(moved, head, Fidelity, Footwork?.Transform(movePoint));
         }
 
-        /// <summary>Between <paramref name="from"/> (0) and <paramref name="to"/> (1); a joint only one of them has is taken from it.</summary>
+        /// <summary>
+        /// Between <paramref name="from"/> (0) and <paramref name="to"/> (1); a joint (or footwork state) only one of them
+        /// has is taken from it.
+        /// </summary>
         public static FencerBody Lerp(FencerBody from, FencerBody to, float fraction)
         {
             if (from == null || to == null)
@@ -113,7 +130,17 @@ namespace VrFencing.Partner
                 head = to.HeadRotation ?? from.HeadRotation;
             }
 
-            return new FencerBody(joints, head, fraction < 0.5f ? from.Fidelity ?? to.Fidelity : to.Fidelity ?? from.Fidelity);
+            FootworkState? footwork;
+            if (from.Footwork.HasValue && to.Footwork.HasValue)
+            {
+                footwork = FootworkState.Lerp(from.Footwork.Value, to.Footwork.Value, fraction);
+            }
+            else
+            {
+                footwork = to.Footwork ?? from.Footwork;
+            }
+
+            return new FencerBody(joints, head, fraction < 0.5f ? from.Fidelity ?? to.Fidelity : to.Fidelity ?? from.Fidelity, footwork);
         }
     }
 
