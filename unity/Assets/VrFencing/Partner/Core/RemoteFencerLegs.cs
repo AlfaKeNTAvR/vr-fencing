@@ -54,7 +54,10 @@ namespace VrFencing.Partner
                 throw new ArgumentNullException(nameof(body));
             }
 
-            DummyLayout.RequirePositiveHeight(heightMeters);
+            if (!(heightMeters > 0.0f) || float.IsInfinity(heightMeters))
+            {
+                throw new ArgumentOutOfRangeException(nameof(heightMeters), heightMeters, "Must be a positive number of meters.");
+            }
             if (heightMeters != _heightMeters || hand != _hand || _frontRig == null)
             {
                 SetProportions(heightMeters, hand);

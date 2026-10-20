@@ -144,16 +144,6 @@ namespace VrFencing.Partner
             Publish(GetConfidence(hips.HasValue, velocity));
         }
 
-        /// <summary>Forgets everything (the session ended): the next frame stands the feet anew under the hips.</summary>
-        public void Reset()
-        {
-            _historyCount = 0;
-            _hasFeet = false;
-            _headToHips = null;
-            _mode = Mode.Standing;
-            State = new FootworkState(FootworkPhase.Standing, default, default, RemoteFootworkTuning.NoConfidence);
-        }
-
         private static float GetConfidence(bool hasHips, Vector3 velocity)
         {
             var confidence = hasHips ? RemoteFootworkTuning.TrackedConfidence : RemoteFootworkTuning.HeadOnlyConfidence;
