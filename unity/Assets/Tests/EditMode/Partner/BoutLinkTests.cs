@@ -1,11 +1,13 @@
-// Both headsets' side of the judge (PER-82), wired together through a pretend network with a one-way delay and two
-// clocks that read differently: the Partner's claims land on the Host's clock, the Host's lights reach the Partner,
-// both see the ping, and being touched is felt once.
+// Both headsets' side of the judge (PER-82) and the bout flow (PER-83), wired together through a pretend network with
+// a one-way delay and two clocks that read differently: the Partner's claims land on the Host's clock, the Host's lights
+// and flow reach the Partner, both see the ping and hear the calls together, being touched is felt once, and the
+// Paired Practice tally is kept on the Host and saved on both.
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using VrFencing.Dummy;
 using VrFencing.Partner;
+using VrFencing.Session;
 using VrFencing.Settings;
 
 namespace VrFencing.Tests.Partner
@@ -33,7 +35,7 @@ namespace VrFencing.Tests.Partner
         public void ThePartnersTouchLightsOnBothBoxesAndTheHostFeelsIt()
         {
             var bout = new PretendBout();
-            bout.RunFor(1.2);
+            bout.OpenThePhrase();
             var touchedAtHost = bout.HostNow;
 
             Assert.That(bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, isOffStrip: false, bout.PartnerNow), Is.True);
@@ -54,7 +56,7 @@ namespace VrFencing.Tests.Partner
         public void TouchesFromBothWithinTheWindowAreADoubleOnBothBoxes()
         {
             var bout = new PretendBout();
-            bout.RunFor(1.2);
+            bout.OpenThePhrase();
 
             bout.Host.Claim(TargetZone.Hand, bout.HostNow, false, bout.HostNow);
             bout.Step();
@@ -113,7 +115,7 @@ namespace VrFencing.Tests.Partner
         public void ClearForgetsThePartnerSoARejoinStartsClean()
         {
             var bout = new PretendBout();
-            bout.RunFor(1.2);
+            bout.OpenThePhrase();
             bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, false, bout.PartnerNow);
             bout.RunFor(0.3);
 
@@ -124,9 +126,146 @@ namespace VrFencing.Tests.Partner
             Assert.That(bout.Partner.Box.IsMyLampLit(bout.PartnerNow), Is.False);
         }
 
+        [Test]
+        public void BothBehindTheirLinesHearTheCallTogetherAndThePhraseOpensOnAllez()
+        {
+            var bout = new PretendBout();
+            bout.RunFor(1.2);
+            bout.Host.SetMyStance(Ready, 3.0f);
+            bout.Partner.SetMyStance(Ready, null);
+
+            bout.RunFor(BoutFlow.EnGardeHoldSeconds + BoutCall.AllezAtSeconds + 0.2);
+
+            Assert.That(bout.Host.FlowState.Phase, Is.EqualTo(BoutPhase.Fencing));
+            Assert.That(bout.Partner.FlowState.Phase, Is.EqualTo(BoutPhase.Fencing));
+            Assert.That(bout.HostCalls.Select(call => call.Clip), Is.EqualTo(new[] { BoutCallClip.EnGarde, BoutCallClip.Prets, BoutCallClip.Allez }));
+            Assert.That(bout.PartnerCalls.Select(call => call.Clip), Is.EqualTo(new[] { BoutCallClip.EnGarde, BoutCallClip.Prets, BoutCallClip.Allez }));
+            var hostAllez = bout.HostCalls.Last().HostSeconds;
+            var partnerAllez = bout.PartnerCalls.Last().HostSeconds;
+            Assert.That(partnerAllez - hostAllez, Is.EqualTo(0.0).Within(FrameSeconds * 1.5), "\"Allez!\" together, not a one-way trip late.");
+        }
+
+        [Test]
+        public void ThePartnersTouchHaltsBothAndNothingCountsUntilTheNextCall()
+        {
+            var bout = new PretendBout();
+            bout.OpenThePhrase();
+
+            bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, false, bout.PartnerNow);
+            bout.RunFor(0.3);
+
+            Assert.That(bout.Host.FlowState.Phase, Is.EqualTo(BoutPhase.Halted));
+            Assert.That(bout.Partner.FlowState.Phase, Is.EqualTo(BoutPhase.Halted));
+            Assert.That(bout.Host.Announcer.Reason, Is.EqualTo("Opponent's Touch"));
+            Assert.That(bout.Partner.Announcer.Reason, Is.EqualTo("Your Touch"));
+            Assert.That(bout.HostCalls.Last().Clip, Is.EqualTo(BoutCallClip.Halte));
+            Assert.That(bout.PartnerCalls.Last().Clip, Is.EqualTo(BoutCallClip.Halte));
+
+            // Both stepped forward after the halt: the lamps go off, but nothing counts.
+            bout.Host.SetMyStance(new FencerStance(false, OffStripKind.None), 3.0f);
+            bout.RunFor(BoutJudge.LampSeconds + 0.5);
+            bout.Host.Claim(TargetZone.Body, bout.HostNow, false, bout.HostNow);
+            bout.RunFor(0.3);
+
+            Assert.That(bout.Host.FlowState.Phase, Is.EqualTo(BoutPhase.WaitingForEnGarde));
+            Assert.That(bout.HostLog, Has.Some.Contains("Touch 1 by this Fencer").And.Contains("LockedOut"));
+            Assert.That(bout.Partner.Announcer.Word, Is.Empty);
+        }
+
+        [Test]
+        public void ThePartnerLeavingTheirStripHaltsTheBout()
+        {
+            var bout = new PretendBout();
+            bout.OpenThePhrase();
+
+            bout.Partner.SetMyStance(new FencerStance(false, OffStripKind.Side), null);
+            bout.RunFor(0.3);
+
+            Assert.That(bout.Host.FlowState.Halt, Is.EqualTo(HaltReason.OffStrip));
+            Assert.That(bout.Partner.Announcer.Reason, Is.EqualTo("You left the Strip (side)"));
+            Assert.That(bout.Host.Announcer.Reason, Is.EqualTo("Opponent left the Strip (side)"));
+        }
+
+        [Test]
+        public void PairedPracticeTalliesOnTheHostShowsOnThePartnerAndSavesOnBothWhenReset()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+
+            bout.Partner.Claim(TargetZone.Body, bout.PartnerNow, true, bout.PartnerNow);
+            bout.RunFor(0.3);
+            bout.Host.Claim(TargetZone.Hand, bout.HostNow, false, bout.HostNow);
+            bout.Partner.ReportGlance();
+            bout.RunFor(0.3);
+
+            Assert.That(bout.Host.FlowState.Phase, Is.EqualTo(BoutPhase.PairedPractice), "No halts.");
+            Assert.That(bout.Partner.Tally.Partner, Is.EqualTo(new PairedPracticeCounts(1, 0, 1)), "The off-Strip Touch lit; the glance counted.");
+            Assert.That(bout.Partner.Tally.Host, Is.EqualTo(new PairedPracticeCounts(1, 0, 0)), "No lock-out after the first light.");
+
+            bout.Partner.ResetTally();
+            bout.RunFor(0.2);
+
+            var partnerSaved = bout.Partner.TakeEndedTallies().Single();
+            var hostSaved = bout.Host.TakeEndedTallies().Single();
+            Assert.That(partnerSaved.Mine, Is.EqualTo(new PairedPracticeCounts(1, 0, 1)));
+            Assert.That(partnerSaved.Opponents, Is.EqualTo(new PairedPracticeCounts(1, 0, 0)));
+            Assert.That(hostSaved.End, Is.EqualTo(PairedPracticeEnd.Reset));
+            Assert.That(hostSaved.Mine, Is.EqualTo(new PairedPracticeCounts(1, 0, 0)));
+            Assert.That(bout.Host.Tally.IsEmpty, Is.True);
+            Assert.That(bout.Partner.Tally.IsEmpty, Is.True);
+        }
+
+        [Test]
+        public void SwitchingToABoutEndsTheTallyOnBothSides()
+        {
+            var bout = new PretendBout();
+            bout.Host.SetMode(PartnerMode.PairedPractice, bout.HostNow);
+            bout.RunFor(1.2);
+            bout.Host.ReportGlance();
+            bout.RunFor(0.2);
+
+            bout.Host.SetMode(PartnerMode.Bout, bout.HostNow);
+            bout.RunFor(0.2);
+
+            Assert.That(bout.Host.TakeEndedTallies().Single().End, Is.EqualTo(PairedPracticeEnd.SwitchedToBout));
+            Assert.That(bout.Partner.TakeEndedTallies().Single().Opponents, Is.EqualTo(new PairedPracticeCounts(0, 0, 1)));
+            Assert.That(bout.Partner.FlowState.Mode, Is.EqualTo(PartnerMode.Bout));
+        }
+
+        [Test]
+        public void TheNewMessagesOnlyCountFromTheRightSide()
+        {
+            var host = new BoutLink(BoutSide.Host);
+            var partner = new BoutLink(BoutSide.Partner);
+
+            Assert.That(partner.Receive(BoutMessages.EncodeStance(Ready), 0.0), Is.False);
+            Assert.That(partner.Receive(BoutMessages.EncodeGlance(), 0.0), Is.False);
+            Assert.That(partner.Receive(BoutMessages.EncodeTallyReset(), 0.0), Is.False);
+            Assert.That(host.Receive(BoutMessages.EncodeFlow(BoutFlowState.Initial, default, default), 0.0), Is.False);
+            Assert.That(partner.RejectedMessages, Is.EqualTo(3));
+            Assert.That(host.RejectedMessages, Is.EqualTo(1));
+        }
+
+        private static readonly FencerStance Ready = new FencerStance(true, OffStripKind.None);
+
         /// <summary>Two links, two clocks, and messages that arrive <see cref="OneWaySeconds"/> after they were sent, checked once a frame.</summary>
         private sealed class PretendBout
         {
+            public List<(BoutCallClip Clip, double HostSeconds)> HostCalls { get; } = new List<(BoutCallClip, double)>();
+
+            public List<(BoutCallClip Clip, double HostSeconds)> PartnerCalls { get; } = new List<(BoutCallClip, double)>();
+
+            /// <summary>Syncs the clocks, then both stand behind their lines until "Allez!" has opened the phrase.</summary>
+            public void OpenThePhrase()
+            {
+                RunFor(1.2);
+                Host.SetMyStance(Ready, 3.0f);
+                Partner.SetMyStance(Ready, null);
+                RunFor(BoutFlow.EnGardeHoldSeconds + BoutCall.AllezAtSeconds + 0.2);
+                Assert.That(Host.FlowState.Phase, Is.EqualTo(BoutPhase.Fencing));
+            }
+
             private readonly List<(double ArriveHostSeconds, byte[] Message)> _toHost = new List<(double, byte[])>();
             private readonly List<(double ArriveHostSeconds, byte[] Message)> _toPartner = new List<(double, byte[])>();
 
@@ -159,6 +298,8 @@ namespace VrFencing.Tests.Partner
                 _toPartner.AddRange(Host.TakeOutgoing().Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
                 _toHost.AddRange(Partner.TakeOutgoing().Select(outgoing => (HostNow + OneWaySeconds, outgoing.Message)));
                 HostLog.AddRange(Host.TakeLog());
+                HostCalls.AddRange(Host.TakeCalls().Select(clip => (clip, HostNow)));
+                PartnerCalls.AddRange(Partner.TakeCalls().Select(clip => (clip, HostNow)));
             }
 
             private void Deliver(List<(double ArriveHostSeconds, byte[] Message)> queue, System.Func<byte[], bool> receive)

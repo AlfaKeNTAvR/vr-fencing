@@ -100,7 +100,10 @@ namespace VrFencing.Partner
         /// <summary>The attacker was off their own Strip.</summary>
         OffStrip,
 
-        /// <summary>A light is showing, or the phrase was already decided: nothing counts until the lamps go off.</summary>
+        /// <summary>
+        /// Outside a phrase: before "Allez!", after a halt, or after the phrase's light (in a Bout nothing counts until
+        /// the next "Allez!"; in Paired Practice the next Touch counts again right after a light).
+        /// </summary>
         LockedOut,
 
         /// <summary>The same attacker already has a Touch waiting in this phrase: first one wins.</summary>
@@ -116,9 +119,11 @@ namespace VrFencing.Partner
     /// <see cref="LagAllowanceSeconds"/> for the other claim's one-way trip and clock error), so a double's second claim
     /// is normally in by then. If one still arrives in time (not stale) after a single lit, the light becomes a double.</item>
     /// <item>Claims older than <see cref="StaleClaimSeconds"/> on arrival are rejected, as are claims made off the
-    /// attacker's own Strip.</item>
-    /// <item>After a light, nothing counts until the lamps go off (<see cref="LampSeconds"/>). The En Garde Line gate and
-    /// the halt calls come with the bout flow (PER-83).</item>
+    /// attacker's own Strip while <see cref="RefusesOffStrip"/> (a Bout; Paired Practice lights them, PER-72).</item>
+    /// <item>Touches count only inside the phrase: from <see cref="OpenPhrase"/> ("Allez!") until <see cref="ClosePhrase"/>
+    /// (a halt) or the phrase's light. With <see cref="KeepsPhraseClosedAfterLight"/> (a Bout, PER-83) nothing counts
+    /// after a light until the bout flow opens the next phrase; without it (Paired Practice: no lock-out) the next
+    /// Touch counts right after the light. A new judge has its phrase open.</item>
     /// </list>
     /// </summary>
     public sealed class BoutJudge
@@ -141,7 +146,7 @@ namespace VrFencing.Partner
         /// <summary>A claim older than this when it reaches the judge is rejected (PER-56).</summary>
         public const double StaleClaimSeconds = 0.2;
 
-        /// <summary>How long the lamps stay lit (PER-74), and the lockout after a light.</summary>
+        /// <summary>How long the lamps stay lit (PER-74).</summary>
         public const double LampSeconds = 2.0;
 
         private double _doubleWindowSeconds = DefaultDoubleWindowSeconds;
@@ -150,7 +155,8 @@ namespace VrFencing.Partner
         private BoutLight? _upgrade;
         private BoutLight? _lastLight;
         private double _lastLightEarliestContact;
-        private double _lockedUntilSeconds = double.NegativeInfinity;
+        private double _phraseOpenFromSeconds = double.NegativeInfinity;
+        private double _phraseClosedFromSeconds = double.PositiveInfinity;
         private int _nextLightSequence = 1;
 
         /// <summary>The double window in use, kept within <see cref="MinDoubleWindowSeconds"/> to <see cref="MaxDoubleWindowSeconds"/>.</summary>
@@ -162,6 +168,15 @@ namespace VrFencing.Partner
 
         /// <summary>How long after the earliest Touch the judge lights: the double window plus <see cref="LagAllowanceSeconds"/>.</summary>
         public double LightDelaySeconds => _doubleWindowSeconds + LagAllowanceSeconds;
+
+        /// <summary>
+        /// A Bout (true, the default): after a light nothing counts until <see cref="OpenPhrase"/>. Paired Practice
+        /// (false): the next Touch after a light counts at once.
+        /// </summary>
+        public bool KeepsPhraseClosedAfterLight { get; set; } = true;
+
+        /// <summary>A Bout (true, the default): a Touch made off the attacker's own Strip never lights. Paired Practice: it does.</summary>
+        public bool RefusesOffStrip { get; set; } = true;
 
         /// <summary>True while a Touch waits for the light delay.</summary>
         public bool HasPendingTouch => _hostPending.HasValue || _partnerPending.HasValue;
@@ -177,10 +192,26 @@ namespace VrFencing.Partner
             return Math.Max(MinDoubleWindowSeconds, Math.Min(MaxDoubleWindowSeconds, seconds));
         }
 
-        /// <summary>True while a light is showing: claims made now are locked out.</summary>
+        /// <summary>True outside the phrase: a Touch made now is locked out.</summary>
         public bool IsLockedOut(double hostNowSeconds)
         {
-            return hostNowSeconds < _lockedUntilSeconds;
+            return !IsInPhrase(hostNowSeconds);
+        }
+
+        /// <summary>"Allez!": Touches made from <paramref name="hostSeconds"/> on count, until a halt or the phrase's light.</summary>
+        public void OpenPhrase(double hostSeconds)
+        {
+            _phraseOpenFromSeconds = hostSeconds;
+            _phraseClosedFromSeconds = double.PositiveInfinity;
+        }
+
+        /// <summary>
+        /// A halt at <paramref name="hostSeconds"/>: Touches made from then on are locked out. One made before it and still
+        /// on its way (or waiting for the light delay) still lights, as a real box registers a Touch before the "Halte!".
+        /// </summary>
+        public void ClosePhrase(double hostSeconds)
+        {
+            _phraseClosedFromSeconds = Math.Min(_phraseClosedFromSeconds, hostSeconds);
         }
 
         /// <summary>Takes a claim that reached the Host at <paramref name="hostNowSeconds"/>.</summary>
@@ -197,12 +228,12 @@ namespace VrFencing.Partner
                 return ClaimVerdict.Stale;
             }
 
-            if (claim.IsOffStrip)
+            if (claim.IsOffStrip && RefusesOffStrip)
             {
                 return ClaimVerdict.OffStrip;
             }
 
-            if (claim.ContactHostSeconds < _lockedUntilSeconds)
+            if (!IsInPhrase(claim.ContactHostSeconds))
             {
                 return TryMakeDouble(claim) ? ClaimVerdict.MadeDouble : ClaimVerdict.LockedOut;
             }
@@ -274,19 +305,34 @@ namespace VrFencing.Partner
             _lastLight = light;
             _lastLightEarliestContact = earliest.ContactHostSeconds;
 
-            // A Touch after the window lost the race; one after the lamps go off starts the next phrase.
-            _lockedUntilSeconds = hostNowSeconds + LampSeconds;
+            // A Touch after the window lost the race. In a Bout the phrase stays closed until the next "Allez!"; in Paired
+            // Practice a Touch made after this light is the next one.
+            if (KeepsPhraseClosedAfterLight)
+            {
+                _phraseClosedFromSeconds = Math.Min(_phraseClosedFromSeconds, earliest.ContactHostSeconds);
+            }
+            else
+            {
+                _phraseOpenFromSeconds = Math.Max(_phraseOpenFromSeconds, hostNowSeconds);
+            }
+
             return light;
         }
 
-        /// <summary>Forgets every waiting Touch and light (the partner left, a new session).</summary>
+        /// <summary>Forgets every waiting Touch and light (the partner left, a new session); the phrase is open again.</summary>
         public void Reset()
         {
             _hostPending = null;
             _partnerPending = null;
             _upgrade = null;
             _lastLight = null;
-            _lockedUntilSeconds = double.NegativeInfinity;
+            _phraseOpenFromSeconds = double.NegativeInfinity;
+            _phraseClosedFromSeconds = double.PositiveInfinity;
+        }
+
+        private bool IsInPhrase(double contactHostSeconds)
+        {
+            return contactHostSeconds >= _phraseOpenFromSeconds && contactHostSeconds < _phraseClosedFromSeconds;
         }
 
         private TouchClaim Earliest()

@@ -52,28 +52,56 @@ namespace VrFencing.Partner
         }
     }
 
+    /// <summary>Which way a Fencer left their own placed Strip, if they did.</summary>
+    public enum OffStripKind : byte
+    {
+        None,
+
+        /// <summary>Off a side line.</summary>
+        Side,
+
+        /// <summary>Past the rear end, behind them.</summary>
+        RearEnd,
+    }
+
     /// <summary>
     /// Where a Fencer stands on their own placed Strip, for the bout's off-Strip rule (PER-56): a Touch made with both
     /// feet off the side or past the rear end of the attacker's own Strip does not light, with the Fencer's off-strip
-    /// tolerance. The ankles stand for the feet (the toes when an ankle is missing); with no foot tracked the head
-    /// stands for both, as the Strip's own off-strip signal does. The front end is not checked: past it is the
-    /// opponent's half of the bout Strip.
+    /// tolerance, and in a Bout leaving it halts (PER-83). The ankles stand for the feet (the toes when an ankle is
+    /// missing); with no foot tracked the head stands for both, as the Strip's own off-strip signal does. The front end
+    /// is not checked: past it is the opponent's half of the bout Strip.
     /// </summary>
     public static class OwnStripCheck
     {
         /// <summary>True when both feet (or the head standing in for them) are off the side or past the rear end.</summary>
         public static bool IsOffOwnStrip(FencerBody body, Vector3? head, StripExtent strip, float toleranceMeters)
         {
+            return FindOffStrip(body, head, strip, toleranceMeters) != OffStripKind.None;
+        }
+
+        /// <summary>
+        /// Which way both feet (or the head standing in for them) are off: past the rear end when either foot is past it,
+        /// else off a side; <see cref="OffStripKind.None"/> while a foot is still on.
+        /// </summary>
+        public static OffStripKind FindOffStrip(FencerBody body, Vector3? head, StripExtent strip, float toleranceMeters)
+        {
             var tolerance = Math.Max(0.0f, toleranceMeters);
             var front = FindFoot(body, SkeletonJoint.FrontAnkle, SkeletonJoint.FrontToe);
             var back = FindFoot(body, SkeletonJoint.BackAnkle, SkeletonJoint.BackToe);
             if (front.HasValue && back.HasValue)
             {
-                return IsOff(front.Value, strip, tolerance) && IsOff(back.Value, strip, tolerance);
+                var frontOff = Classify(front.Value, strip, tolerance);
+                var backOff = Classify(back.Value, strip, tolerance);
+                if (frontOff == OffStripKind.None || backOff == OffStripKind.None)
+                {
+                    return OffStripKind.None;
+                }
+
+                return frontOff == OffStripKind.RearEnd || backOff == OffStripKind.RearEnd ? OffStripKind.RearEnd : OffStripKind.Side;
             }
 
             var only = front ?? back ?? head;
-            return only.HasValue && IsOff(only.Value, strip, tolerance);
+            return only.HasValue ? Classify(only.Value, strip, tolerance) : OffStripKind.None;
         }
 
         private static Vector3? FindFoot(FencerBody body, SkeletonJoint ankle, SkeletonJoint toe)
@@ -81,11 +109,14 @@ namespace VrFencing.Partner
             return body?.Get(ankle) ?? body?.Get(toe);
         }
 
-        private static bool IsOff(Vector3 point, StripExtent strip, float tolerance)
+        private static OffStripKind Classify(Vector3 point, StripExtent strip, float tolerance)
         {
-            var isOffSide = Math.Abs(point.X) > (StripGeometry.WidthMeters * 0.5f) + tolerance;
-            var isPastRearEnd = point.Z < strip.RearEndZ - tolerance;
-            return isOffSide || isPastRearEnd;
+            if (point.Z < strip.RearEndZ - tolerance)
+            {
+                return OffStripKind.RearEnd;
+            }
+
+            return Math.Abs(point.X) > (StripGeometry.WidthMeters * 0.5f) + tolerance ? OffStripKind.Side : OffStripKind.None;
         }
     }
 

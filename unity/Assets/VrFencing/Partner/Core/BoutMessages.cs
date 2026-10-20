@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using VrFencing.Dummy;
+using VrFencing.Session;
 using VrFencing.Settings;
 
 namespace VrFencing.Partner
@@ -27,6 +28,9 @@ namespace VrFencing.Partner
     /// <item>Claim (Partner to Host): a Touch on the Host's clock.</item>
     /// <item>Light (Host to Partner): what the judge lit.</item>
     /// <item>Rules (Host to Partner): the bout's Touch pressure rule and double window.</item>
+    /// <item>Stance (Partner to Host, PER-83): behind the En Garde Line or not, off the Strip or not.</item>
+    /// <item>Flow (Host to Partner, PER-83): the mode, the bout flow's phase and last halt, and the Paired Practice tally.</item>
+    /// <item>Glance and Tally reset (Partner to Host, PER-83): for the Paired Practice tally.</item>
     /// </list>
     /// </summary>
     public static class BoutMessages
@@ -39,8 +43,15 @@ namespace VrFencing.Partner
         public const byte ClaimKind = 3;
         public const byte LightMessageKind = 4;
         public const byte RulesKind = 5;
+        public const byte StanceKind = 6;
+        public const byte FlowKind = 7;
+        public const byte GlanceKind = 8;
+        public const byte TallyResetKind = 9;
 
         private const byte NoZone = byte.MaxValue;
+
+        // An optional side or light that is not there.
+        private const byte NoValue = byte.MaxValue;
 
         public static byte[] EncodePing(double senderSeconds)
         {
@@ -88,6 +99,44 @@ namespace VrFencing.Partner
             });
         }
 
+        public static byte[] EncodeStance(FencerStance stance)
+        {
+            return Write(StanceKind, writer =>
+            {
+                writer.Write(stance.IsBehindLine);
+                writer.Write((byte)stance.OffStrip);
+            });
+        }
+
+        public static byte[] EncodeFlow(BoutFlowState state, PairedPracticeCounts hostTally, PairedPracticeCounts partnerTally)
+        {
+            return Write(FlowKind, writer =>
+            {
+                writer.Write((byte)state.Mode);
+                writer.Write((byte)state.Phase);
+                writer.Write(state.Sequence);
+                writer.Write((byte)state.Halt);
+                writer.Write(state.HaltedBy.HasValue ? (byte)state.HaltedBy.Value : NoValue);
+                writer.Write((byte)state.HaltOffStrip);
+                writer.Write(state.HaltLight.HasValue ? (byte)state.HaltLight.Value : NoValue);
+                writer.Write(state.CallStartHostSeconds);
+                writer.Write(state.IsHostReady);
+                writer.Write(state.IsPartnerReady);
+                WriteCounts(writer, hostTally);
+                WriteCounts(writer, partnerTally);
+            });
+        }
+
+        public static byte[] EncodeGlance()
+        {
+            return Write(GlanceKind, writer => { });
+        }
+
+        public static byte[] EncodeTallyReset()
+        {
+            return Write(TallyResetKind, writer => { });
+        }
+
         /// <summary>The message's kind, or 0 when it is empty or from another format version.</summary>
         public static byte ReadKind(byte[] message)
         {
@@ -133,6 +182,69 @@ namespace VrFencing.Partner
             return Read(message, RulesKind, reader => new BoutRules(
                 ReadEnum<TouchPressure>(reader.ReadByte()),
                 BoutJudge.ClampDoubleWindow(ReadTime(reader))));
+        }
+
+        /// <exception cref="InvalidDataException">Not a stance of this format, or cut short.</exception>
+        public static FencerStance DecodeStance(byte[] message)
+        {
+            return Read(message, StanceKind, reader => new FencerStance(reader.ReadBoolean(), ReadEnum<OffStripKind>(reader.ReadByte())));
+        }
+
+        /// <exception cref="InvalidDataException">Not a flow message of this format, or cut short.</exception>
+        public static (BoutFlowState State, PairedPracticeCounts HostTally, PairedPracticeCounts PartnerTally) DecodeFlow(byte[] message)
+        {
+            return Read(message, FlowKind, reader =>
+            {
+                var state = new BoutFlowState(
+                    ReadEnum<PartnerMode>(reader.ReadByte()),
+                    ReadEnum<BoutPhase>(reader.ReadByte()),
+                    reader.ReadInt32(),
+                    ReadEnum<HaltReason>(reader.ReadByte()),
+                    ReadOptional<BoutSide>(reader.ReadByte()),
+                    ReadEnum<OffStripKind>(reader.ReadByte()),
+                    ReadOptional<LightKind>(reader.ReadByte()),
+                    ReadTime(reader),
+                    reader.ReadBoolean(),
+                    reader.ReadBoolean());
+                return (state, ReadCounts(reader), ReadCounts(reader));
+            });
+        }
+
+        /// <exception cref="InvalidDataException">Not a glance of this format, or not empty.</exception>
+        public static void DecodeGlance(byte[] message)
+        {
+            Read(message, GlanceKind, reader => true);
+        }
+
+        /// <exception cref="InvalidDataException">Not a tally reset of this format, or not empty.</exception>
+        public static void DecodeTallyReset(byte[] message)
+        {
+            Read(message, TallyResetKind, reader => true);
+        }
+
+        private static void WriteCounts(BinaryWriter writer, PairedPracticeCounts counts)
+        {
+            writer.Write(counts.Touches);
+            writer.Write(counts.Doubles);
+            writer.Write(counts.Glances);
+        }
+
+        private static PairedPracticeCounts ReadCounts(BinaryReader reader)
+        {
+            var touches = reader.ReadInt32();
+            var doubles = reader.ReadInt32();
+            var glances = reader.ReadInt32();
+            if (touches < 0 || doubles < 0 || glances < 0)
+            {
+                throw new InvalidDataException("A tally below zero.");
+            }
+
+            return new PairedPracticeCounts(touches, doubles, glances);
+        }
+
+        private static T? ReadOptional<T>(byte value) where T : struct, Enum
+        {
+            return value == NoValue ? (T?)null : ReadEnum<T>(value);
         }
 
         private static byte[] Write(byte kind, Action<BinaryWriter> writeBody)
