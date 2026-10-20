@@ -67,6 +67,9 @@ namespace VrFencing.Tracking
         /// <summary>The replayed frame for this Editor frame, in the recording's Strip frame; null until a recording loads.</summary>
         public FencerFrame CurrentFrame => _frame;
 
+        /// <summary>The recording's header (the Fencer's height, hand and Strip), or null until a recording loads.</summary>
+        public FencerRecordingHeader Header => _replay?.Recording.Header;
+
         private int JointCount => _replay?.Recording.Header.JointCount ?? FencerRecordingHeader.FullBodyJointCount;
 
         private void Awake()

@@ -122,6 +122,10 @@ _Avoid_: Room code, invite, password
 The menu page next to Drills that connects two Fencers: Host, Join (the keypad), the Bout / Paired Practice switch (Host only) and Leave. While connected, solo Drills are off and the Dummy is hidden.
 _Avoid_: Lobby, multiplayer menu
 
+**Opponent**:
+The Partner as shown in this Fencer's room: the Dummy's rigged body driven by the Partner's tracked body, holding a blade drawn from the Partner's hand and grip settings, standing on the far side of the shared Strip.
+_Avoid_: Avatar, remote player, enemy
+
 **Bout**:
 Two Fencers fencing each other freely on a shared Strip, with a virtual judge lighting Touches and doubles (no score or timer in v1).
 _Avoid_: Match, game

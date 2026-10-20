@@ -366,12 +366,32 @@ The Partner page (PER-80, decided in PER-58; module `Assets/VrFencing/Partner/`)
 
 - **Host** (Home > Partner > Host) signs in, creates the session and shows its 6-character Join Code in large letters, to read out over voice. The session stays up when the Partner leaves, with the same code.
 - **Join** opens a large keypad with the 20 characters a Sessions code can hold (`6789BCDFGHJKLMNPQRTW`: no vowels, no 0, O, 1 or I), plus Delete, Clear, Cancel; Join is on once 6 characters are typed.
-- **Mode** (Host only, once the session is up): Bout or Paired Practice; the Partner sees the Host's choice. Nothing changes in play yet (later slices).
+- **Mode** (Host only, once the session is up): Bout or Paired Practice; the Partner sees the Host's choice. It changes nothing in play yet (later slices); the Opponent shows in both modes.
 - **Leave** closes the session; the Host leaving ends it for both.
 - While in a session (from Host or Join until Leave) solo Drills cannot start ("Leave the Partner session to run solo Drills" on Home) and the Dummy is hidden, so the Blade has nothing to touch.
 - **Version check:** the joining side sends its app version (Player Settings > Version, `Application.version`) with its connection request, and the Host refuses a different one; both pages say "Different app versions: host X, partner Y". Bump the Version whenever what goes over the network changes.
 
 Every step logs a `[Partner]` line (`adb logcat -s Unity`): sign-in, the code, the partner connecting, refusals with both versions, leaving.
+
+### The Opponent (body and blade sync, PER-81)
+
+While connected, the Partner object's `OpponentLinkBehaviour` streams this Fencer to the other app and its `OpponentViewBehaviour` draws the other Fencer as the Opponent (decided in PER-59, PER-57). Rules and numbers are in `Assets/VrFencing/Partner/Core/`; the Unity side only moves bytes and draws.
+
+| Stream | Rate | Delivery | Holds |
+|---|---|---|---|
+| Info | on change and every 1 s | reliable | this Fencer's placed Strip (whole length, rear end), height, sword hand |
+| Hand | 72 per second | unreliable | the sword-hand controller pose with velocity and angular velocity (over the last 40 ms), and the grip, its angles in use, set and flex |
+| Body | 30 per second | unreliable | the rig's 19 joints (the Dummy's skeleton joints plus the back hand's end) in millimeters, the headset's turn, the body fidelity |
+
+All poses go true and unmirrored in the sender's own Strip frame (the room origin without a Strip). They travel as Netcode named messages (`VrFencing.Opponent`), with no network objects; each message starts with its kind and a format version, and unreadable ones are dropped and counted (`[Opponent] Dropped ...`). This sends the rig's joints (about 4 KB/s) instead of Movement SDK's `NetworkCharacterRetargeter` stream, since the rig is posed on joints (PER-78).
+
+- **Shared Strip** (`BoutStrip`): the shorter of the two placed Strips, run-backs included, anchored at each Fencer's own rear end. The En Garde Lines are 4 m apart about the bout centre, shrunk on a short Strip so each Fencer keeps at least 1 m to their rear end. The receiver turns the partner's poses 180 degrees about the bout centre: a turn, not a mirror. The Strip markings drawn are still each Fencer's own; the bout's lines are logged (`[Opponent] Partner streams arriving: ... Bout Strip ... m, En Garde gap ... m`).
+- **Smoothing** (`HandStream`, `BodyStream`): the partner's clock is the smallest send-to-arrival gap seen. The hand is Hermite-interpolated 40 ms behind the partner's now, then predicted 50 ms ahead along its velocity, at most 15 cm and 30 degrees: view only, never judged. The body is interpolated 100 ms behind, with no prediction; its sword wrist and hand are carried onto the drawn hilt so they stay on the blade. A hand silent for 0.5 s hides the blade; a body silent for 0.5 s stays as a ghost.
+- **Body** (`OpponentViewBehaviour`): the Dummy's rig (`Armature.fbx`) in the Dummy's look at the "Dummy body opacity" Setting, built for the partner's height and hand. The generated legs always fade (to 50% at high fidelity, 30% at low); the torso and arms always show (the model's arms are one mesh with the sword arm). The whole body drops to 25% while it is not coming (asleep, unfocused, link lost).
+- **Blade**: built from the partner's hand and grip exactly as the Fencer's own (`BladePose`, `BladeDroop`, `DrawnBlade`), so it hangs, whips and bends the same. It bends against this Fencer's body (capsules from this Fencer's tracked joints, Dummy-sized), the floor and this Fencer's drawn blade. This Fencer's blade bends on the Opponent's body the same way. Cosmetic only: Touches on the Opponent come with the judge (PER-82).
+- **Version:** Player Settings > Version is 1.1 from this slice; 1.0 builds are refused.
+
+**The PC Editor as the Opponent:** open "VR Fencing > Replay a Fencer recording...", press Play, open "VR Fencing > Partner session" and Join or Host as above. The window says "Sending: the Fencer replay in this scene", and the recording's Fencer goes out as the Partner (the recording's Strip length stands in for a placed Strip). The headset's Fencer comes back and is drawn in the Editor's Game and Scene views, on the far side of the replay's Strip at the world origin. One Editor cannot be both sides: two apps are needed (a headset and the Editor, or two Editors from two clones).
 
 **The PC Editor as the Partner:** press Play (any scene; the window makes a Partner object if the scene has none), open "VR Fencing > Partner session", type the headset's code and press Join, or press Host and type the Editor's code on the headset. "Pretend version" sends another version, to see a refused join without a second build. From the command line, `-partnerJoin FGR78N` or `-partnerHost` does the same at start.
 

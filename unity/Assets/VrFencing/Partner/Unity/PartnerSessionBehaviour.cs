@@ -70,6 +70,10 @@ namespace VrFencing.Partner
             network.NetworkConfig ??= new NetworkConfig();
             network.NetworkConfig.NetworkTransport = transport;
             var partner = partnerObject.AddComponent<PartnerSessionBehaviour>();
+
+            // The partner's body and blade streams and their drawing (PER-81); the window gives the view its body model.
+            partnerObject.AddComponent<OpponentLinkBehaviour>();
+            partnerObject.AddComponent<OpponentViewBehaviour>();
             partnerObject.SetActive(true);
             return partner;
         }

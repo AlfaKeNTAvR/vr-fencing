@@ -64,7 +64,7 @@ namespace VrFencing.EditorTools
             var strip = enGardeLine.GetComponentInParent<StripBehaviour>();
             var practice = FindOrCreatePractice(scene, strip, dummy);
             var blade = FindOrCreateBlade(scene, practice, strip, dummy);
-            var partner = FindOrCreatePartner(scene);
+            var partner = FindOrCreatePartner(scene, strip, blade);
             FindOrCreateMenu(scene, practice, strip, dummy, blade, partner);
 
             EnsureSceneFolder(scenePath);
@@ -202,10 +202,7 @@ namespace VrFencing.EditorTools
             dummy.transform.SetParent(enGardeLine, false);
             dummy.transform.SetLocalPositionAndRotation(DummyPlaceholderPositionMeters, Quaternion.Euler(0f, 180f, 0f));
 
-            var bodyModel = AssetDatabase.LoadAssetAtPath<GameObject>(DummyBodyModelPath);
-            if (bodyModel == null)
-                throw new System.InvalidOperationException($"Dummy body model not found at {DummyBodyModelPath}.");
-            SetReference(dummy, "_bodyModel", bodyModel);
+            SetReference(dummy, "_bodyModel", LoadBodyModel());
             return dummy;
         }
 
@@ -292,8 +289,10 @@ namespace VrFencing.EditorTools
         /// <summary>
         /// The Partner object (PER-80): Netcode for GameObjects' NetworkManager with its UnityTransport (the Relay
         /// connection), and the session that hosts or joins a second Fencer by join code. The Menu's Partner page drives it.
+        /// While connected, the opponent link streams both Fencers' body and blade and the opponent view draws the partner
+        /// (PER-81) with the Dummy's body model.
         /// </summary>
-        private static PartnerSessionBehaviour FindOrCreatePartner(Scene scene)
+        private static PartnerSessionBehaviour FindOrCreatePartner(Scene scene, StripBehaviour strip, BladeBehaviour blade)
         {
             var partnerObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == PartnerName);
             if (partnerObject == null)
@@ -309,7 +308,29 @@ namespace VrFencing.EditorTools
             // (the Movement SDK's samples among them), which would all ship in the APK; later slices register their own.
             network.NetworkConfig.Prefabs.NetworkPrefabsLists.Clear();
             EditorUtility.SetDirty(network);
-            return GetOrAddComponent<PartnerSessionBehaviour>(partnerObject);
+            var partner = GetOrAddComponent<PartnerSessionBehaviour>(partnerObject);
+
+            var link = GetOrAddComponent<OpponentLinkBehaviour>(partnerObject);
+            var view = GetOrAddComponent<OpponentViewBehaviour>(partnerObject);
+            SetReference(view, "_link", link);
+            SetReference(view, "_strip", strip);
+            SetReference(view, "_myBlade", blade);
+            SetReference(view, "_bodyModel", LoadBodyModel());
+            return partner;
+        }
+
+        private static GameObject LoadBodyModel()
+        {
+            var bodyModel = AssetDatabase.LoadAssetAtPath<GameObject>(DummyBodyModelPath);
+            if (bodyModel == null)
+                throw new System.InvalidOperationException($"Dummy body model not found at {DummyBodyModelPath}.");
+            return bodyModel;
+        }
+
+        /// <summary>The body model for an opponent view made at runtime outside the passthrough scene (the PC Editor's Partner window).</summary>
+        public static GameObject LoadOpponentBodyModel()
+        {
+            return AssetDatabase.LoadAssetAtPath<GameObject>(DummyBodyModelPath);
         }
 
         private static T GetOrAddComponent<T>(GameObject target) where T : Component

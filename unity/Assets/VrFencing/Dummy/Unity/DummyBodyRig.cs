@@ -72,6 +72,9 @@ namespace VrFencing.Dummy
         /// <summary>The body's skinned meshes, all drawn with the Dummy material.</summary>
         public IReadOnlyList<Renderer> Renderers { get; }
 
+        /// <summary>Every material slot of every skinned mesh, with the body part it draws.</summary>
+        public IReadOnlyList<RigMeshSlot> MeshSlots { get; private set; } = new RigMeshSlot[0];
+
         /// <summary>
         /// Instantiates <paramref name="model"/> under <paramref name="partsRoot"/>, draws it with
         /// <paramref name="material"/> and poses it on <paramref name="layout"/>. Returns null, after logging why, if
@@ -104,9 +107,18 @@ namespace VrFencing.Dummy
             var animator = instance.GetComponent<Animator>();
             animator.enabled = false;
 
+            var meshSlots = new List<RigMeshSlot>();
             foreach (var skinnedRenderer in renderers)
             {
-                skinnedRenderer.sharedMaterials = Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
+                // The model's own materials name its parts (Armature.fbx: M_Body, M_Arms, M_Legs); keep them before
+                // every slot is given the Dummy material, so a part can be faded on its own (the opponent, PER-81).
+                var modelMaterials = skinnedRenderer.sharedMaterials;
+                for (var slot = 0; slot < modelMaterials.Length; slot++)
+                {
+                    meshSlots.Add(new RigMeshSlot(skinnedRenderer, slot, RigMeshSlot.GetPart(modelMaterials[slot] != null ? modelMaterials[slot].name : skinnedRenderer.name)));
+                }
+
+                skinnedRenderer.sharedMaterials =Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
                 skinnedRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 skinnedRenderer.receiveShadows = false;
 
@@ -114,7 +126,7 @@ namespace VrFencing.Dummy
                 skinnedRenderer.updateWhenOffscreen = true;
             }
 
-            var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToArray());
+            var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToArray()) { MeshSlots = meshSlots };
             rig.ScaleToHeight(layout.HeightMeters);
             rig.Pose(layout);
             return rig;
@@ -123,40 +135,64 @@ namespace VrFencing.Dummy
         /// <summary>Puts every mapped bone on its joint for <paramref name="layout"/>, e.g. after the sword arm moved.</summary>
         public void Pose(DummyLayout layout)
         {
-            var swordSide = layout.Hand == Hand.Left ? BodySide.Left : BodySide.Right;
-            var backSide = swordSide == BodySide.Right ? BodySide.Left : BodySide.Right;
-            Vector3 Joint(SkeletonJoint joint) => DummySkeleton.GetJointPosition(layout, joint).ToUnity();
-
-            // Anatomical right minus left: the sword side is the right for a right-handed Dummy.
-            var swordHip = Joint(SkeletonJoint.FrontHip);
-            var backHip = Joint(SkeletonJoint.BackHip);
-            var swordShoulder = Joint(SkeletonJoint.SwordShoulder);
-            var backShoulder = Joint(SkeletonJoint.BackShoulder);
-            var hipsRight = swordSide == BodySide.Right ? swordHip - backHip : backHip - swordHip;
-            var shouldersRight = swordSide == BodySide.Right ? swordShoulder - backShoulder : backShoulder - swordShoulder;
-
-            var hipCenter = Joint(SkeletonJoint.HipCenter);
-            var shoulderCenter = Joint(SkeletonJoint.ShoulderCenter);
-            var spineUp = shoulderCenter - hipCenter;
-
-            PoseTorso(hipCenter, shoulderCenter, hipsRight, shouldersRight, spineUp);
-
-            var headCenter = Joint(SkeletonJoint.HeadCenter);
-            var headJoint = headCenter + (Vector3.down * (HeadJointBelowHeadCenterPerHeight * layout.HeightMeters));
-
-            // The head looks at the Fencer: upright, facing the Dummy frame's +z.
-            SetBone(HumanBodyBones.Head, headJoint, RotateFrame(HumanBodyBones.Head, RestShouldersRight(), RestSpineUp(), Vector3.right, Vector3.up));
-
-            var swordWrist = Joint(SkeletonJoint.SwordWrist);
-            PoseArm(swordSide, swordShoulder, Joint(SkeletonJoint.SwordElbow), swordWrist, Joint(SkeletonJoint.SwordHandEnd));
+            Vector3? Joint(SkeletonJoint joint) => DummySkeleton.GetJointPosition(layout, joint).ToUnity();
 
             // The back hand carries on the forearm's line.
-            var backElbow = Joint(SkeletonJoint.BackElbow);
-            var backHand = Joint(SkeletonJoint.BackHand);
-            PoseArm(backSide, backShoulder, backElbow, backHand, backHand + (backHand - backElbow));
+            var backElbow = Joint(SkeletonJoint.BackElbow).Value;
+            var backHand = Joint(SkeletonJoint.BackHand).Value;
+            PoseJoints(layout.Hand, layout.HeightMeters, Joint, backHand + (backHand - backElbow), Quaternion.identity);
+        }
 
-            PoseLeg(swordSide, swordHip, Joint(SkeletonJoint.FrontKnee), Joint(SkeletonJoint.FrontAnkle), Joint(SkeletonJoint.FrontToe));
-            PoseLeg(backSide, backHip, Joint(SkeletonJoint.BackKnee), Joint(SkeletonJoint.BackAnkle), Joint(SkeletonJoint.BackToe));
+        /// <summary>
+        /// Puts every mapped bone on a tracked body's joints (PER-81, the opponent): <paramref name="getJoint"/> gives
+        /// each <see cref="SkeletonJoint"/> in the parts root's frame, named by fencing side for a Fencer holding the
+        /// blade in <paramref name="hand"/>, or null when not tracked. <paramref name="backHandEnd"/> is the back hand's
+        /// end (the Dummy has none), <paramref name="headRotation"/> the headset's turn in the parts frame (+z where the
+        /// Fencer looks). A part with a joint missing keeps its last pose.
+        /// </summary>
+        public void PoseTracked(Hand hand, float heightMeters, System.Func<SkeletonJoint, Vector3?> getJoint, Vector3? backHandEnd, Quaternion? headRotation)
+        {
+            if (getJoint == null)
+            {
+                throw new System.ArgumentNullException(nameof(getJoint));
+            }
+
+            PoseJoints(hand, heightMeters, getJoint, backHandEnd, headRotation);
+        }
+
+        private void PoseJoints(Hand hand, float heightMeters, System.Func<SkeletonJoint, Vector3?> getJoint, Vector3? backHandEnd, Quaternion? headRotation)
+        {
+            var swordSide = hand == Hand.Left ? BodySide.Left : BodySide.Right;
+            var backSide = swordSide == BodySide.Right ? BodySide.Left : BodySide.Right;
+
+            var swordHip = getJoint(SkeletonJoint.FrontHip);
+            var backHip = getJoint(SkeletonJoint.BackHip);
+            var swordShoulder = getJoint(SkeletonJoint.SwordShoulder);
+            var backShoulder = getJoint(SkeletonJoint.BackShoulder);
+            var hipCenter = getJoint(SkeletonJoint.HipCenter);
+            var shoulderCenter = getJoint(SkeletonJoint.ShoulderCenter);
+            if (swordHip.HasValue && backHip.HasValue && swordShoulder.HasValue && backShoulder.HasValue && hipCenter.HasValue && shoulderCenter.HasValue)
+            {
+                // Anatomical right minus left: the sword side is the right for a right-handed Dummy.
+                var hipsRight = swordSide == BodySide.Right ? swordHip.Value - backHip.Value : backHip.Value - swordHip.Value;
+                var shouldersRight = swordSide == BodySide.Right ? swordShoulder.Value - backShoulder.Value : backShoulder.Value - swordShoulder.Value;
+                PoseTorso(hipCenter.Value, shoulderCenter.Value, hipsRight, shouldersRight, shoulderCenter.Value - hipCenter.Value);
+            }
+
+            var headCenter = getJoint(SkeletonJoint.HeadCenter);
+            if (headCenter.HasValue)
+            {
+                var headJoint = headCenter.Value + (Vector3.down * (HeadJointBelowHeadCenterPerHeight * heightMeters));
+
+                // The head looks where the headset looks; the Dummy's looks at the Fencer: upright, facing the Dummy frame's +z.
+                var turn = headRotation ?? Quaternion.identity;
+                SetBone(HumanBodyBones.Head, headJoint, RotateFrame(HumanBodyBones.Head, RestShouldersRight(), RestSpineUp(), turn * Vector3.right, turn * Vector3.up));
+            }
+
+            PoseArm(swordSide, swordShoulder, getJoint(SkeletonJoint.SwordElbow), getJoint(SkeletonJoint.SwordWrist), getJoint(SkeletonJoint.SwordHandEnd));
+            PoseArm(backSide, backShoulder, getJoint(SkeletonJoint.BackElbow), getJoint(SkeletonJoint.BackHand), backHandEnd);
+            PoseLeg(swordSide, swordHip, getJoint(SkeletonJoint.FrontKnee), getJoint(SkeletonJoint.FrontAnkle), getJoint(SkeletonJoint.FrontToe));
+            PoseLeg(backSide, backHip, getJoint(SkeletonJoint.BackKnee), getJoint(SkeletonJoint.BackAnkle), getJoint(SkeletonJoint.BackToe));
         }
 
         /// <summary>The bone's transform, or null if the model has no such bone.</summary>
@@ -215,8 +251,17 @@ namespace VrFencing.Dummy
             }
         }
 
-        private void PoseArm(BodySide side, Vector3 shoulder, Vector3 elbow, Vector3 wrist, Vector3 handEnd)
+        private void PoseArm(BodySide side, Vector3? shoulderJoint, Vector3? elbowJoint, Vector3? wristJoint, Vector3? handEndJoint)
         {
+            if (!shoulderJoint.HasValue || !elbowJoint.HasValue || !wristJoint.HasValue || !handEndJoint.HasValue)
+            {
+                return;
+            }
+
+            var shoulder = shoulderJoint.Value;
+            var elbow = elbowJoint.Value;
+            var wrist = wristJoint.Value;
+            var handEnd = handEndJoint.Value;
             var upperArm = side == BodySide.Right ? HumanBodyBones.RightUpperArm : HumanBodyBones.LeftUpperArm;
             var lowerArm = side == BodySide.Right ? HumanBodyBones.RightLowerArm : HumanBodyBones.LeftLowerArm;
             var hand = side == BodySide.Right ? HumanBodyBones.RightHand : HumanBodyBones.LeftHand;
@@ -230,8 +275,17 @@ namespace VrFencing.Dummy
             AimBone(hand, wrist, handEnd, restHandDirection);
         }
 
-        private void PoseLeg(BodySide side, Vector3 hip, Vector3 knee, Vector3 ankle, Vector3 toe)
+        private void PoseLeg(BodySide side, Vector3? hipJoint, Vector3? kneeJoint, Vector3? ankleJoint, Vector3? toeJoint)
         {
+            if (!hipJoint.HasValue || !kneeJoint.HasValue || !ankleJoint.HasValue || !toeJoint.HasValue)
+            {
+                return;
+            }
+
+            var hip = hipJoint.Value;
+            var knee = kneeJoint.Value;
+            var ankle = ankleJoint.Value;
+            var toe = toeJoint.Value;
             var upperLeg = side == BodySide.Right ? HumanBodyBones.RightUpperLeg : HumanBodyBones.LeftUpperLeg;
             var lowerLeg = side == BodySide.Right ? HumanBodyBones.RightLowerLeg : HumanBodyBones.LeftLowerLeg;
             var foot = side == BodySide.Right ? HumanBodyBones.RightFoot : HumanBodyBones.LeftFoot;

@@ -59,8 +59,32 @@ namespace VrFencing.Blade
         // The blade starts drawn; the first untracked frame hides it.
         private bool _isTracked = true;
 
+        private IReadOnlyList<BladeObstacle> _extraObstacles = System.Array.Empty<BladeObstacle>();
+
         /// <summary>Raised for every Touch, glance and flat contact, with positions in the Strip frame.</summary>
         public event System.Action<BladeEvent> Contact;
+
+        /// <summary>
+        /// The drawn blade this frame in the Strip frame, from the drawn guard to the drawn point, or null while the
+        /// controller is not tracked. The opponent's blade bends against it (PER-81).
+        /// </summary>
+        public BladeSegment? DrawnBladeOnStrip { get; private set; }
+
+        /// <summary>
+        /// More bodies the drawn blade cannot pass besides the Dummy and the floor, in the Strip frame: the opponent's
+        /// body (PER-81). Visual only, never Touches. Keep the count fixed while shown (the drawn blade remembers its pin
+        /// by its place in the list); a new count restarts the drawn blade. Empty for none.
+        /// </summary>
+        public void SetExtraObstacles(IReadOnlyList<BladeObstacle> obstacles)
+        {
+            var next = obstacles ?? System.Array.Empty<BladeObstacle>();
+            if (next.Count != _extraObstacles.Count)
+            {
+                RestartMotion();
+            }
+
+            _extraObstacles = next;
+        }
 
         /// <summary>Takes changed Settings: sword hand, Touch rule, mount and angles, haptics.</summary>
         public void ApplySettings(TrainerSettings settings)
@@ -122,6 +146,7 @@ namespace VrFencing.Blade
 
             if (!isTracked)
             {
+                DrawnBladeOnStrip = null;
                 return;
             }
 
@@ -187,6 +212,7 @@ namespace VrFencing.Blade
 
             PlayPressHaptic((float)now);
             _visual.Draw(_drawnBlade, stripInRoom, (float)now);
+            DrawnBladeOnStrip = new BladeSegment(_drawnBlade.GetSample(0), _drawnBlade.GetSample(DrawnBlade.SampleCount));
         }
 
         /// <summary>
@@ -209,6 +235,12 @@ namespace VrFencing.Blade
             {
                 // The Armed Dummy's blade while it holds one (PER-104): solid against the drawn blade too.
                 _armedDummy?.AddBladeObstacles(_obstacles);
+            }
+
+            // The opponent's body (PER-81), last, so its place in the list stays put.
+            foreach (var obstacle in _extraObstacles)
+            {
+                _obstacles.Add(obstacle);
             }
 
             return _obstacles;
