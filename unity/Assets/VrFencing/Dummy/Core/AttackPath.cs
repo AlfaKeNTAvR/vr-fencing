@@ -58,7 +58,7 @@ namespace VrFencing.Dummy
         }
 
         /// <summary>10 f^3 - 15 f^4 + 6 f^5: zero speed and acceleration at both ends, peak speed 1.875 at the middle.</summary>
-        internal static float MinimumJerk(float fraction)
+        public static float MinimumJerk(float fraction)
         {
             var cube = fraction * fraction * fraction;
             return cube * (10.0f + (fraction * ((6.0f * fraction) - 15.0f)));

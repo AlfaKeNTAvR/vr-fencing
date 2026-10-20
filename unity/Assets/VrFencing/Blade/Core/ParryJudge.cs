@@ -55,8 +55,9 @@ namespace VrFencing.Blade
     ///
     /// A clash during the thrust or its hold opens a watch (<see cref="ReportClash"/>). While the blades stay in contact,
     /// or for <see cref="WatchSeconds"/> after the clash, each frame (<see cref="Step"/>) takes the point's deflection:
-    /// the larger of the swing's measured tip offset (pushed and pressed aside, PER-104) and the peak the clash's kick
-    /// will reach (<see cref="BladeSwing.GetPeakMeters"/>, so a fast parry is judged at once, before the swing gets
+    /// the larger of the measured tip offset (knocked, pushed and pressed aside, wrist and arm, PER-104, PER-116) and the
+    /// deflection the clash's knock will reach (<see cref="BladeDeflection.GetKickMeters"/>, so a fast parry is judged at
+    /// once, before the point gets
     /// there). Only the deflection square to the thrust counts. The rest of the thrust shifted by it, carried
     /// <see cref="FollowThroughMeters"/> past the aim, must miss every capsule of the Fencer's body; then the contact is
     /// judged and the watch closes. A watch that ends without that was a contact that did not deflect: the thrust goes on.
@@ -69,8 +70,9 @@ namespace VrFencing.Blade
     public sealed class ParryJudge
     {
         /// <summary>
-        /// How long after a clash its deflection is watched once the blades part: past the swing's peak (about 0.1 s,
-        /// <see cref="BladeSwing.FrequencyHertz"/>), short enough that a light touch is not credited much later.
+        /// How long after a clash its deflection is watched once the blades part: past the knock's peak (0.06 s,
+        /// <see cref="BladeDeflection.OutSeconds"/>; a light touch's spring peaks at about 0.07 s), short enough that a
+        /// light touch is not credited much later.
         /// </summary>
         public const float WatchSeconds = 0.15f;
 
@@ -170,7 +172,7 @@ namespace VrFencing.Blade
         {
             _clash = clash;
             _fencerAtClash = fencerBlade;
-            _kickDeflection = clash.PushDirection * BladeSwing.GetPeakMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction);
+            _kickDeflection = clash.PushDirection * BladeDeflection.GetKickMeters(clash.RelativeSpeedMetersPerSecond, clash.OpponentBladeFraction);
         }
 
         /// <summary>
@@ -188,7 +190,7 @@ namespace VrFencing.Blade
         /// One frame of the watch. Returns the report once the watched contact has turned the point off the body (then
         /// the watch closes); null while it has not, and once the watch ends without it.
         /// </summary>
-        /// <param name="tipDeflection">The Dummy's point off its arm's line now (<see cref="BladeSwing.TipOffset"/>).</param>
+        /// <param name="tipDeflection">The Dummy's point off its arm's line now (<see cref="BladeDeflection.TipOffset"/>).</param>
         /// <param name="isInContact">The blades still touch or press, which keeps the watch open.</param>
         /// <param name="line">The rest of the thrust.</param>
         /// <param name="fencerBody">The Fencer's body (<see cref="AttackAim.GetFencerBodyOnStrip"/>).</param>

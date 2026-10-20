@@ -49,10 +49,13 @@ namespace VrFencing.Dummy
     /// the point's peak speed is the speed level's. All numbers are in <see cref="ArmedDummyTuning"/>.
     /// Poses are right-handed (<see cref="SwordArmPose"/>); positions are in the Dummy's own frame. Times in seconds on
     /// any one clock.
+    ///
+    /// A Dummy whose arm the Fencer knocked off line waits until it is back in line before winding up
+    /// (<see cref="PostponeWindUp"/>, PER-116): the whole plan moves later.
     /// </summary>
     public sealed class ArmedDummyAttack
     {
-        private readonly double _startSeconds;
+        private double _startSeconds;
         private readonly float _heightMeters;
         private readonly float _bladeLengthMeters;
         private readonly SwordArmPose _guard;
@@ -124,7 +127,7 @@ namespace VrFencing.Dummy
         /// The point's planned straight path in the thrust, in the Dummy frame where the attack started (before any
         /// lunge), for judging.
         /// </summary>
-        public AttackPath Path { get; }
+        public AttackPath Path { get; private set; }
 
         /// <summary>When the wind-up starts.</summary>
         public double WindUpStartSeconds => _startSeconds + DelaySeconds;
@@ -285,6 +288,27 @@ namespace VrFencing.Dummy
                 default:
                     return 0.0f;
             }
+        }
+
+        /// <summary>
+        /// The Dummy is not ready to attack before <paramref name="readySeconds"/> (its arm knocked off line, PER-116): a
+        /// wind-up that has not started by <paramref name="nowSeconds"/> starts then instead, and the thrust, hold and
+        /// recovery move later with it. Changes nothing once the wind-up has started.
+        /// </summary>
+        /// <returns>True if the plan moved.</returns>
+        public bool PostponeWindUp(double nowSeconds, double readySeconds)
+        {
+            if (GetPhase(nowSeconds) != AttackPhase.Waiting || !(readySeconds > WindUpStartSeconds))
+            {
+                return false;
+            }
+
+            var shiftSeconds = readySeconds - WindUpStartSeconds;
+            _startSeconds += shiftSeconds;
+            _holdStartSeconds += shiftSeconds;
+            _recoverStartSeconds += shiftSeconds;
+            Path = new AttackPath(Path.StartPoint, Path.AimPoint, ThrustStartSeconds, ThrustSeconds);
+            return true;
         }
 
         /// <summary>

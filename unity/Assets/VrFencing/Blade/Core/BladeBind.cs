@@ -18,9 +18,10 @@ namespace VrFencing.Blade
     /// that side (<see cref="AddObstacles"/>): it bends round it as round any body (<see cref="BladeSideContact"/>), its
     /// point slides on it with <see cref="BladeObstacle.BladeFriction"/>, and the drawn hilt lags (the ghost hilt) when
     /// the hand presses further than the blade bends.</item>
-    /// <item><b>The Dummy's blade</b> gives way: pressed, its point is pulled aside, square to it, by
-    /// <see cref="YieldShare"/> of how far the hand's blade presses past its line, on the swing's spring
-    /// (<see cref="BladeSwing.HoldAt"/>), so it springs back when let go; and it is pushed out of the way at once when it
+    /// <item><b>The Dummy's blade</b> gives way: pressed, its point is pulled aside, square to it, by a share of how far
+    /// the hand's blade presses past its line that depends on where each blade is pressed (<see cref="GetPressYieldShare"/>,
+    /// PER-116), on the deflection's spring (<see cref="BladeDeflection.HoldAt"/>), so it gives back when let go; and it is
+    /// pushed out of the way at once when it
     /// would move into the Fencer's drawn blade (<see cref="FindClearingTipOffset"/>), so a thrust into a parry is
     /// deflected.</item>
     /// </list>
@@ -49,11 +50,19 @@ namespace VrFencing.Blade
         public const float StripHalfWidthMeters = ContactMeters + EngagedMeters;
 
         /// <summary>
-        /// The Dummy's point gives way by this share of the press: how far the hand's blade is past the Dummy's line.
-        /// Its blade turns about its guard, so a press near its point moves it this much and one near its guard barely
-        /// (the Fencer's blade bends the rest); 0.5 at the point splits the press evenly.
+        /// The Dummy's point gives way by this share of the press (how far the hand's blade is past the Dummy's line) for
+        /// a press on the Dummy's guard: its forte holds (PER-116). The Fencer's blade bends the rest.
         /// </summary>
-        public const float YieldShare = 0.5f;
+        public const float PressYieldAtDummyGuard = 0.15f;
+
+        /// <summary>The share for a press at the Dummy's point: its foible gives way to the Fencer's forte (prise de fer).</summary>
+        public const float PressYieldAtDummyPoint = 0.8f;
+
+        /// <summary>
+        /// The share is scaled by this for a press with the Fencer's point (foible), from the whole with the Fencer's
+        /// guard (forte): a foible on a forte gets nowhere.
+        /// </summary>
+        public const float FencerFoiblePressFactor = 0.5f;
 
         // Below this sine of the angle between the blades their line-to-line normal is no guide to the side.
         private const float ParallelSine = 0.1f;
@@ -141,10 +150,24 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
+        /// The share of the press the Dummy's point gives way by, for a press at <paramref name="dummyBladeFraction"/>
+        /// along its blade (0 guard, 1 point) with the Fencer's blade at <paramref name="fencerBladeFraction"/>: from
+        /// <see cref="PressYieldAtDummyGuard"/> to <see cref="PressYieldAtDummyPoint"/>, times 1 for the Fencer's forte down
+        /// to <see cref="FencerFoiblePressFactor"/> for its point.
+        /// </summary>
+        public static float GetPressYieldShare(float dummyBladeFraction, float fencerBladeFraction)
+        {
+            var dummy = Math.Clamp(dummyBladeFraction, 0.0f, 1.0f);
+            var fencer = Math.Clamp(fencerBladeFraction, 0.0f, 1.0f);
+            var share = PressYieldAtDummyGuard + ((PressYieldAtDummyPoint - PressYieldAtDummyGuard) * dummy);
+            return share * (1.0f + ((FencerFoiblePressFactor - 1.0f) * fencer));
+        }
+
+        /// <summary>
         /// The press: how far the hand's blade (the Fencer's chord) has gone into or past the Dummy's blade on its line
-        /// (<paramref name="dummyLine"/>: where the Dummy holds it, before any swing). Returns the tip offset the Dummy's
-        /// blade yields to (<see cref="YieldShare"/> of the press, square to it, away from the Fencer's side); zero when
-        /// nothing presses.
+        /// (<paramref name="dummyLine"/>: where the Dummy holds it, before any deflection). Returns the tip offset the
+        /// Dummy's blade yields to (<see cref="GetPressYieldShare"/> of the deepest press, for where it presses on each
+        /// blade, square to it, away from the Fencer's side); zero when nothing presses.
         /// </summary>
         public Vector3 FindYieldTipOffset(BladeSegment hand, IReadOnlyList<Vector3> dummyLine)
         {
@@ -155,14 +178,26 @@ namespace VrFencing.Blade
                 return Vector3.Zero;
             }
 
+            var pressedAt = dummyLine[0];
             for (var piece = 0; piece < PieceCount; piece++)
             {
-                var overlap = FindOverlap(hand.GuardPosition, hand.TipPosition, 0, dummyLine[piece], dummyLine[piece + 1], FindJoints(piece), _side.Value, out _, out _);
-                PressMeters = Math.Max(PressMeters, overlap);
+                var overlap = FindOverlap(hand.GuardPosition, hand.TipPosition, 0, dummyLine[piece], dummyLine[piece + 1], FindJoints(piece), _side.Value, out _, out var onDummy);
+                if (overlap > PressMeters)
+                {
+                    PressMeters = overlap;
+                    pressedAt = onDummy;
+                }
+            }
+
+            if (PressMeters <= 0.0f)
+            {
+                return Vector3.Zero;
             }
 
             var chord = dummyLine[PieceCount] - dummyLine[0];
-            return PressMeters > 0.0f ? -MakeSquare(_side.Value, chord) * (YieldShare * PressMeters) : Vector3.Zero;
+            var dummyFraction = FindFraction(pressedAt, dummyLine[0], dummyLine[PieceCount]);
+            var fencerFraction = FindFraction(SegmentMath.FindClosestPointOnSegment(pressedAt, hand.GuardPosition, hand.TipPosition), hand.GuardPosition, hand.TipPosition);
+            return -MakeSquare(_side.Value, chord) * (GetPressYieldShare(dummyFraction, fencerFraction) * PressMeters);
         }
 
         /// <summary>
@@ -319,6 +354,14 @@ namespace VrFencing.Blade
             }
 
             return false;
+        }
+
+        /// <summary>How far along from <paramref name="start"/> to <paramref name="end"/> <paramref name="point"/> lies, 0 to 1.</summary>
+        private static float FindFraction(Vector3 point, Vector3 start, Vector3 end)
+        {
+            var along = end - start;
+            var lengthSquared = along.LengthSquared();
+            return lengthSquared < 1e-12f ? 0.0f : Math.Clamp(Vector3.Dot(point - start, along) / lengthSquared, 0.0f, 1.0f);
         }
 
         private static int FindJoints(int piece)
