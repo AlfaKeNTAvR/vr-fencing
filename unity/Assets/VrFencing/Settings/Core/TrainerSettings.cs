@@ -54,6 +54,9 @@ namespace VrFencing.Settings
         /// </summary>
         public float BoutDoubleWindowSeconds { get; set; } = 0.05f;
 
+        /// <summary>The Armed Dummy's Parry Drills: which ask for a Riposte after the Parry (PER-100).</summary>
+        public ArmedDummySettings ArmedDummy { get; set; } = new ArmedDummySettings();
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -82,6 +85,33 @@ namespace VrFencing.Settings
                 LaserTiltDegrees = LaserTiltDegrees,
                 DummyLook = DummyLook.Clone(),
                 BoutDoubleWindowSeconds = BoutDoubleWindowSeconds,
+                ArmedDummy = ArmedDummy.Clone(),
+            };
+        }
+    }
+
+    /// <summary>
+    /// The Armed Dummy's Parry Drills (PER-100). The Riposte after the Parry is a per-Drill switch (PER-23), so a Drill
+    /// can be run as a parry-only warm-up. Every switch is on by default.
+    /// </summary>
+    public sealed class ArmedDummySettings
+    {
+        /// <summary>Parry 6/4 at slow speed asks for a Riposte within 1 s of the Parry.</summary>
+        public bool RiposteInSlowParries { get; set; } = true;
+
+        /// <summary>Parry 6/4 at medium and real speed asks for a Riposte.</summary>
+        public bool RiposteInFastParries { get; set; } = true;
+
+        /// <summary>Parry 8/7 asks for a Riposte.</summary>
+        public bool RiposteInLowParries { get; set; } = true;
+
+        public ArmedDummySettings Clone()
+        {
+            return new ArmedDummySettings
+            {
+                RiposteInSlowParries = RiposteInSlowParries,
+                RiposteInFastParries = RiposteInFastParries,
+                RiposteInLowParries = RiposteInLowParries,
             };
         }
     }

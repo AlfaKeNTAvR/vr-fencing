@@ -40,7 +40,9 @@ namespace VrFencing.Session
             ParryLine? parryLine = null,
             double? riposteSeconds = null,
             FencerHitSource? hitSource = null,
-            BodyPart? hitPart = null)
+            BodyPart? hitPart = null,
+            AttackTarget? attackTarget = null,
+            AttackSpeed? attackSpeed = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
@@ -80,6 +82,8 @@ namespace VrFencing.Session
             RiposteSeconds = riposteSeconds;
             HitSource = hitSource;
             HitPart = hitPart;
+            AttackTarget = attackTarget;
+            AttackSpeed = attackSpeed;
         }
 
         public int Schema { get; }
@@ -158,6 +162,12 @@ namespace VrFencing.Session
         /// <summary>Parry Drills: the part of the Fencer the Armed Dummy's point landed on; null when it did not land.</summary>
         public BodyPart? HitPart { get; }
 
+        /// <summary>Parry Drills: where the Armed Dummy thrust (PER-100); null for other Drills and in older lines.</summary>
+        public AttackTarget? AttackTarget { get; }
+
+        /// <summary>Parry Drills: how fast the Armed Dummy thrust (PER-100); null for other Drills and in older lines.</summary>
+        public AttackSpeed? AttackSpeed { get; }
+
         public static RepLogEntry FromRepResult(RepResult result, DateTimeOffset timestamp, string sessionId, bool flagged, ArmPoseSnapshot armPose)
         {
             if (result == null)
@@ -188,7 +198,9 @@ namespace VrFencing.Session
                 result.ParryLine,
                 result.RiposteSeconds,
                 result.FencerHit?.Source,
-                result.FencerHit?.Part);
+                result.FencerHit?.Part,
+                result.AttackTarget,
+                result.AttackSpeed);
         }
 
         public RepLogEntry WithFlagged(bool flagged)
@@ -216,7 +228,9 @@ namespace VrFencing.Session
                 ParryLine,
                 RiposteSeconds,
                 HitSource,
-                HitPart);
+                HitPart,
+                AttackTarget,
+                AttackSpeed);
         }
     }
 

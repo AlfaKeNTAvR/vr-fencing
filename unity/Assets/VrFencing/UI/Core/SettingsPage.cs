@@ -43,6 +43,9 @@ namespace VrFencing.UI
         BodyOpacity,
         ParryRule,
         DoubleWindow,
+        RiposteInSlowParries,
+        RiposteInFastParries,
+        RiposteInLowParries,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -167,6 +170,9 @@ namespace VrFencing.UI
                 case SettingId.BodyOpacity: return "Dummy body opacity";
                 case SettingId.ParryRule: return "Parry rule";
                 case SettingId.DoubleWindow: return "Bout double window (host)";
+                case SettingId.RiposteInSlowParries: return "Riposte: Parry 6/4 slow";
+                case SettingId.RiposteInFastParries: return "Riposte: Parry 6/4 fast";
+                case SettingId.RiposteInLowParries: return "Riposte: Parry 8/7";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -183,6 +189,12 @@ namespace VrFencing.UI
                     return settings.LightNamedZones ? "On" : "Off";
                 case SettingId.ShowTargetZones:
                     return settings.DummyLook.ShowTargetZones ? "On" : "Off";
+                case SettingId.RiposteInSlowParries:
+                    return FormatRiposte(settings.ArmedDummy.RiposteInSlowParries);
+                case SettingId.RiposteInFastParries:
+                    return FormatRiposte(settings.ArmedDummy.RiposteInFastParries);
+                case SettingId.RiposteInLowParries:
+                    return FormatRiposte(settings.ArmedDummy.RiposteInLowParries);
                 case SettingId.OffStripTolerance:
                     return FormatNumber(settings.WarningZone.OffStripToleranceMeters, "0.0", "m");
                 case SettingId.TouchRule:
@@ -284,6 +296,15 @@ namespace VrFencing.UI
                 case SettingId.ShowTargetZones:
                     changed.DummyLook.ShowTargetZones = !settings.DummyLook.ShowTargetZones;
                     break;
+                case SettingId.RiposteInSlowParries:
+                    changed.ArmedDummy.RiposteInSlowParries = !settings.ArmedDummy.RiposteInSlowParries;
+                    break;
+                case SettingId.RiposteInFastParries:
+                    changed.ArmedDummy.RiposteInFastParries = !settings.ArmedDummy.RiposteInFastParries;
+                    break;
+                case SettingId.RiposteInLowParries:
+                    changed.ArmedDummy.RiposteInLowParries = !settings.ArmedDummy.RiposteInLowParries;
+                    break;
                 case SettingId.OffStripTolerance:
                     changed.WarningZone.OffStripToleranceMeters = StepTolerance(settings.WarningZone.OffStripToleranceMeters, direction);
                     break;
@@ -317,6 +338,12 @@ namespace VrFencing.UI
             }
 
             return changed;
+        }
+
+        /// <summary>A Parry Drill's Riposte switch: "On (within 1 s)", or "Off (parry only)" for a warm-up.</summary>
+        private static string FormatRiposte(bool isOn)
+        {
+            return isOn ? "On (within 1 s)" : "Off (parry only)";
         }
 
         /// <summary>

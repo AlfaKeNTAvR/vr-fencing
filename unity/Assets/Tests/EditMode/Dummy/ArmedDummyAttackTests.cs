@@ -17,8 +17,6 @@ namespace VrFencing.Tests.Dummy
         private const double Start = 10.0;
         private const float Delay = 2.0f;
         private const double SampleSeconds = 0.0005;
-        private const float HandAttackExtraDistanceMeters = 0.75f;
-        private const float ForearmAttackExtraDistanceMeters = 0.6f;
 
         private static readonly AttackTarget[] Targets = { AttackTarget.Hand, AttackTarget.Forearm, AttackTarget.Chest, AttackTarget.Thigh };
         private static readonly AttackSpeed[] Speeds = { AttackSpeed.Slow, AttackSpeed.Medium, AttackSpeed.Real };
@@ -327,30 +325,16 @@ namespace VrFencing.Tests.Dummy
         /// En Garde Line; the Fencer's guard is where the Dummy's own guard would be with the arm in line, seen from the
         /// Strip frame. Chest and thigh are attacked from extension distance. The hand and forearm are nearer than the
         /// arm and a straight-wristed 90 cm blade can fold at that distance, so they are attacked from further out
-        /// (<see cref="GetExtraDistanceMeters"/>), as a real fencer attacks the hand from further away.
+        /// (<see cref="AttackAim.GetStandBackMeters"/>, PER-100), as a real fencer attacks the hand from further away.
         /// </summary>
         private static (ArmedDummyAttack Attack, Vector3 Aim) PlanAt(AttackTarget target, AttackSpeed speed, Hand hand, float height)
         {
             var layout = DummyLayout.Create(height, hand);
-            var distance = DistancePresets.GetDistanceMeters(DummyDistance.Extension, height) + GetExtraDistanceMeters(target);
+            var distance = DistancePresets.GetDistanceMeters(DummyDistance.Extension, height) + AttackAim.GetStandBackMeters(target);
             var fencerGuard = layout.Arm.GetGuardPosition();
             var fencerBladeDirection = layout.Arm.GetBladeDirection();
             var aim = AttackAim.GetAimInDummyFrame(target, layout, distance, fencerGuard, fencerBladeDirection);
             return (ArmedDummyAttack.Plan(Start, Delay, height, hand, aim, speed, BladeLength), aim);
-        }
-
-        /// <summary>How much further than extension distance the Dummy stands to attack <paramref name="target"/>.</summary>
-        private static float GetExtraDistanceMeters(AttackTarget target)
-        {
-            switch (target)
-            {
-                case AttackTarget.Hand:
-                    return HandAttackExtraDistanceMeters;
-                case AttackTarget.Forearm:
-                    return ForearmAttackExtraDistanceMeters;
-                default:
-                    return 0.0f;
-            }
         }
 
         private static ArmedDummyAttack PlanSimple(AttackSpeed speed = AttackSpeed.Medium)

@@ -66,7 +66,8 @@ namespace VrFencing.Drills
     }
 
     /// <summary>
-    /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38) and 4 to 6 (PER-39). Development builds also
+    /// The app's Drills (PER-21), easy to hard: Drills 1 to 3 (PER-38), 4 to 6 (PER-39), then the Armed Dummy's Parry
+    /// Drills 7 to 9 (PER-100). Development builds also
     /// list two test Drills after the real ones: one that never fits, to show a greyed-out row, and the Armed Dummy
     /// feel test (PER-95).
     ///
@@ -83,6 +84,41 @@ namespace VrFencing.Drills
         public const string FootworkCallsDrillId = "footwork-calls";
         public const string FullPisteTestDrillId = "test-full-piste";
         public const string ArmedDummyTestDrillId = "test-armed-dummy";
+        public const string SlowParryDrillId = "parry-six-four-slow";
+        public const string FastParryDrillId = "parry-six-four-fast";
+        public const string LowParryDrillId = "parry-eight-seven";
+
+        /// <summary>
+        /// Parry 6 and 4 close the high line (PER-23): the Armed Dummy thrusts at the hand, forearm or chest. Hand and
+        /// forearm thrusts come from further back (<see cref="AttackAim.GetStandBackMeters"/>).
+        /// </summary>
+        public static readonly IReadOnlyList<AttackTarget> HighLineAttackTargets = new[]
+        {
+            AttackTarget.Hand, AttackTarget.Forearm, AttackTarget.Chest,
+        };
+
+        /// <summary>Parry 8 and 7 close the low line: the Armed Dummy thrusts at the thigh.</summary>
+        public static readonly IReadOnlyList<AttackTarget> LowLineAttackTargets = new[] { AttackTarget.Thigh };
+
+        /// <summary>Drill 7 (PER-23): slow thrusts only, to learn the parries.</summary>
+        public static readonly IReadOnlyList<AttackSpeed> SlowParrySpeeds = new[] { AttackSpeed.Slow };
+
+        /// <summary>Drill 8 (PER-23: "the same at medium and real speed"): medium and real in turn.</summary>
+        public static readonly IReadOnlyList<AttackSpeed> FastParrySpeeds = new[] { AttackSpeed.Medium, AttackSpeed.Real };
+
+        /// <summary>
+        /// Drill 9: PER-23 sets no speed for the low parries, which are new to a beginner; slow and medium in turn, so each
+        /// is learnt slow and then tried at speed.
+        /// </summary>
+        public static readonly IReadOnlyList<AttackSpeed> LowParrySpeeds = new[] { AttackSpeed.Slow, AttackSpeed.Medium };
+
+        /// <summary>
+        /// The window of a Rep with the Armed Dummy (PER-95, PER-100): its random delay (up to 3 s), the wind-up, the
+        /// slowest thrust (the slow speed over the longest path, hand and forearm thrusts included) and its hold all fit
+        /// inside, so an attack always ends (parried, landed or short) before the window does. The Riposte then gets its
+        /// own 1 s from the Parry.
+        /// </summary>
+        public const float ArmedDummyWindowSeconds = 8.0f;
 
         /// <summary>
         /// Drill 4 at step-lunge distance: an advance (0.2 of the height) and a lunge (0.6) forward of the En Garde Line
@@ -196,11 +232,17 @@ namespace VrFencing.Drills
 
         public const string ArmedDummyTestTaskLine = "Test: parry the thrust, then riposte to the body.";
 
-        /// <summary>
-        /// The Armed Dummy feel test's window (PER-95): its random 1 to 3 s delay, the wind-up, a slow thrust (about 1.5 s)
-        /// and its hold, then time to riposte.
-        /// </summary>
-        public const float ArmedDummyTestWindowSeconds = 8.0f;
+        public const string SlowParryTaskLine = "Parry 6 or 4, then riposte within 1 s.";
+
+        public const string SlowParryOnlyTaskLine = "Parry 6 or 4 slow thrusts. No riposte.";
+
+        public const string FastParryTaskLine = "Parry 6 or 4 at speed, then riposte within 1 s.";
+
+        public const string FastParryOnlyTaskLine = "Parry 6 or 4 fast thrusts. No riposte.";
+
+        public const string LowParryTaskLine = "Parry 8 or 7 the low thrust, then riposte in 1 s.";
+
+        public const string LowParryOnlyTaskLine = "Parry 8 or 7 the low thrust. No riposte.";
 
         /// <summary>Test Drills sort after every real Drill.</summary>
         private const int TestDrillOrder = 1000;
@@ -218,6 +260,9 @@ namespace VrFencing.Drills
             registry.Register(DistanceChoiceDrillId, CreateDistanceChoiceDrill);
             registry.Register(CompoundDrillId, CreateCompoundDrill);
             registry.Register(FootworkCallsDrillId, CreateFootworkCallsDrill);
+            registry.Register(SlowParryDrillId, CreateSlowParryDrill);
+            registry.Register(FastParryDrillId, CreateFastParryDrill);
+            registry.Register(LowParryDrillId, CreateLowParryDrill);
             if (includeTestDrills)
             {
                 registry.Register(FullPisteTestDrillId, CreateFullPisteTestDrill);
@@ -378,6 +423,38 @@ namespace VrFencing.Drills
                 taskLine: FootworkCallsTaskLine);
         }
 
+        /// <summary>
+        /// Drill 7, Parry 6/4 + Riposte, slow (PER-100): on each Rep the Armed Dummy thrusts at the hand, forearm or chest
+        /// at the slow speed after a random 1 to 3 s delay; the Fencer parries it (6 or 4) and, with the Drill's Riposte
+        /// switch on (a Setting), Touches the Dummy anywhere within 1 s. A hit on the Fencer, no Parry or no Riposte in
+        /// time fails the Rep.
+        /// </summary>
+        public static DrillDefinition CreateSlowParryDrill(TrainerSettings settings)
+        {
+            var riposte = settings.ArmedDummy.RiposteInSlowParries;
+            return CreateParryDrill(
+                settings, SlowParryDrillId, "Parry 6/4: slow", order: 7, new AttackScript(HighLineAttackTargets, SlowParrySpeeds), riposte,
+                riposte ? SlowParryTaskLine : SlowParryOnlyTaskLine);
+        }
+
+        /// <summary>Drill 8, Parry 6/4 + Riposte at medium and real speed, in turn (PER-100); otherwise as Drill 7.</summary>
+        public static DrillDefinition CreateFastParryDrill(TrainerSettings settings)
+        {
+            var riposte = settings.ArmedDummy.RiposteInFastParries;
+            return CreateParryDrill(
+                settings, FastParryDrillId, "Parry 6/4: medium, real", order: 8, new AttackScript(HighLineAttackTargets, FastParrySpeeds),
+                riposte, riposte ? FastParryTaskLine : FastParryOnlyTaskLine);
+        }
+
+        /// <summary>Drill 9, Parry 8/7 + Riposte (PER-100): thigh thrusts, slow and medium in turn; otherwise as Drill 7.</summary>
+        public static DrillDefinition CreateLowParryDrill(TrainerSettings settings)
+        {
+            var riposte = settings.ArmedDummy.RiposteInLowParries;
+            return CreateParryDrill(
+                settings, LowParryDrillId, "Parry 8/7", order: 9, new AttackScript(LowLineAttackTargets, LowParrySpeeds), riposte,
+                riposte ? LowParryTaskLine : LowParryOnlyTaskLine);
+        }
+
         /// <summary>Needs a full 14 m piste, so the picker shows a greyed-out Drill with its required length.</summary>
         public static DrillDefinition CreateFullPisteTestDrill(TrainerSettings settings)
         {
@@ -399,9 +476,9 @@ namespace VrFencing.Drills
 
         /// <summary>
         /// The Armed Dummy feel test (PER-95, development builds only): the Dummy stands at extension distance holding a
-        /// blade and, on each Rep's cue, makes one scripted thrust after a random delay. Its speed cycles slow, medium,
-        /// real by Rep (the Blade module's Armed Dummy runs it). The Fencer must Parry it (PER-97: deflect its point off
-        /// the body) and Riposte with a Touch on the body within 1 s.
+        /// blade and, on each Rep's cue, makes one scripted thrust after a random delay, at any of the four targets. Its
+        /// speed cycles slow, medium, real by Rep (the Blade module's Armed Dummy runs it). The Fencer must Parry it
+        /// (PER-97: deflect its point off the body) and Riposte with a Touch on the body within 1 s.
         /// </summary>
         public static DrillDefinition CreateArmedDummyTestDrill(TrainerSettings settings)
         {
@@ -413,14 +490,42 @@ namespace VrFencing.Drills
                 shrunkStripLengthMeters: null,
                 repCount: settings.RepsPerDrill,
                 cueSeconds: ImmediateWindowCueSeconds,
-                windowSeconds: ArmedDummyTestWindowSeconds,
+                windowSeconds: ArmedDummyWindowSeconds,
                 restSeconds: settings.RestBetweenRepsSeconds,
                 CueType.NamedTargetZone,
                 SuccessRule.Parry,
                 new[] { TargetZone.Body },
                 DummyDistance.Extension,
                 taskLine: ArmedDummyTestTaskLine,
-                requiresRiposte: true);
+                requiresRiposte: true,
+                attacks: AttackScript.EveryTargetAndSpeed);
+        }
+
+        /// <summary>
+        /// A Parry Drill of the Armed Dummy (PER-100): the Dummy stands at extension distance (further back for a thrust at
+        /// the arm), so the Fencer parries and ripostes from en garde without a step, on the shortest Strip. The attack is
+        /// the cue; the Riposte may land on any Target Zone.
+        /// </summary>
+        private static DrillDefinition CreateParryDrill(
+            TrainerSettings settings, string id, string name, int order, AttackScript attacks, bool requiresRiposte, string taskLine)
+        {
+            return new DrillDefinition(
+                id,
+                name,
+                order,
+                requiredStripLengthMeters: PointControlStripLengthMeters,
+                shrunkStripLengthMeters: null,
+                repCount: settings.RepsPerDrill,
+                cueSeconds: ImmediateWindowCueSeconds,
+                windowSeconds: ArmedDummyWindowSeconds,
+                restSeconds: settings.RestBetweenRepsSeconds,
+                CueType.ArmedDummyAttack,
+                SuccessRule.Parry,
+                AllTargetZones,
+                DummyDistance.Extension,
+                taskLine: taskLine,
+                requiresRiposte: requiresRiposte,
+                attacks: attacks);
         }
     }
 }

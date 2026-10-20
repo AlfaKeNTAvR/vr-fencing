@@ -53,6 +53,8 @@ namespace VrFencing.UI
     {
         public const string NoTouchesText = "no Touches";
 
+        public const string NoneText = "none";
+
         /// <summary>Lines of the summary for one run (or one session's runs combined).</summary>
         /// <param name="wasCancelled">The run was stopped early; the lines say how many Reps it covers.</param>
         public static IReadOnlyList<string> FormatSummary(DrillResults results, bool wasCancelled)
@@ -74,6 +76,13 @@ namespace VrFencing.UI
                 lines.Add($"Average tip speed: {FormatOrNoTouches(results.AverageTipSpeedMetersPerSecond, "0.0", "m/s")}");
             }
 
+            // Parry Drills (PER-100): the lines parried, and the hits on the Fencer by the body that judged them.
+            if (results.AttackHits.Count > 0)
+            {
+                lines.Add("Parries: " + FormatParryLines(results.ParryLines));
+                lines.Add("Hits on you: " + FormatFencerHits(results.FencerHits));
+            }
+
             if (wasCancelled)
             {
                 lines.Add($"Cancelled after {results.RepCount} Rep{(results.RepCount == 1 ? string.Empty : "s")}");
@@ -89,7 +98,8 @@ namespace VrFencing.UI
 
         /// <summary>
         /// The hit map, one line per Target Zone that was cued, in Target Zone order; for footwork calls, one line per
-        /// called action ("Advance: Done 2 of 3").
+        /// called action ("Advance: Done 2 of 3"); for Parry Drills, one line per target the Armed Dummy thrust at
+        /// ("At your hand: Done 2 of 3").
         /// </summary>
         public static IReadOnlyList<HitMapLine> FormatHitMap(DrillResults results)
         {
@@ -108,7 +118,50 @@ namespace VrFencing.UI
                     FootworkNames.Get(hits.Call),
                     $"Done {hits.Successes} of {hits.Attempts}",
                     hits.Attempts == 0 ? 0.0f : (float)hits.Successes / hits.Attempts));
-            return zoneLines.Concat(footworkLines).ToArray();
+            var attackLines = results.AttackHits
+                .Select(hits => new HitMapLine(
+                    AttackTargetNames.Get(hits.Target),
+                    $"Done {hits.Successes} of {hits.Attempts}",
+                    hits.Attempts == 0 ? 0.0f : (float)hits.Successes / hits.Attempts));
+            return zoneLines.Concat(footworkLines).Concat(attackLines).ToArray();
+        }
+
+        /// <summary>"6 x3, 4 x2", or "none" when no attack was deflected.</summary>
+        public static string FormatParryLines(IReadOnlyList<ParryLineCount> parryLines)
+        {
+            if (parryLines == null || parryLines.Count == 0)
+            {
+                return NoneText;
+            }
+
+            return string.Join(", ", parryLines.Select(count => $"{(int)count.Line} x{count.Count}"));
+        }
+
+        /// <summary>"3 (body tracking 2, headset 1)", or "none".</summary>
+        public static string FormatFencerHits(IReadOnlyList<FencerHitCount> fencerHits)
+        {
+            var total = fencerHits?.Sum(count => count.Count) ?? 0;
+            if (total == 0)
+            {
+                return NoneText;
+            }
+
+            var bySource = string.Join(", ", fencerHits.Where(count => count.Count > 0).Select(count => $"{FormatHitSource(count.Source)} {count.Count}"));
+            return $"{total} ({bySource})";
+        }
+
+        /// <summary>How the body that judged a hit on the Fencer reads: body tracking (IOBT) or the headset stand-in.</summary>
+        public static string FormatHitSource(FencerHitSource source)
+        {
+            switch (source)
+            {
+                case FencerHitSource.Iobt:
+                    return "body tracking";
+                case FencerHitSource.HeadsetCapsules:
+                    return "headset";
+                default:
+                    return source.ToString();
+            }
         }
 
         /// <summary>One bar per session in <paramref name="trend"/>, oldest first, dated in <paramref name="localOffset"/>.</summary>
@@ -135,6 +188,15 @@ namespace VrFencing.UI
         private static string FormatOrNoTouches(double? value, string format, string unit)
         {
             return value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) + " " + unit : NoTouchesText;
+        }
+    }
+
+    /// <summary>How the Armed Dummy's attack targets read in the results: the Fencer's own body part (PER-100).</summary>
+    public static class AttackTargetNames
+    {
+        public static string Get(AttackTarget target)
+        {
+            return "At your " + target.ToString().ToLowerInvariant();
         }
     }
 

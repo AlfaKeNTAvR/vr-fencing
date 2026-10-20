@@ -71,7 +71,9 @@ namespace VrFencing.Drills
             CueType cueType,
             DummyDistance dummyDistance = DummyDistance.Lunge,
             TargetZone? secondTargetZone = null,
-            FootworkAction? footworkCall = null)
+            FootworkAction? footworkCall = null,
+            AttackTarget? attackTarget = null,
+            AttackSpeed? attackSpeed = null)
         {
             RepIndex = repIndex;
             TargetZone = targetZone;
@@ -79,12 +81,14 @@ namespace VrFencing.Drills
             DummyDistance = dummyDistance;
             SecondTargetZone = secondTargetZone;
             FootworkCall = footworkCall;
+            AttackTarget = attackTarget;
+            AttackSpeed = attackSpeed;
         }
 
         /// <summary>Zero-based.</summary>
         public int RepIndex { get; }
 
-        /// <summary>The zone to Touch (a compound's first one); null for a footwork call.</summary>
+        /// <summary>The zone to Touch (a compound's first one); null for a footwork call and the Armed Dummy's attack cue.</summary>
         public TargetZone? TargetZone { get; }
 
         public CueType CueType { get; }
@@ -97,6 +101,18 @@ namespace VrFencing.Drills
 
         /// <summary>The called footwork action; null for Drills with the blade.</summary>
         public FootworkAction? FootworkCall { get; }
+
+        /// <summary>Parry Drills: where the Armed Dummy thrusts this Rep (PER-100); null for other Drills.</summary>
+        public AttackTarget? AttackTarget { get; }
+
+        /// <summary>Parry Drills: how fast the Armed Dummy thrusts this Rep; null for other Drills.</summary>
+        public AttackSpeed? AttackSpeed { get; }
+
+        /// <summary>
+        /// How much further back than <see cref="DummyDistance"/> the Dummy stands for this Rep: for a thrust at the arm,
+        /// as real fencers attack it from further away (<see cref="AttackAim.GetStandBackMeters"/>, PER-100); else 0.
+        /// </summary>
+        public float DummyStandBackMeters => AttackTarget.HasValue ? AttackAim.GetStandBackMeters(AttackTarget.Value) : 0.0f;
     }
 
     /// <summary>One judged Rep, as plain data for the rep log (Session).</summary>
@@ -119,9 +135,13 @@ namespace VrFencing.Drills
             DummyDistance? dummyDistance = null,
             ParryLine? parryLine = null,
             double? riposteSeconds = null,
-            FencerHit? fencerHit = null)
+            FencerHit? fencerHit = null,
+            AttackTarget? attackTarget = null,
+            AttackSpeed? attackSpeed = null)
         {
             DrillId = drillId;
+            AttackTarget = attackTarget;
+            AttackSpeed = attackSpeed;
             ParryLine = parryLine;
             RiposteSeconds = riposteSeconds;
             FencerHit = fencerHit;
@@ -195,6 +215,12 @@ namespace VrFencing.Drills
         /// did not land.
         /// </summary>
         public FencerHit? FencerHit { get; }
+
+        /// <summary>Parry Drills: where the Armed Dummy thrust (PER-100); null for other Drills.</summary>
+        public AttackTarget? AttackTarget { get; }
+
+        /// <summary>Parry Drills: how fast the Armed Dummy thrust; null for other Drills.</summary>
+        public AttackSpeed? AttackSpeed { get; }
     }
 
     /// <summary>How a run ended: every judged Rep in order, and whether the Fencer cancelled.</summary>

@@ -17,12 +17,13 @@ namespace VrFencing.UI
         private const float FirstRowY = 0.165f;
         private const float RowStep = 0.055f;
 
-        // The group list: two columns of three large buttons.
+        // The group list: two columns of up to four large buttons (seven groups since PER-100), between the title (its
+        // bottom at 0.205) and the Back button (its top at -0.2225).
         private const int GroupColumns = 2;
         private const float GroupColumnX = 0.18f;
-        private const float FirstGroupRowY = 0.11f;
-        private const float GroupRowStep = 0.13f;
-        private static readonly Vector2 GroupButtonSize = new Vector2(0.34f, 0.105f);
+        private const float FirstGroupRowY = 0.15f;
+        private const float GroupRowStep = 0.1f;
+        private static readonly Vector2 GroupButtonSize = new Vector2(0.34f, 0.085f);
 
         private readonly GameObject _root;
         private readonly Row[] _rows = new Row[RowCount];

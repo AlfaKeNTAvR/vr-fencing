@@ -9,7 +9,8 @@ namespace VrFencing.Session
 {
     /// <summary>
     /// What the results panel shows for a Drill (PER-27): success %, average reaction time, average tip speed
-    /// and a hit map per Target Zone. Built from one run's Reps with <see cref="Aggregate"/>, or merged across runs
+    /// and a hit map per Target Zone (per called action for footwork calls, per attack target for Parry Drills, which
+    /// also count the lines parried and the hits on the Fencer by the body that judged them, PER-100). Built from one run's Reps with <see cref="Aggregate"/>, or merged across runs
     /// with <see cref="Combine"/> for the history trend.
     /// Averages count successful Reps only: a wrong-zone or flat contact is not a Touch, so its timing is not a
     /// reaction time the Fencer should compare.
@@ -25,10 +26,14 @@ namespace VrFencing.Session
             double? averageTipSpeedMetersPerSecond,
             bool isShrunk,
             IReadOnlyList<ZoneHitCount> zoneHits,
-            IReadOnlyList<FootworkHitCount> footworkHits = null)
+            IReadOnlyList<FootworkHitCount> footworkHits = null,
+            IReadOnlyList<AttackHitCount> attackHits = null,
+            IReadOnlyList<ParryLineCount> parryLines = null,
+            IReadOnlyList<FencerHitCount> fencerHits = null)
         {
-            // Results saved before footwork calls existed have no footwork hit map.
+            // Results saved before footwork calls (or the Parry Drills) existed have no such hit map.
             footworkHits = footworkHits ?? Array.Empty<FootworkHitCount>();
+            attackHits = attackHits ?? Array.Empty<AttackHitCount>();
             if (string.IsNullOrWhiteSpace(drillId))
             {
                 throw new ArgumentException("Results need a Drill id.", nameof(drillId));
@@ -45,8 +50,9 @@ namespace VrFencing.Session
             }
 
             if (zoneHits == null
-                || zoneHits.Sum(hits => hits.Attempts) + footworkHits.Sum(hits => hits.Attempts) != repCount
-                || zoneHits.Sum(hits => hits.Touches) + footworkHits.Sum(hits => hits.Successes) != successCount)
+                || zoneHits.Sum(hits => hits.Attempts) + footworkHits.Sum(hits => hits.Attempts) + attackHits.Sum(hits => hits.Attempts) != repCount
+                || zoneHits.Sum(hits => hits.Touches) + footworkHits.Sum(hits => hits.Successes) + attackHits.Sum(hits => hits.Successes)
+                    != successCount)
             {
                 throw new ArgumentException("The hit maps must account for every Rep and every success.", nameof(zoneHits));
             }
@@ -59,6 +65,9 @@ namespace VrFencing.Session
             IsShrunk = isShrunk;
             ZoneHits = zoneHits;
             FootworkHits = footworkHits;
+            AttackHits = attackHits;
+            ParryLines = parryLines ?? Array.Empty<ParryLineCount>();
+            FencerHits = fencerHits ?? Array.Empty<FencerHitCount>();
         }
 
         public string DrillId { get; }
@@ -85,6 +94,21 @@ namespace VrFencing.Session
 
         /// <summary>Footwork calls: one entry per action that was called at least once, in <see cref="FootworkAction"/> order. Empty for other Drills.</summary>
         public IReadOnlyList<FootworkHitCount> FootworkHits { get; }
+
+        /// <summary>Parry Drills: one entry per target the Armed Dummy thrust at, in <see cref="AttackTarget"/> order. Empty for other Drills.</summary>
+        public IReadOnlyList<AttackHitCount> AttackHits { get; }
+
+        /// <summary>
+        /// Parry Drills: the Reps whose attack was deflected, per line (6, 4, 8, 7), in <see cref="ParryLine"/> order; a
+        /// deflection the strict Parry rule rejected counts too. Lines never parried are left out.
+        /// </summary>
+        public IReadOnlyList<ParryLineCount> ParryLines { get; }
+
+        /// <summary>
+        /// Parry Drills: the Reps whose thrust landed on the Fencer, per body that judged it (IOBT or the headset capsules),
+        /// in <see cref="FencerHitSource"/> order. Sources that judged no hit are left out.
+        /// </summary>
+        public IReadOnlyList<FencerHitCount> FencerHits { get; }
 
         /// <summary>The hit count for a zone; zero attempts when the zone was never cued.</summary>
         public ZoneHitCount HitsFor(TargetZone zone)
@@ -117,16 +141,34 @@ namespace VrFencing.Session
 
             var successes = reps.Where(rep => rep.IsSuccess).ToArray();
             var zoneHits = reps
-                .Where(rep => rep.TargetZone.HasValue)
+                .Where(rep => !rep.AttackTarget.HasValue && rep.TargetZone.HasValue)
                 .GroupBy(rep => rep.TargetZone.Value)
                 .OrderBy(group => group.Key)
                 .Select(group => new ZoneHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
                 .ToArray();
             var footworkHits = reps
-                .Where(rep => !rep.TargetZone.HasValue)
+                .Where(rep => !rep.AttackTarget.HasValue && !rep.TargetZone.HasValue)
                 .GroupBy(rep => rep.FootworkCall ?? FootworkAction.None)
                 .OrderBy(group => group.Key)
                 .Select(group => new FootworkHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
+                .ToArray();
+            var attackHits = reps
+                .Where(rep => rep.AttackTarget.HasValue)
+                .GroupBy(rep => rep.AttackTarget.Value)
+                .OrderBy(group => group.Key)
+                .Select(group => new AttackHitCount(group.Key, group.Count(), group.Count(rep => rep.IsSuccess)))
+                .ToArray();
+            var parryLines = reps
+                .Where(rep => rep.ParryLine.HasValue)
+                .GroupBy(rep => rep.ParryLine.Value)
+                .OrderBy(group => group.Key)
+                .Select(group => new ParryLineCount(group.Key, group.Count()))
+                .ToArray();
+            var fencerHits = reps
+                .Where(rep => rep.HitSource.HasValue)
+                .GroupBy(rep => rep.HitSource.Value)
+                .OrderBy(group => group.Key)
+                .Select(group => new FencerHitCount(group.Key, group.Count()))
                 .ToArray();
 
             return new DrillResults(
@@ -137,7 +179,10 @@ namespace VrFencing.Session
                 AverageOf(successes.Select(rep => (double?)rep.TipSpeedMetersPerSecond)),
                 reps.Any(rep => rep.IsShrunk),
                 zoneHits,
-                footworkHits);
+                footworkHits,
+                attackHits,
+                parryLines,
+                fencerHits);
         }
 
         /// <summary>
@@ -170,6 +215,24 @@ namespace VrFencing.Session
                 .OrderBy(group => group.Key)
                 .Select(group => new FootworkHitCount(group.Key, group.Sum(hits => hits.Attempts), group.Sum(hits => hits.Successes)))
                 .ToArray();
+            var attackHits = parts
+                .SelectMany(part => part.AttackHits)
+                .GroupBy(hits => hits.Target)
+                .OrderBy(group => group.Key)
+                .Select(group => new AttackHitCount(group.Key, group.Sum(hits => hits.Attempts), group.Sum(hits => hits.Successes)))
+                .ToArray();
+            var parryLines = parts
+                .SelectMany(part => part.ParryLines)
+                .GroupBy(count => count.Line)
+                .OrderBy(group => group.Key)
+                .Select(group => new ParryLineCount(group.Key, group.Sum(count => count.Count)))
+                .ToArray();
+            var fencerHits = parts
+                .SelectMany(part => part.FencerHits)
+                .GroupBy(count => count.Source)
+                .OrderBy(group => group.Key)
+                .Select(group => new FencerHitCount(group.Key, group.Sum(count => count.Count)))
+                .ToArray();
 
             return new DrillResults(
                 first.DrillId,
@@ -179,7 +242,10 @@ namespace VrFencing.Session
                 WeightedAverageOf(parts, part => part.AverageTipSpeedMetersPerSecond),
                 first.IsShrunk,
                 zoneHits,
-                footworkHits);
+                footworkHits,
+                attackHits,
+                parryLines,
+                fencerHits);
         }
 
         private static double? AverageOf(IEnumerable<double?> values)

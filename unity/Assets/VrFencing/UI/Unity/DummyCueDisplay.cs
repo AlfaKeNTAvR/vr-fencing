@@ -97,7 +97,8 @@ namespace VrFencing.UI
 
         private void OnRepJudged(RepResult result)
         {
-            var touchedZone = result.RequestedSecondZone ?? result.RequestedZone;
+            // A Riposte after the Armed Dummy's attack cue may land anywhere: flash where it did.
+            var touchedZone = result.RequestedSecondZone ?? result.RequestedZone ?? result.ContactZone;
             if (result.IsSuccess && touchedZone.HasValue)
             {
                 _dummy.FlashZone(touchedZone.Value);

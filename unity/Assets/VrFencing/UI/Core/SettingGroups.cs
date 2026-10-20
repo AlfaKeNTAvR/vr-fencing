@@ -13,6 +13,7 @@ namespace VrFencing.UI
         Touch,
         Blade,
         Haptics,
+        ArmedDummy,
     }
 
     /// <summary>
@@ -47,12 +48,18 @@ namespace VrFencing.UI
             [SettingGroup.Touch] = new[]
             {
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
-                SettingId.BodyOpacity, SettingId.ParryRule,
+                SettingId.BodyOpacity,
             },
             [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
             [SettingGroup.Haptics] = new[]
             {
                 SettingId.TouchHaptic, SettingId.FlatHaptic, SettingId.GlanceHaptic, SettingId.HapticFloor, SettingId.HapticFullStrengthSpeed,
+            },
+
+            // The Armed Dummy's Parry Drills (PER-100): the Parry rule moved here from Touch, beside each Drill's Riposte switch.
+            [SettingGroup.ArmedDummy] = new[]
+            {
+                SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
             },
         };
 
@@ -68,6 +75,7 @@ namespace VrFencing.UI
                 case SettingGroup.Touch: return "Touch";
                 case SettingGroup.Blade: return "Blade";
                 case SettingGroup.Haptics: return "Haptics";
+                case SettingGroup.ArmedDummy: return "Armed Dummy";
                 default: throw new ArgumentOutOfRangeException(nameof(group), group, "Not a settings group.");
             }
         }

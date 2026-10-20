@@ -169,7 +169,7 @@ namespace VrFencing.Tests.UI
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), null, string.Empty);
 
             var shown = _created[0].GetComponentsInChildren<UiButton>().Select(button => button.Label).ToArray();
-            Assert.That(shown, Is.EquivalentTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Back" }),
+            Assert.That(shown, Is.EquivalentTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy", "Back" }),
                 "Only the groups and Back: no Setting steps and no Calibrate grip.");
 
             _created[0].GetComponentsInChildren<UiButton>().First(button => button.Label == "Strip").Press();
