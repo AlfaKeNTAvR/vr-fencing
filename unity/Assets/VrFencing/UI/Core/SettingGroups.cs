@@ -51,7 +51,11 @@ namespace VrFencing.UI
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
                 SettingId.BodyOpacity,
             },
-            [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex },
+            // The pistol grip's shape (PER-41) sits under the grip it belongs to; it only changes the hilt drawn.
+            [SettingGroup.Blade] = new[]
+            {
+                SettingId.BladeMount, SettingId.PistolGrip, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex,
+            },
             // The Armed Dummy's clash buzz (PER-99) fills the group to 7; the hit-on-Fencer buzz is fixed, with no Setting.
             [SettingGroup.Haptics] = new[]
             {

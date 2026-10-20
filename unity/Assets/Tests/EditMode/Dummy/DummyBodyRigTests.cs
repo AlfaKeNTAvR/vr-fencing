@@ -1,6 +1,8 @@
 // The Dummy's rigged Humanoid body (PER-78): Movement SDK's Armature.fbx imports as a valid Humanoid, its bones
-// are posed on the Dummy's en garde joints (the sword arm on the sword hand's side), it is drawn with the URP
-// Dummy material instead of the capsule silhouette, and the Target Zones stay where the Core judges them.
+// are posed on the Dummy's en garde joints (the sword arm on the sword hand's side), it is drawn in the fencing suit
+// (PER-41: the suit shader, a mask on the head) instead of the capsule silhouette, and the Target Zones stay where the
+// Core judges them.
+using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -13,7 +15,7 @@ namespace VrFencing.Tests.Dummy
     public class DummyBodyRigTests
     {
         private const string BodyModelPath = "Packages/com.meta.xr.sdk.movement/Shared/ThirdParty/Unity/Armature.fbx";
-        private const string MaterialResourcePath = "VrFencingDummy";
+        private const string SuitMaterialResourcePath = "VrFencingSuit";
         private const float Height = 1.65f;
 
         // Bones are placed exactly on their joints; this only absorbs float error through the transform hierarchy.
@@ -44,22 +46,73 @@ namespace VrFencing.Tests.Dummy
 
         [TestCase(Hand.Right)]
         [TestCase(Hand.Left)]
-        public void TheBodyReplacesTheSilhouetteCapsulesAndUsesTheUrpMaterial(Hand hand)
+        public void TheBodyReplacesTheSilhouetteCapsulesAndIsDrawnInTheSuit(Hand hand)
         {
             var dummy = CreateDummyWithBody();
 
             dummy.Configure(Height, hand);
 
-            var material = Resources.Load<Material>(MaterialResourcePath);
-            Assert.That(_dummyObject.GetComponentsInChildren<MeshRenderer>(), Has.Length.EqualTo(dummy.Layout.Zones.Count), "Only the Target Zones stay capsules.");
+            var suit = Resources.Load<Material>(SuitMaterialResourcePath);
+            Assert.That(suit, Is.Not.Null);
+            var meshRenderers = _dummyObject.GetComponentsInChildren<MeshRenderer>();
+            Assert.That(meshRenderers.Count(part => part.name.StartsWith("Zone ")), Is.EqualTo(dummy.Layout.Zones.Count));
+            Assert.That(meshRenderers.Where(part => !part.name.StartsWith("Zone ")), Has.All.Matches<MeshRenderer>(part => part.transform.IsChildOf(FindChild("Mask"))),
+                "Besides the Target Zones, only the mask is a plain mesh.");
             var bodyRenderers = _dummyObject.GetComponentsInChildren<SkinnedMeshRenderer>();
             Assert.That(bodyRenderers, Is.Not.Empty);
+            var bodyMaterial = bodyRenderers[0].sharedMaterial;
+            Assert.That(bodyMaterial.shader, Is.SameAs(suit.shader), "The rig's own copy of the suit material.");
+            Assert.That(bodyMaterial.renderQueue, Is.EqualTo((int)UnityEngine.Rendering.RenderQueue.Transparent), "Translucent in passthrough.");
             foreach (var bodyRenderer in bodyRenderers)
             {
-                Assert.That(bodyRenderer.sharedMaterials, Has.All.SameAs(material));
+                Assert.That(bodyRenderer.sharedMaterials, Has.All.SameAs(bodyMaterial));
             }
 
             Assert.That(_dummyObject.GetComponentsInChildren<Collider>(), Is.Empty);
+        }
+
+        [TestCase(Hand.Right)]
+        [TestCase(Hand.Left)]
+        public void TheMaskSitsOnTheHeadAndFollowsIt(Hand hand)
+        {
+            var dummy = CreateDummyWithBody();
+            dummy.Configure(Height, hand);
+
+            var mask = FindChild("Mask");
+            var head = FindBone(HumanBodyBones.Head);
+            Assert.That(mask, Is.Not.Null);
+            Assert.That(mask.IsChildOf(head), Is.True, "The mask turns with the head (an opponent's tracked head too).");
+            var headCenter = JointInWorld(dummy, SkeletonJoint.HeadCenter);
+            Assert.That(Vector3.Distance(mask.position, headCenter), Is.LessThan(0.03f * Height), "Centred on the head sphere.");
+            Assert.That(Vector3.Dot(mask.forward, dummy.transform.forward), Is.GreaterThan(0.95f), "The face looks where the Dummy looks.");
+            var maskBounds = mask.GetComponentsInChildren<Renderer>().Select(part => part.bounds).Aggregate((a, b) => { a.Encapsulate(b); return a; });
+            var headRadius = EnGardePose.HeadRadius * Height;
+            Assert.That(maskBounds.size.y, Is.GreaterThan(2.0f * headRadius), "Big enough to hold the head.");
+            Assert.That(maskBounds.size.y, Is.LessThan(4.0f * headRadius), "Not a helmet the size of the torso.");
+        }
+
+        [Test]
+        public void TheSuitsShoesGloveAndHeadFollowTheBones()
+        {
+            var dummy = CreateDummyWithBody();
+            dummy.Configure(Height, Hand.Right);
+            var material = _dummyObject.GetComponentInChildren<SkinnedMeshRenderer>().sharedMaterial;
+
+            // Every frame in Play mode (LateUpdate); by hand here.
+            _dummyObject.GetComponentInChildren<DummySuitRegions>().Refresh();
+
+            var head = (Vector3)material.GetVector("_HeadSphere");
+            Assert.That(Vector3.Distance(head, FindChild("Mask").position), Is.LessThan(1e-4f));
+            Assert.That(material.GetVector("_HeadSphere").w, Is.GreaterThan(0.0f));
+            var gloveEnd = (Vector3)material.GetVector("_GloveEnd");
+            Assert.That(Vector3.Distance(gloveEnd, FindBone(HumanBodyBones.RightHand).position), Is.LessThan(0.15f), "The glove is on the sword (right) hand.");
+            var frontShoe = (Vector3)material.GetVector("_ShoeAStart");
+            Assert.That(Vector3.Distance(frontShoe, FindBone(HumanBodyBones.RightFoot).position), Is.LessThan(0.15f), "A shoe on the front foot.");
+
+            dummy.SetDistanceMeters(3.0f);
+            _dummyObject.GetComponentInChildren<DummySuitRegions>().Refresh();
+
+            Assert.That(Vector3.Distance(material.GetVector("_HeadSphere"), FindChild("Mask").position), Is.LessThan(1e-4f), "The regions move with the Dummy.");
         }
 
         [TestCase(Hand.Right)]

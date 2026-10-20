@@ -44,7 +44,7 @@ namespace VrFencing.Tests.Strip
             var lines = renderers.Where(slab => slab.name.Contains("Line")).ToArray();
             var zones = renderers.Where(slab => slab.name.StartsWith("Warning Zone")).ToArray();
 
-            Assert.That(lines, Has.Length.EqualTo(7));
+            Assert.That(lines, Has.Length.EqualTo(9), "Sides, ends, center, two En Garde Lines and two warning lines.");
             Assert.That(zones, Has.Length.EqualTo(2));
             foreach (var line in lines)
             {
@@ -67,6 +67,26 @@ namespace VrFencing.Tests.Strip
                 .Min(line => line.transform.localPosition.y - (line.transform.localScale.y * 0.5f));
 
             Assert.That(lowestLineBottom, Is.GreaterThan(highestZoneTop));
+        }
+
+        [Test]
+        public void ThePisteSurfaceLiesUnderTheZonesAndEachWarningLineMarksWhereItsZoneStarts()
+        {
+            var renderers = BuildMarkings();
+            var geometry = StripGeometry.Create(4.0f, 1.65f, new WarningZoneSettings());
+
+            var surface = renderers.Single(slab => slab.name == "Piste Surface");
+            var zones = renderers.Where(slab => slab.name.StartsWith("Warning Zone")).ToArray();
+            Assert.That(surface.sharedMaterial.renderQueue, Is.GreaterThanOrEqualTo(3000), "Translucent: the floor shows through.");
+            Assert.That(surface.transform.localPosition.y + (surface.transform.localScale.y * 0.5f),
+                Is.LessThanOrEqualTo(zones.Min(zone => zone.transform.localPosition.y - (zone.transform.localScale.y * 0.5f))));
+            Assert.That(surface.sortingOrder, Is.LessThan(zones.Min(zone => zone.sortingOrder)), "Drawn before the zones from any viewpoint.");
+            Assert.That(surface.transform.localScale.z, Is.EqualTo(geometry.FarEndZ - geometry.RearEndZ).Within(1e-4f), "End line to end line.");
+
+            var (rearStart, rearEnd) = geometry.GetWarningZoneRange(StripEnd.Rear);
+            var (farStart, farEnd) = geometry.GetWarningZoneRange(StripEnd.Far);
+            Assert.That(renderers.Single(slab => slab.name == "Warning Line Rear").transform.localPosition.z, Is.EqualTo(Mathf.Max(rearStart, rearEnd)).Within(1e-4f));
+            Assert.That(renderers.Single(slab => slab.name == "Warning Line Far").transform.localPosition.z, Is.EqualTo(Mathf.Min(farStart, farEnd)).Within(1e-4f));
         }
 
         [Test]

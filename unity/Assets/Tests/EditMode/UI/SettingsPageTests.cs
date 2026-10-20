@@ -207,6 +207,19 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void ThePistolGripSwitchesBetweenViscontiAndBelgianAndOnlyRedrawsTheBlade()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.PistolGrip), Is.EqualTo("Visconti"));
+            var belgian = SettingsPage.Change(settings, SettingId.PistolGrip, 1);
+            Assert.That(SettingsPage.FormatValue(belgian, SettingId.PistolGrip), Is.EqualTo("Belgian"));
+            Assert.That(SettingsPage.Change(belgian, SettingId.PistolGrip, 1).Blade.PistolGrip, Is.EqualTo(PistolGripShape.Visconti), "Only two choices.");
+            Assert.That(belgian.Blade.Mount, Is.EqualTo(settings.Blade.Mount), "The shape never changes where the blade sits.");
+            Assert.That(SettingsPage.GetImpact(SettingId.PistolGrip), Is.EqualTo(SettingImpact.Blade));
+        }
+
+        [Test]
         public void TheBoutDoubleWindowStepsFrom50To150Milliseconds()
         {
             var settings = new TrainerSettings();

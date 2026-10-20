@@ -15,7 +15,7 @@ A valid hit: the point of the blade landing on a target with enough pressure (75
 _Avoid_: Hit, score, strike
 
 **Grip**:
-How the épée is held, chosen in Settings: Center, Pistol, French or French posted. It sets where the virtual blade sits on the controller (how far ahead the guard is, and the blade's pitch and yaw), computed from the hand's geometry and fine-tuned per grip by a thrust calibration.
+How the épée is held, chosen in Settings: Center, Pistol, French or French posted. A Pistol grip is drawn as a Visconti or a Belgian (only the hilt's shape). It sets where the virtual blade sits on the controller (how far ahead the guard is, and the blade's pitch and yaw), computed from the hand's geometry and fine-tuned per grip by a thrust calibration.
 _Avoid_: Mount, blade alignment
 
 **Set**:

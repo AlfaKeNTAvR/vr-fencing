@@ -72,6 +72,19 @@ namespace VrFencing.Settings
     }
 
     /// <summary>
+    /// Which pistol (orthopaedic) grip the épée has when the grip is <see cref="BladeMount.Pistol"/> (PER-41). Only how
+    /// the hilt is drawn: both sit on the controller the same way (<see cref="GripGeometry"/>).
+    /// </summary>
+    public enum PistolGripShape
+    {
+        /// <summary>The Visconti: slim, two slender prongs and a long tail onto the wrist.</summary>
+        Visconti,
+
+        /// <summary>The Belgian: fuller and squarer, a thumb stop, broad prongs and a short butt.</summary>
+        Belgian,
+    }
+
+    /// <summary>
     /// A haptic pattern for one Blade event. Each event plays its own variant of the pattern (a flat contact's Heavy is
     /// softer and longer than a Touch's), as in the feel-test prototype.
     /// </summary>
@@ -111,6 +124,9 @@ namespace VrFencing.Settings
 
         /// <summary>The grip: where the guard sits and the computed angles (<see cref="GripGeometry"/>).</summary>
         public BladeMount Mount { get; set; } = BladeMount.Center;
+
+        /// <summary>The pistol grip drawn when <see cref="Mount"/> is Pistol (PER-41). Visconti, the most common.</summary>
+        public PistolGripShape PistolGrip { get; set; } = PistolGripShape.Visconti;
 
         /// <summary>
         /// The Fencer's own pitch and yaw per grip, from the thrust calibration or stepped on the settings screen. An
@@ -167,6 +183,7 @@ namespace VrFencing.Settings
                 ParryRule = ParryRule,
                 Flex = Flex,
                 Mount = Mount,
+                PistolGrip = PistolGrip,
                 SavedAngles = SavedAngles.Clone(),
                 SetSagittaMeters = SetSagittaMeters,
                 TouchHaptic = TouchHaptic,
