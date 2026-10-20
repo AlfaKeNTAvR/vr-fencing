@@ -1,0 +1,14 @@
+{
+    "name": "VrFencing.Partner.Core",
+    "rootNamespace": "VrFencing.Partner",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

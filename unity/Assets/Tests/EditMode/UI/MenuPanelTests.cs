@@ -70,10 +70,10 @@ namespace VrFencing.Tests.UI
         public void AGreyedOutDrillShowsItsLengthAndCannotBeChosen()
         {
             var started = new List<string>();
-            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { });
+            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { });
             var entries = DrillPicker.BuildEntries(new[] { Drill("long", 1, 6.0f), Drill("short", 2, 2.0f) }, 4.0f, false);
 
-            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty);
+            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner", areSoloDrillsAllowed: true);
 
             var buttons = _created[0].GetComponentsInChildren<UiButton>();
             var longRow = buttons.First(button => button.Label == "Drill long");
@@ -85,6 +85,65 @@ namespace VrFencing.Tests.UI
 
             buttons.First(button => button.Label == "Start").Press();
             Assert.That(started, Is.EqualTo(new[] { "short" }));
+        }
+
+        [Test]
+        public void StartIsOffWhileConnectedToAPartner()
+        {
+            var started = new List<string>();
+            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { });
+            var entries = DrillPicker.BuildEntries(new[] { Drill("short", 1, 2.0f) }, 4.0f, false);
+
+            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner: on", areSoloDrillsAllowed: false);
+
+            var buttons = _created[0].GetComponentsInChildren<UiButton>();
+            var start = buttons.First(button => button.Label == "Start");
+            Assert.That(start.IsInteractable, Is.False);
+            start.Press();
+            Assert.That(started, Is.Empty);
+            Assert.That(buttons.Any(button => button.Label == "Partner: on"), Is.True);
+        }
+
+        [Test]
+        public void TheKeypadJoinsOnlyAFullCode()
+        {
+            var joined = new List<string>();
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, joined.Add, () => { }, () => { }, () => { }, () => { });
+            var session = new VrFencing.Partner.PartnerSession();
+            session.BeginEnteringCode();
+            screen.SetVisible(true);
+            screen.Refresh(session, "1.0");
+
+            var buttons = _created[0].GetComponentsInChildren<UiButton>(includeInactive: true);
+            var join = buttons.First(button => button.name == "Join Code");
+            foreach (var key in "FGR78")
+            {
+                buttons.First(button => button.name == $"Key {key}").Press();
+            }
+
+            join.Press();
+            Assert.That(joined, Is.Empty, "Five characters are not a code.");
+            Assert.That(join.IsInteractable, Is.False);
+
+            buttons.First(button => button.name == "Key N").Press();
+            join.Press();
+            Assert.That(joined, Is.EqualTo(new[] { "FGR78N" }));
+        }
+
+        [Test]
+        public void OnlyTheHostCanSwitchTheMode()
+        {
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { });
+            var guest = new VrFencing.Partner.PartnerSession();
+            guest.BeginJoin("FGR78N");
+            guest.OnJoined(VrFencing.Partner.PartnerMode.Bout);
+            screen.SetVisible(true);
+            screen.Refresh(guest, "1.0");
+
+            var buttons = _created[0].GetComponentsInChildren<UiButton>();
+            Assert.That(buttons.First(button => button.name == "Mode").IsInteractable, Is.False);
+            Assert.That(buttons.First(button => button.name == "Leave").IsInteractable, Is.True);
+            Assert.That(buttons.First(button => button.name == "Host").IsInteractable, Is.False);
         }
 
         [Test]

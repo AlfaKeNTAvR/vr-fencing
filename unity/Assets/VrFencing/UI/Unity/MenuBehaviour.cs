@@ -6,6 +6,7 @@ using UnityEngine;
 using VrFencing.Blade;
 using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Partner;
 using VrFencing.Session;
 using VrFencing.Settings;
 using VrFencing.Strip;
@@ -29,6 +30,10 @@ namespace VrFencing.UI
     /// Start first shows the Drill's task line above the Dummy and on the Running panel for a few seconds
     /// (<see cref="DrillIntro"/>, PER-92), then starts the run on the runner, so the Fencer knows what to do before the
     /// first cue. Cancel in that time cancels the start.
+    ///
+    /// The Partner page (PER-80) hosts or joins a session through the scene's <see cref="PartnerSessionBehaviour"/>.
+    /// While in a session, solo Drills cannot start and the Dummy is hidden, so it never stands where the opponent
+    /// stands (PER-58).
     ///
     /// This is the scene glue: it starts, pauses and cancels Drills on the one <see cref="DrillRunnerBehaviour"/>,
     /// flags Reps and reads results through <see cref="SessionRecorderBehaviour"/>, re-places the Strip, and saves
@@ -70,6 +75,9 @@ namespace VrFencing.UI
         [SerializeField]
         private BladeBehaviour _blade;
 
+        [SerializeField]
+        private PartnerSessionBehaviour _partner;
+
         private readonly MenuNavigator _navigator = new MenuNavigator();
         private readonly PanelFollower _mainFollower =
             new PanelFollower(MainPanelDistanceMeters, MainPanelBelowEyeMeters, sideMeters: 0.0f, MainPanelTurnDegrees);
@@ -93,6 +101,7 @@ namespace VrFencing.UI
         private DummyCueDisplay _cueDisplay;
         private GripScreen _gripScreen;
         private NewStripScreen _newStripScreen;
+        private PartnerScreen _partnerScreen;
         private CalibrationTargetView _calibrationTarget;
         private ThrustCalibration _calibration;
         private int _calibrationStartFrame;
@@ -142,6 +151,16 @@ namespace VrFencing.UI
             {
                 _cueDisplay = new DummyCueDisplay(Runner, _dummy);
             }
+
+            if (_partner != null)
+            {
+                _partner.Changed += OnPartnerChanged;
+                OnPartnerChanged();
+            }
+            else
+            {
+                Debug.LogError("[UI] No Partner object; the Partner page cannot host or join.");
+            }
         }
 
         private void OnDestroy()
@@ -160,6 +179,11 @@ namespace VrFencing.UI
             if (_sessionRecorder != null)
             {
                 _sessionRecorder.DrillRunRecorded -= OnDrillRunRecorded;
+            }
+
+            if (_partner != null)
+            {
+                _partner.Changed -= OnPartnerChanged;
             }
 
             _cueDisplay?.Dispose();
@@ -317,8 +341,10 @@ namespace VrFencing.UI
             _mainPanel = new GameObject("Menu Panel").transform;
             _mainPanel.SetParent(transform, false);
             UiSurface.Create(_mainPanel, "Background", MainPanelSize);
-            _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Settings), () => OpenPage(MenuScreen.History),
-                ReplaceStrip, CycleTolerance);
+            _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Partner), () => OpenPage(MenuScreen.Settings),
+                () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance);
+            _partnerScreen = new PartnerScreen(_mainPanel, () => _partner?.Host(), () => _partner?.BeginEnteringCode(), code => _partner?.Join(code),
+                () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
             _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings);
             _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenSettingsGroup(SettingGroup.Blade));
             _calibrationTarget = new CalibrationTargetView(transform);
@@ -360,6 +386,7 @@ namespace VrFencing.UI
             _history.SetVisible(screen == MenuScreen.History);
             _gripScreen.SetVisible(screen == MenuScreen.Grip);
             _newStripScreen.SetVisible(screen == MenuScreen.NewStripPrompt);
+            _partnerScreen.SetVisible(screen == MenuScreen.Partner);
             _shownScreen = screen;
             _isDirty = true;
         }
@@ -369,7 +396,15 @@ namespace VrFencing.UI
             switch (screen)
             {
                 case MenuScreen.Home:
-                    _home.Refresh(BuildPickerEntries(), FormatStrip(), _strip.OffStripToleranceMeters, _homeMessage);
+                    _home.Refresh(BuildPickerEntries(), FormatStrip(), _strip.OffStripToleranceMeters, FormatHomeMessage(),
+                        _partner != null ? PartnerPageText.FormatHomeButton(_partner.State) : "Partner", AreSoloDrillsAllowed);
+                    break;
+                case MenuScreen.Partner:
+                    if (_partner != null)
+                    {
+                        _partnerScreen.Refresh(_partner.State, _partner.AppVersion);
+                    }
+
                     break;
                 case MenuScreen.Settings:
                     _settingsScreen.Refresh(_settings, _navigator.SettingsGroup, _settingsMessage);
@@ -400,7 +435,7 @@ namespace VrFencing.UI
 
             var results = _lastRecord.Results;
             var trend = _sessionRecorder.LoadHistory().GetTrend(results.DrillId, results.IsShrunk);
-            var canRunAgain = BuildPickerEntries().Any(entry => entry.Drill.Id == results.DrillId && entry.IsAvailable);
+            var canRunAgain = AreSoloDrillsAllowed && BuildPickerEntries().Any(entry => entry.Drill.Id == results.DrillId && entry.IsAvailable);
             _results.Refresh(_lastDrillName, _lastRecord, ResultsText.FormatTrend(trend, GetLocalOffset()), canRunAgain);
         }
 
@@ -422,6 +457,30 @@ namespace VrFencing.UI
         private IReadOnlyList<DrillPickerEntry> BuildPickerEntries()
         {
             return DrillPicker.BuildEntries(BuildDrills(), _strip.IsPlaced ? _strip.Geometry.LengthMeters : (float?)null, _settings.ShrinkDrillsToFit);
+        }
+
+        // Solo Drills wait while in a Partner session (PER-58).
+        private bool AreSoloDrillsAllowed => _partner == null || _partner.State.AreSoloDrillsAllowed;
+
+        private string FormatHomeMessage()
+        {
+            return string.IsNullOrEmpty(_homeMessage) && !AreSoloDrillsAllowed ? PartnerPageText.SoloDrillsOffMessage : _homeMessage;
+        }
+
+        /// <summary>The Partner session changed: redraw, and hide the Dummy while in a session.</summary>
+        private void OnPartnerChanged()
+        {
+            if (_dummy != null)
+            {
+                var isDummyShown = !_partner.State.IsDummyHidden;
+                if (_dummy.gameObject.activeSelf != isDummyShown)
+                {
+                    _dummy.gameObject.SetActive(isDummyShown);
+                    Debug.Log(isDummyShown ? "[UI] Dummy shown again: the Partner session ended." : "[UI] Dummy hidden while in a Partner session.");
+                }
+            }
+
+            _isDirty = true;
         }
 
         private string FormatStrip()
@@ -543,7 +602,7 @@ namespace VrFencing.UI
         private void StartDrill(string drillId)
         {
             var drill = BuildDrills().FirstOrDefault(candidate => candidate.Id == drillId);
-            if (drill == null || !_strip.IsPlaced || IsDrillOn)
+            if (drill == null || !_strip.IsPlaced || IsDrillOn || !AreSoloDrillsAllowed)
             {
                 return;
             }

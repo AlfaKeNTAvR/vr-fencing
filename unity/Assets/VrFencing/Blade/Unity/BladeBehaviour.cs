@@ -144,10 +144,15 @@ namespace VrFencing.Blade
             var droop = BladeDroop.Create(forteInStrip.Direction, gripUp, down, _settings.Blade);
             var bladeInStrip = droop.GetChord(forteInStrip);
 
+            // The Dummy is hidden while in a Partner session (PER-80): nothing to touch or bend on then.
+            var isDummyShown = hasDummy && _dummy.gameObject.activeInHierarchy;
             if (hasDummy)
             {
                 RestartOnJump(stripInRoom);
+            }
 
+            if (isDummyShown)
+            {
                 // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones.
                 _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom);
                 DetectContacts(now, bladeInStrip);
@@ -155,7 +160,7 @@ namespace VrFencing.Blade
 
             var wasDecoupled = _drawnBlade.IsDecoupled;
             var wasOnSide = _drawnBlade.IsOnSide;
-            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(hasDummy), gripUp, Time.deltaTime, droop);
+            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(isDummyShown), gripUp, Time.deltaTime, droop);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");

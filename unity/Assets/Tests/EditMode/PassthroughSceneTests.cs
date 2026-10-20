@@ -150,6 +150,22 @@ namespace VrFencing.Tests
         }
 
         [Test]
+        public void MenuDrivesThePartnerSessionOnItsNetworkManager()
+        {
+            EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);
+
+            var partners = Object.FindObjectsByType<VrFencing.Partner.PartnerSessionBehaviour>(FindObjectsSortMode.None);
+            var menu = Object.FindFirstObjectByType<VrFencing.UI.MenuBehaviour>();
+
+            Assert.That(partners, Has.Length.EqualTo(1), "Exactly one Partner session in the passthrough scene.");
+            var network = partners[0].GetComponent<Unity.Netcode.NetworkManager>();
+            Assert.That(network, Is.Not.Null);
+            Assert.That(network.NetworkConfig.NetworkTransport, Is.SameAs(partners[0].GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>()),
+                "Sessions' Relay network needs the NetworkManager's transport to be its UnityTransport.");
+            Assert.That(new SerializedObject(menu).FindProperty("_partner").objectReferenceValue, Is.SameAs(partners[0]));
+        }
+
+        [Test]
         public void CameraRigAsksForTheBodyTrackingPermission()
         {
             EditorSceneManager.OpenScene(PassthroughScenePath, OpenSceneMode.Single);

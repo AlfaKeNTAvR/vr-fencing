@@ -8,8 +8,9 @@ namespace VrFencing.UI
 {
     /// <summary>
     /// The home screen: the Drill picker (easy to hard, each Drill's task line under its name, greyed out with the
-    /// required Strip length when a Drill does not fit) and the flow buttons: start the selected Drill, settings, history, re-place the Strip, and the
-    /// off-strip tolerance (the same as the off-hand lower face button).
+    /// required Strip length when a Drill does not fit) and the flow buttons: start the selected Drill, the Partner page,
+    /// settings, history, re-place the Strip, and the off-strip tolerance (the same as the off-hand lower face button).
+    /// While connected to a partner, Start is off: solo Drills wait until the Partner session is left (PER-58).
     /// </summary>
     internal sealed class HomeScreen
     {
@@ -29,13 +30,16 @@ namespace VrFencing.UI
         private readonly UiButton _nextPage;
         private readonly UiButton _start;
         private readonly UiButton _tolerance;
+        private readonly UiButton _partner;
 
         private IReadOnlyList<DrillPickerEntry> _entries = Array.Empty<DrillPickerEntry>();
         private int _pageIndex;
+        private bool _areSoloDrillsAllowed = true;
 
         public HomeScreen(
             Transform panel,
             Action<string> startDrill,
+            Action openPartner,
             Action openSettings,
             Action openHistory,
             Action replaceStrip,
@@ -69,18 +73,20 @@ namespace VrFencing.UI
             _nextPage.SetLabel(">");
 
             var buttonSize = new Vector2(0.21f, 0.06f);
-            _start = UiButton.Create(root, "Start", new Vector2(0.255f, 0.16f), buttonSize, UiKit.BodyFontSize, () =>
+            _start = UiButton.Create(root, "Start", new Vector2(0.255f, 0.17f), buttonSize, UiKit.BodyFontSize, () =>
             {
-                if (SelectedDrillId != null)
+                if (SelectedDrillId != null && _areSoloDrillsAllowed)
                 {
                     startDrill(SelectedDrillId);
                 }
             });
             _start.SetLabel("Start");
-            CreateButton(root, "Settings", new Vector2(0.255f, 0.07f), buttonSize, "Settings", openSettings);
-            CreateButton(root, "History", new Vector2(0.255f, 0.0f), buttonSize, "History", openHistory);
-            CreateButton(root, "Re-place Strip", new Vector2(0.255f, -0.09f), buttonSize, "Re-place Strip", replaceStrip);
-            _tolerance = UiButton.Create(root, "Tolerance", new Vector2(0.255f, -0.16f), buttonSize, UiKit.SmallFontSize, cycleTolerance);
+            _partner = UiButton.Create(root, "Partner", new Vector2(0.255f, 0.10f), buttonSize, UiKit.BodyFontSize, openPartner);
+            _partner.SetLabel("Partner");
+            CreateButton(root, "Settings", new Vector2(0.255f, 0.03f), buttonSize, "Settings", openSettings);
+            CreateButton(root, "History", new Vector2(0.255f, -0.04f), buttonSize, "History", openHistory);
+            CreateButton(root, "Re-place Strip", new Vector2(0.255f, -0.11f), buttonSize, "Re-place Strip", replaceStrip);
+            _tolerance = UiButton.Create(root, "Tolerance", new Vector2(0.255f, -0.18f), buttonSize, UiKit.SmallFontSize, cycleTolerance);
 
             _messageText = UiKit.CreateText(root, "Message", new Vector2(0.0f, -0.25f), new Vector2(0.72f, 0.045f), 1, UiKit.SmallFontSize,
                 TextAlignmentOptions.Center, UiKit.NoteTextColor);
@@ -94,9 +100,15 @@ namespace VrFencing.UI
             _root.SetActive(isVisible);
         }
 
-        public void Refresh(IReadOnlyList<DrillPickerEntry> entries, string stripText, float toleranceMeters, string message)
+        /// <param name="partnerLabel">The Partner button's label, naming the session's state.</param>
+        /// <param name="areSoloDrillsAllowed">False while in a Partner session: Start is off.</param>
+        public void Refresh(
+            IReadOnlyList<DrillPickerEntry> entries, string stripText, float toleranceMeters, string message, string partnerLabel,
+            bool areSoloDrillsAllowed)
         {
             _entries = entries;
+            _areSoloDrillsAllowed = areSoloDrillsAllowed;
+            _partner.SetLabel(partnerLabel);
             UiKit.SetText(_stripText, stripText);
             UiKit.SetText(_messageText, message);
             _tolerance.SetLabel($"Off-strip: {toleranceMeters:0.0} m");
@@ -107,7 +119,7 @@ namespace VrFencing.UI
         {
             var entries = _entries;
             SelectedDrillId = DrillPicker.ResolveSelection(entries, SelectedDrillId);
-            _start.SetInteractable(SelectedDrillId != null);
+            _start.SetInteractable(SelectedDrillId != null && _areSoloDrillsAllowed);
 
             var page = PageWindow.For(entries.Count, RowsPerPage, _pageIndex);
             _pageIndex = page.PageIndex;

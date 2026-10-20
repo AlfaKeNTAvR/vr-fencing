@@ -1,8 +1,10 @@
 // Builds the passthrough scene: Meta camera rig with passthrough as the
 // background, the Strip, the Dummy standing on it under the En Garde Line, and the
 // Practice object (Drill runner, session recorder, body, arm and footwork tracking, Fencer recorder), the Blade on the sword hand, and the Menu
-// (panels and off-hand pointer).
+// (panels and off-hand pointer), and the Partner object (network session for a second Fencer).
 using System.Linq;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -10,6 +12,7 @@ using UnityEngine.SceneManagement;
 using VrFencing.Blade;
 using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Partner;
 using VrFencing.Session;
 using VrFencing.Strip;
 using VrFencing.Tracking;
@@ -32,6 +35,7 @@ namespace VrFencing.EditorTools
         private const string PracticeName = "Practice";
         private const string MenuName = "Menu";
         private const string BladeName = "Blade";
+        private const string PartnerName = "Partner";
 
         // Only where the Dummy shows in the editor; at runtime it moves itself to its distance preset along the Strip.
         private static readonly Vector3 DummyPlaceholderPositionMeters = new(0f, 0f, 2.2f);
@@ -60,7 +64,8 @@ namespace VrFencing.EditorTools
             var strip = enGardeLine.GetComponentInParent<StripBehaviour>();
             var practice = FindOrCreatePractice(scene, strip, dummy);
             var blade = FindOrCreateBlade(scene, practice, strip, dummy);
-            FindOrCreateMenu(scene, practice, strip, dummy, blade);
+            var partner = FindOrCreatePartner(scene);
+            FindOrCreateMenu(scene, practice, strip, dummy, blade, partner);
 
             EnsureSceneFolder(scenePath);
             EditorSceneManager.SaveScene(scene, scenePath);
@@ -265,7 +270,8 @@ namespace VrFencing.EditorTools
         /// The Menu builds its panels and the off-hand pointer at runtime. It drives the Practice object's Drill runner
         /// and session recorder, re-places the Strip, and hands changed Settings to the Strip, the Dummy and the Blade.
         /// </summary>
-        private static void FindOrCreateMenu(Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy, BladeBehaviour blade)
+        private static void FindOrCreateMenu(
+            Scene scene, GameObject practice, StripBehaviour strip, DummyBehaviour dummy, BladeBehaviour blade, PartnerSessionBehaviour partner)
         {
             var menuObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == MenuName);
             if (menuObject == null)
@@ -280,6 +286,30 @@ namespace VrFencing.EditorTools
             SetReference(menu, "_strip", strip);
             SetReference(menu, "_dummy", dummy);
             SetReference(menu, "_blade", blade);
+            SetReference(menu, "_partner", partner);
+        }
+
+        /// <summary>
+        /// The Partner object (PER-80): Netcode for GameObjects' NetworkManager with its UnityTransport (the Relay
+        /// connection), and the session that hosts or joins a second Fencer by join code. The Menu's Partner page drives it.
+        /// </summary>
+        private static PartnerSessionBehaviour FindOrCreatePartner(Scene scene)
+        {
+            var partnerObject = scene.GetRootGameObjects().FirstOrDefault(root => root.name == PartnerName);
+            if (partnerObject == null)
+            {
+                partnerObject = new GameObject(PartnerName);
+                SceneManager.MoveGameObjectToScene(partnerObject, scene);
+            }
+
+            var transport = GetOrAddComponent<UnityTransport>(partnerObject);
+            var network = GetOrAddComponent<NetworkManager>(partnerObject);
+            network.NetworkConfig.NetworkTransport = transport;
+            // Nothing is spawned yet. Netcode's generated default list holds every NetworkObject prefab in the project
+            // (the Movement SDK's samples among them), which would all ship in the APK; later slices register their own.
+            network.NetworkConfig.Prefabs.NetworkPrefabsLists.Clear();
+            EditorUtility.SetDirty(network);
+            return GetOrAddComponent<PartnerSessionBehaviour>(partnerObject);
         }
 
         private static T GetOrAddComponent<T>(GameObject target) where T : Component

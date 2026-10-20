@@ -20,6 +20,12 @@ namespace VrFencing.UI
         /// found. Shown over every page until answered, even with the panels folded away.
         /// </summary>
         NewStripPrompt,
+
+        /// <summary>
+        /// The Partner page (PER-80), next to Drills: Host, Join (its keypad), the Bout / Paired Practice switch and
+        /// Leave.
+        /// </summary>
+        Partner,
     }
 
     /// <summary>
