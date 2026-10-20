@@ -46,7 +46,7 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// The showcase recovery: a little slower than the Armed Dummy's 0.6 s (<see cref="ArmedDummyTuning.RecoverSeconds"/>,
-        /// stretched to 0.7 s for a 2.1 m Dummy so it comes back at no more than 4.5 cm a frame).
+        /// stretched to 0.73 s for a 2.1 m Dummy so it comes back at no more than 4.5 cm a frame).
         /// </summary>
         public const float LungeBackSeconds = 0.8f;
 
