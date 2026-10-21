@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using VrFencing.Drills;
+using VrFencing.Settings;
 
 namespace VrFencing.UI
 {
@@ -11,6 +12,7 @@ namespace VrFencing.UI
     /// required Strip length when a Drill does not fit) and the flow buttons: start the selected Drill, the Partner page,
     /// settings, history, re-place the Strip, and the off-strip tolerance (the same as the off-hand lower face button).
     /// While connected to a partner, Start is off: solo Drills wait until the Partner session is left (PER-58).
+    /// The top row picks what the armed Dummy does outside any Drill (Free Practice, PER-123); each press cycles it.
     /// </summary>
     internal sealed class HomeScreen
     {
@@ -19,6 +21,12 @@ namespace VrFencing.UI
         private const float RowHeightMeters = 0.08f;
         private const float RowStepMeters = 0.09f;
         private const float FirstRowCenterY = 0.155f;
+
+        // The right column's buttons: seven fit between the Strip line and the message (PER-123 added the Free Practice row).
+        private const float ButtonColumnX = 0.255f;
+        private const float FirstButtonCenterY = 0.175f;
+        private const float ButtonStepMeters = 0.06f;
+        private const float ButtonHeightMeters = 0.052f;
 
         private readonly GameObject _root;
         private readonly TextMeshPro _stripText;
@@ -31,6 +39,7 @@ namespace VrFencing.UI
         private readonly UiButton _start;
         private readonly UiButton _tolerance;
         private readonly UiButton _partner;
+        private readonly UiButton _freePractice;
 
         private IReadOnlyList<DrillPickerEntry> _entries = Array.Empty<DrillPickerEntry>();
         private int _pageIndex;
@@ -43,7 +52,8 @@ namespace VrFencing.UI
             Action openSettings,
             Action openHistory,
             Action replaceStrip,
-            Action cycleTolerance)
+            Action cycleTolerance,
+            Action cycleFreePractice)
         {
             _root = new GameObject("Home");
             _root.transform.SetParent(panel, false);
@@ -72,8 +82,10 @@ namespace VrFencing.UI
                 () => ChangePage(1));
             _nextPage.SetLabel(">");
 
-            var buttonSize = new Vector2(0.21f, 0.06f);
-            _start = UiButton.Create(root, "Start", new Vector2(0.255f, 0.17f), buttonSize, UiKit.BodyFontSize, () =>
+            // Seven buttons in the right column, from the Free Practice row down to the off-strip tolerance.
+            var buttonSize = new Vector2(0.21f, ButtonHeightMeters);
+            _freePractice = UiButton.Create(root, "Free Practice", GetButtonCenter(0), buttonSize, UiKit.SmallFontSize, cycleFreePractice);
+            _start = UiButton.Create(root, "Start", GetButtonCenter(1), buttonSize, UiKit.BodyFontSize, () =>
             {
                 if (SelectedDrillId != null && _areSoloDrillsAllowed)
                 {
@@ -81,12 +93,12 @@ namespace VrFencing.UI
                 }
             });
             _start.SetLabel("Start");
-            _partner = UiButton.Create(root, "Partner", new Vector2(0.255f, 0.10f), buttonSize, UiKit.BodyFontSize, openPartner);
+            _partner = UiButton.Create(root, "Partner", GetButtonCenter(2), buttonSize, UiKit.BodyFontSize, openPartner);
             _partner.SetLabel("Partner");
-            CreateButton(root, "Settings", new Vector2(0.255f, 0.03f), buttonSize, "Settings", openSettings);
-            CreateButton(root, "History", new Vector2(0.255f, -0.04f), buttonSize, "History", openHistory);
-            CreateButton(root, "Re-place Strip", new Vector2(0.255f, -0.11f), buttonSize, "Re-place Strip", replaceStrip);
-            _tolerance = UiButton.Create(root, "Tolerance", new Vector2(0.255f, -0.18f), buttonSize, UiKit.SmallFontSize, cycleTolerance);
+            CreateButton(root, "Settings", GetButtonCenter(3), buttonSize, "Settings", openSettings);
+            CreateButton(root, "History", GetButtonCenter(4), buttonSize, "History", openHistory);
+            CreateButton(root, "Re-place Strip", GetButtonCenter(5), buttonSize, "Re-place Strip", replaceStrip);
+            _tolerance = UiButton.Create(root, "Tolerance", GetButtonCenter(6), buttonSize, UiKit.SmallFontSize, cycleTolerance);
 
             _messageText = UiKit.CreateText(root, "Message", new Vector2(0.0f, -0.25f), new Vector2(0.72f, 0.045f), 1, UiKit.SmallFontSize,
                 TextAlignmentOptions.Center, UiKit.NoteTextColor);
@@ -102,13 +114,15 @@ namespace VrFencing.UI
 
         /// <param name="partnerLabel">The Partner button's label, naming the session's state.</param>
         /// <param name="areSoloDrillsAllowed">False while in a Partner session: Start is off.</param>
+        /// <param name="freePractice">What the Dummy does outside any Drill (PER-123), named on its row.</param>
         public void Refresh(
             IReadOnlyList<DrillPickerEntry> entries, string stripText, float toleranceMeters, string message, string partnerLabel,
-            bool areSoloDrillsAllowed)
+            bool areSoloDrillsAllowed, FreePracticeBehavior freePractice)
         {
             _entries = entries;
             _areSoloDrillsAllowed = areSoloDrillsAllowed;
             _partner.SetLabel(partnerLabel);
+            _freePractice.SetLabel(FreePracticeText.FormatButton(freePractice));
             UiKit.SetText(_stripText, stripText);
             UiKit.SetText(_messageText, message);
             _tolerance.SetLabel($"Off-strip: {toleranceMeters:0.0} m");
@@ -163,6 +177,11 @@ namespace VrFencing.UI
         {
             _pageIndex += step;
             RedrawList();
+        }
+
+        private static Vector2 GetButtonCenter(int index)
+        {
+            return new Vector2(ButtonColumnX, FirstButtonCenterY - (index * ButtonStepMeters));
         }
 
         private static void CreateButton(Transform root, string name, Vector2 center, Vector2 size, string label, Action onClick)

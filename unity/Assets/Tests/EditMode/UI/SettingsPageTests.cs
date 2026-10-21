@@ -44,8 +44,11 @@ namespace VrFencing.Tests.UI
                 }
             }
 
-            // The reach is measured by Calibrate grip (PER-92), not stepped on the settings screen.
-            var onScreen = before.Keys.Where(path => !path.EndsWith(".ReachMeters")).ToArray();
+            // The reach is measured by Calibrate grip (PER-92), not stepped on the settings screen. The Free Practice
+            // behavior is picked on the home screen (PER-123).
+            var onScreen = before.Keys
+                .Where(path => !path.EndsWith(".ReachMeters") && path != nameof(TrainerSettings.FreePractice))
+                .ToArray();
             Assert.That(covered, Is.EquivalentTo(onScreen), "A Setting is missing from the settings screen, or shown twice.");
         }
 

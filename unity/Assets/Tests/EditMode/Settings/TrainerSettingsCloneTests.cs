@@ -55,6 +55,7 @@ namespace VrFencing.Tests.Settings
             settings.ArmedDummy.RiposteInLowParries = false;
             settings.ArmedDummy.RiposteInLungeParries = false;
             settings.ArmedDummy.BladeInEveryDrill = false;
+            settings.FreePractice = FreePracticeBehavior.Attacks;
 
             Assert.That(SettingsLeaves.Read(settings.Clone()), Is.EqualTo(SettingsLeaves.Read(settings)));
         }

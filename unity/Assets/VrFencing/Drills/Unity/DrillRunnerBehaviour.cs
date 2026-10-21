@@ -1,5 +1,6 @@
 using UnityEngine;
 using VrFencing.Dummy;
+using VrFencing.Settings;
 using VrFencing.Strip;
 
 namespace VrFencing.Drills
@@ -14,6 +15,8 @@ namespace VrFencing.Drills
     /// moving Dummy every frame of the run (<see cref="DistanceKeeperDriver"/>), at each Rep's difficulty. In the
     /// footwork feel test (<see cref="DrillDefinition.ShowsFootwork"/>) it runs the Dummy through its footwork moves
     /// (<see cref="FootworkShowcaseDriver"/>).
+    /// Outside any Drill it runs Free Practice (PER-123, <see cref="FreePractice"/>): the same drivers, continuously, for
+    /// the behavior picked on the home screen, while the Dummy is shown and a Strip is placed.
     /// All rules live in the Core; this only supplies time and applies the Drill's data.
     /// </summary>
     public sealed class DrillRunnerBehaviour : MonoBehaviour
@@ -33,8 +36,20 @@ namespace VrFencing.Drills
 
         public DrillRunner Runner { get; private set; }
 
+        /// <summary>
+        /// What the Dummy does in Free Practice this frame (PER-123), or null while Free Practice is off (a Drill is on,
+        /// the Dummy is hidden or not configured, or no Strip is ready). The Blade's Armed Dummy reads it to hold its blade
+        /// and, for <see cref="FreePracticeBehavior.Attacks"/>, to attack.
+        /// </summary>
+        public FreePracticeBehavior? FreePracticeNow => _isFreePracticeOn ? _freePracticeBehavior : (FreePracticeBehavior?)null;
+
         private DistanceKeeperDriver _distanceKeeper;
         private FootworkShowcaseDriver _showcase;
+        private FreePracticeBehavior _freePracticeBehavior = new TrainerSettings().FreePractice;
+        private bool _isDrillStarting;
+        private bool _isFreePracticeOn;
+        private FreePracticeBehavior _drivenBehavior;
+        private DummyFootwork _drivenFootwork;
 
         private void Awake()
         {
@@ -75,11 +90,90 @@ namespace VrFencing.Drills
         private void Update()
         {
             Runner.Tick();
-            if (Runner.IsRunning && !Runner.IsPaused)
+            UpdateFreePractice();
+            if ((Runner.IsRunning && !Runner.IsPaused) || _isFreePracticeOn)
             {
                 _distanceKeeper.Step(Time.timeAsDouble, Time.deltaTime);
                 _showcase.Step(Time.deltaTime);
             }
+        }
+
+        /// <summary>The Free Practice behavior picked on the home screen (PER-123); a running Free Practice switches to it.</summary>
+        public void SetFreePracticeBehavior(FreePracticeBehavior behavior)
+        {
+            _freePracticeBehavior = behavior;
+            UpdateFreePractice();
+        }
+
+        /// <summary>
+        /// A Drill's task line is up before its run starts (or no longer is): the Drill has the Dummy, so Free Practice
+        /// stops at once, before the Drill stands the Dummy where it needs it.
+        /// </summary>
+        public void SetDrillStarting(bool isStarting)
+        {
+            _isDrillStarting = isStarting;
+            UpdateFreePractice();
+        }
+
+        /// <summary>
+        /// Starts, stops or switches Free Practice (PER-123) as the Drills, the Dummy, the Strip and the picked behavior
+        /// allow; a Dummy rebuilt for new Settings (a new footwork) starts its behavior over.
+        /// </summary>
+        private void UpdateFreePractice()
+        {
+            var isDummyReady = _dummy != null && _dummy.gameObject.activeInHierarchy && _dummy.Footwork != null;
+            var isStripReady = _strip != null && _strip.IsPlaced && !_strip.IsPlacing;
+            var isOn = FreePractice.IsOn(Runner.IsRunning || _isDrillStarting, isDummyReady, isStripReady);
+            var isSame = isOn == _isFreePracticeOn
+                && (!isOn || (_drivenBehavior == _freePracticeBehavior && _drivenFootwork == _dummy.Footwork));
+            if (isSame)
+            {
+                return;
+            }
+
+            StopFreePractice();
+            if (isOn)
+            {
+                StartFreePractice();
+            }
+        }
+
+        // Stands the Dummy where the behavior's Drill does and starts its motion; Guard and Attacks need none here (the
+        // Blade's Armed Dummy holds the blade and attacks).
+        private void StartFreePractice()
+        {
+            _isFreePracticeOn = true;
+            _drivenBehavior = _freePracticeBehavior;
+            _drivenFootwork = _dummy.Footwork;
+            _dummy.SetDistance(FreePractice.GetDummyDistance(_drivenBehavior));
+            Debug.Log($"[Dummy] Free Practice: {_drivenBehavior}, Dummy at {_dummy.DistanceMeters:0.00} m.");
+            switch (_drivenBehavior)
+            {
+                case FreePracticeBehavior.KeepDistance:
+                    _distanceKeeper.Begin(FreePractice.KeepDistanceDifficulty);
+                    break;
+                case FreePracticeBehavior.Footwork:
+                    _showcase.Begin();
+                    break;
+            }
+        }
+
+        // Leaves the Dummy where it is: a Drill stands it at its own distance, the next behavior at its own.
+        private void StopFreePractice()
+        {
+            if (!_isFreePracticeOn)
+            {
+                return;
+            }
+
+            _isFreePracticeOn = false;
+            if (!Runner.IsRunning)
+            {
+                _distanceKeeper.End();
+                _showcase.End();
+            }
+
+            Debug.Log($"[Dummy] Free Practice off ({_drivenBehavior}).");
         }
 
         private void OnDisable()

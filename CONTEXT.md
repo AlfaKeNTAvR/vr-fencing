@@ -48,6 +48,10 @@ _Avoid_: Trial, round
 One practice sitting, from app launch to close. It can hold several Drill runs; the results history and its last-10-sessions trend count Sessions.
 _Avoid_: Workout, practice (as a noun for this)
 
+**Free Practice**:
+What the Armed Dummy does outside any Drill, on the home screen: it holds its blade and, as picked on the menu's Dummy row, stands in guard, keeps its distance, runs through its footwork, or attacks now and then (its Parries judged and its hits flashed, but nothing scored). No Reps; starting a Drill takes the Dummy over, and the end of the run brings Free Practice back.
+_Avoid_: Free play, sandbox, idle
+
 **Fencer Recording**:
 A capture of the Fencer's tracked body, head and sword-hand controller, frame by frame in the Strip frame, made on the headset and replayed in the PC Editor as a moving opponent.
 _Avoid_: Replay file, motion capture, take

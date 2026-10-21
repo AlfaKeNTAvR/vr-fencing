@@ -148,6 +148,7 @@ namespace VrFencing.UI
             }
 
             BuildPanels();
+            _drillRunner.SetFreePracticeBehavior(_settings.FreePractice);
             _strip.Placed += OnStripPlaced;
             _strip.SettingsChanged += OnStripSettingsChanged;
             Runner.Finished += OnDrillFinished;
@@ -356,7 +357,7 @@ namespace VrFencing.UI
             _mainPanel.SetParent(transform, false);
             UiSurface.Create(_mainPanel, "Background", MainPanelSize);
             _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Partner), () => OpenPage(MenuScreen.Settings),
-                () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance);
+                () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance, CycleFreePractice);
             _partnerScreen = new PartnerScreen(_mainPanel, () => _partner?.Host(), () => _partner?.BeginEnteringCode(), code => _partner?.Join(code),
                 () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), ResetPairedPracticeTally, () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
             _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings, ResetBladeFeel);
@@ -411,7 +412,7 @@ namespace VrFencing.UI
             {
                 case MenuScreen.Home:
                     _home.Refresh(BuildPickerEntries(), FormatStrip(), _strip.OffStripToleranceMeters, FormatHomeMessage(),
-                        _partner != null ? PartnerPageText.FormatHomeButton(_partner.State) : "Partner", AreSoloDrillsAllowed);
+                        _partner != null ? PartnerPageText.FormatHomeButton(_partner.State) : "Partner", AreSoloDrillsAllowed, _settings.FreePractice);
                     break;
                 case MenuScreen.Partner:
                     if (_partner != null)
@@ -656,6 +657,8 @@ namespace VrFencing.UI
             }
 
             _intro = new DrillIntro(drill, Time.timeAsDouble);
+            // Free Practice lets go of the Dummy first (PER-123), so the Drill's distance is the last word.
+            _drillRunner.SetDrillStarting(true);
             if (_dummy != null)
             {
                 _dummy.SetDistance(drill.GetDummyDistance(availability.IsShrunk));
@@ -691,8 +694,13 @@ namespace VrFencing.UI
                     _dummy.ResetDistance();
                 }
 
+                // No run: Free Practice takes the Dummy back.
+                _drillRunner.SetDrillStarting(false);
                 return;
             }
+
+            // The run holds the Dummy from here.
+            _drillRunner.SetDrillStarting(false);
 
             _lastDrillName = drill.Name;
             Debug.Log($"[UI] Started Drill '{drill.Id}'{(availability.IsShrunk ? " (shortened)" : string.Empty)}.");
@@ -728,6 +736,7 @@ namespace VrFencing.UI
                 _dummy.ResetDistance();
             }
 
+            _drillRunner.SetDrillStarting(false);
             _isDirty = true;
         }
 
@@ -820,6 +829,19 @@ namespace VrFencing.UI
         {
             // The Strip saves it and raises SettingsChanged, which refreshes this menu.
             _strip.CycleOffStripTolerance();
+        }
+
+        /// <summary>
+        /// The home screen's Free Practice row (PER-123): the next behavior, saved with the Settings and handed to the
+        /// Drill runner's scene host, which switches the Dummy over at once.
+        /// </summary>
+        private void CycleFreePractice()
+        {
+            var changed = _settings.Clone();
+            changed.FreePractice = FreePractice.GetNext(_settings.FreePractice);
+            ApplyChangedSettings(changed, SettingImpact.None);
+            _drillRunner.SetFreePracticeBehavior(changed.FreePractice);
+            Debug.Log($"[UI] Free Practice: the Dummy now does '{FreePracticeText.Describe(changed.FreePractice)}'.");
         }
 
         private void ChangeSetting(SettingId id, int direction)

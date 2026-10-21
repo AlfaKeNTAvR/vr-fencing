@@ -40,9 +40,9 @@ namespace VrFencing.EditorTools
             var settings = new TrainerSettings();
             var drills = DrillCatalog.CreateDefault(includeTestDrills: true).BuildAll(settings).Concat(SampleDrills()).ToArray();
 
-            var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+            var home = new HomeScreen(mainPanel, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             home.Refresh(DrillPicker.BuildEntries(drills, 3.4f, settings.ShrinkDrillsToFit), "Strip: 3.4 m", 0.2f, "Drill cancelled before any Rep was judged",
-                "Partner", areSoloDrillsAllowed: true);
+                "Partner", areSoloDrillsAllowed: true, FreePracticeBehavior.KeepDistance);
 
             // The Partner page (PER-80): the waiting Host's code, then the Partner's keypad.
             var partner = new PartnerScreen(mainPanel, () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { });
