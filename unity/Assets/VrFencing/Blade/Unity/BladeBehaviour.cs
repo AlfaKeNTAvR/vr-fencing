@@ -28,6 +28,10 @@ namespace VrFencing.Blade
         // Rubbing the flat along a zone would buzz every few frames; one buzz per this long is enough.
         private const float FlatHapticCooldownSeconds = 0.15f;
 
+        // A hand-edited settings file cannot switch the leash off or make it throw (PER-121): the screen's lowest values.
+        private const float MinLeashMeters = 0.03f;
+        private const float MinLeashSeconds = 0.1f;
+
         [SerializeField]
         [Tooltip("The Practice object's Drill runner; Touches and flat contacts are reported to it.")]
         private DrillRunnerBehaviour _drillRunner;
@@ -92,6 +96,9 @@ namespace VrFencing.Blade
             _settings = settings.Clone();
             _rules = TouchRules.For(_settings.Blade.TouchRule, _settings.Blade.TouchPressure);
             _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
+            var feel = _settings.Blade.Feel;
+            _drawnBlade.SetFeel(
+                Mathf.Max(MinLeashMeters, feel.LeashMeters), Mathf.Max(MinLeashSeconds, feel.LeashSeconds), Mathf.Max(0.0f, feel.GhostMeters));
             _armedDummy?.ApplySettings(_settings);
             _mountInController = BladePose.GetMountInController(_settings.Blade, _settings.Hand);
             AttachToSwordHand();
@@ -196,6 +203,12 @@ namespace VrFencing.Blade
                 Debug.Log($"[Blade] Point released: {release}");
             }
 
+            if (_drawnBlade.HasPopped)
+            {
+                Debug.Log("[Blade] Leash: the drawn blade popped back to the hand");
+                _haptics.PlayLeashClick(_settings.Hand);
+            }
+
             if (_drawnBlade.IsOnSide != wasOnSide)
             {
                 Debug.Log(_drawnBlade.IsOnSide
@@ -224,9 +237,11 @@ namespace VrFencing.Blade
             _obstacles.Clear();
             if (hasDummy)
             {
+                // The jacket's friction is the Fencer's "Jacket friction" Setting (PER-121).
+                var jacketFriction = Mathf.Max(0.0f, _settings.Blade.Feel.JacketFriction);
                 foreach (var capsule in _dummy.GetBodyOnStrip())
                 {
-                    _obstacles.Add(capsule);
+                    _obstacles.Add(BladeObstacle.FromCapsule(capsule, jacketFriction));
                 }
             }
 
@@ -246,17 +261,32 @@ namespace VrFencing.Blade
             return _obstacles;
         }
 
-        /// <summary>While the point is pinned, a buzz that grows with the push; full while the drawn blade lags the hand.</summary>
+        /// <summary>
+        /// While the point is pinned, a buzz that grows with the push; while the drawn blade lags the hand, the lag buzz
+        /// instead (PER-121), a steady hum that grows with the lag up to the leash.
+        /// </summary>
         private void PlayPressHaptic(float now)
         {
-            var isPressing = _drawnBlade.Contact.IsPinned || _drawnBlade.IsDecoupled;
-            if (!isPressing || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
+            if (_drawnBlade.IsDecoupled)
+            {
+                if (now - _lastPressHapticAt < BladeHaptics.LagPulseIntervalSeconds)
+                {
+                    return;
+                }
+
+                _lastPressHapticAt = now;
+                var feel = _settings.Blade.Feel;
+                _haptics.PlayLag(BladeHaptics.GetLagStrength(_drawnBlade.LagMeters, feel.LeashMeters, feel.LagBuzzStrength), _settings.Hand);
+                return;
+            }
+
+            if (!_drawnBlade.Contact.IsPinned || now - _lastPressHapticAt < BladeHaptics.PressPulseIntervalSeconds)
             {
                 return;
             }
 
             _lastPressHapticAt = now;
-            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, _drawnBlade.IsDecoupled), _settings.Hand);
+            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, false), _settings.Hand);
         }
 
         /// <summary>A Strip re-placed or the Dummy stood at another distance moves every zone at once: a jump, not motion.</summary>

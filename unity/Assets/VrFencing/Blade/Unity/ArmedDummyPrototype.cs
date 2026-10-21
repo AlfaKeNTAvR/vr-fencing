@@ -174,7 +174,7 @@ namespace VrFencing.Blade
         {
             if (_isActive)
             {
-                _blade.AddObstacles(obstacles);
+                _blade.AddObstacles(obstacles, Mathf.Max(0.0f, _settings.Blade.Feel.BladeFriction));
             }
         }
 

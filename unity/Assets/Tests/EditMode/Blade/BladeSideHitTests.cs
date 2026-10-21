@@ -87,7 +87,10 @@ namespace VrFencing.Tests.Blade
             var offsets = Enumerable.Range(-15, 46).Select(step => step * 0.01f).ToList();
             offsets.AddRange(Enumerable.Range(1, 45).Select(step => 0.30f - (step * 0.01f)));
 
+            // The hold outside the forearm is tested, not the leash (PER-121), which pops the drawn blade to the hand
+            // once the hand's blade is clear past the arm: a leash too long to act.
             var drawn = new DrawnBlade();
+            drawn.SetFeel(10.0f, 100.0f, DrawnBlade.GhostLagMeters);
             var wasDecoupled = false;
             foreach (var offset in offsets)
             {

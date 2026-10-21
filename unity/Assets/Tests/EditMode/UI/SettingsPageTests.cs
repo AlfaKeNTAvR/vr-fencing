@@ -405,6 +405,67 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
+        public void TheBladeFeelShowsInReadableUnitsAndGoesToTheBlade()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.LeashDistance), Is.EqualTo("8 cm"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.LeashTime), Is.EqualTo("0.25 s"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.BladeFriction), Is.EqualTo("0.35"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.JacketFriction), Is.EqualTo("0.70"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.GhostFrom), Is.EqualTo("3.0 cm"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.LagBuzzStrength), Is.EqualTo("100%"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.DummyBladeYield), Is.EqualTo("100%"));
+            Assert.That(SettingsPage.Change(settings, SettingId.LeashDistance, 1).Blade.Feel.LeashMeters, Is.EqualTo(0.09f).Within(1e-5f));
+            Assert.That(SettingsPage.Change(settings, SettingId.GhostFrom, -1).Blade.Feel.GhostMeters, Is.EqualTo(0.025f).Within(1e-5f));
+            foreach (var id in SettingGroups.GetSettings(SettingGroup.BladeFeel))
+            {
+                Assert.That(SettingsPage.GetImpact(id), Is.EqualTo(SettingImpact.Blade), id.ToString());
+            }
+        }
+
+        [Test]
+        public void TheBladeFeelStaysWhereTheBladeAcceptsIt()
+        {
+            foreach (var direction in new[] { -1, 1 })
+            {
+                var settings = new TrainerSettings();
+                for (var i = 0; i < 50; i++)
+                {
+                    foreach (var id in SettingGroups.GetSettings(SettingGroup.BladeFeel))
+                    {
+                        settings = SettingsPage.Change(settings, id, direction);
+                    }
+                }
+
+                var feel = settings.Blade.Feel;
+                Assert.That(feel.LeashMeters, Is.InRange(0.03f, 0.20f));
+                Assert.That(feel.LeashSeconds, Is.InRange(0.1f, 1.0f));
+                Assert.That(feel.BladeFriction, Is.InRange(0.0f, 1.0f));
+                Assert.That(feel.JacketFriction, Is.InRange(0.0f, 1.5f));
+                Assert.That(feel.GhostMeters, Is.InRange(0.0f, 0.10f));
+                Assert.That(feel.LagBuzzStrength, Is.InRange(0.0f, 2.0f));
+                Assert.That(feel.DummyBladeYieldScale, Is.InRange(0.0f, 1.25f), "Past 125% the Dummy's point would give way by more than the press.");
+            }
+        }
+
+        [Test]
+        public void ResettingTheBladeFeelPutsOnlyItBackOnTheDefaults()
+        {
+            var settings = new TrainerSettings();
+            foreach (var id in SettingGroups.GetSettings(SettingGroup.BladeFeel).Append(SettingId.FencerHeight))
+            {
+                settings = SettingsPage.Change(settings, id, 1);
+            }
+
+            var reset = SettingsPage.ResetBladeFeel(settings);
+
+            Assert.That(SettingsLeaves.Read(reset.Blade.Feel), Is.EqualTo(SettingsLeaves.Read(new BladeFeelSettings())));
+            Assert.That(reset.FencerHeightMeters, Is.EqualTo(settings.FencerHeightMeters), "Nothing else changes.");
+            Assert.That(settings.Blade.Feel.LeashMeters, Is.EqualTo(0.09f).Within(1e-5f), "The settings passed in are untouched.");
+        }
+
+        [Test]
         public void HeightAndHandRebuildTheDummyAndTheStrip()
         {
             Assert.That(SettingsPage.GetImpact(SettingId.FencerHeight), Is.EqualTo(SettingImpact.Dummy | SettingImpact.Strip | SettingImpact.Drills));

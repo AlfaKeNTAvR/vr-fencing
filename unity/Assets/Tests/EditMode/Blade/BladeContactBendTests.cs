@@ -24,6 +24,10 @@ namespace VrFencing.Tests.Blade
         // The point rests on the surface: the surface minus the drawn point's radius.
         private const float PinnedZ = 1.0f - BladeContactBend.PointRadiusMeters;
 
+        // A leash too long to act (PER-121): the tests of the hold through a body run without the pop to the hand.
+        private const float LongLeashMeters = 10.0f;
+        private const float LongLeashSeconds = 100.0f;
+
         [Test]
         public void ThePointStopsWhereItFirstMeetsTheBody()
         {
@@ -79,8 +83,10 @@ namespace VrFencing.Tests.Blade
         [Test]
         public void ADeepPushNeverPutsTheDrawnBladeThroughTheBody()
         {
-            // The hand pushes on until its guard is past the far side of the body, then comes back.
+            // The hand pushes on until its guard is past the far side of the body, then comes back. The hold is tested,
+            // not the leash, which pops the drawn blade to the hand once the hand's blade is clear past the body.
             var drawn = new DrawnBlade();
+            drawn.SetFeel(LongLeashMeters, LongLeashSeconds, DrawnBlade.GhostLagMeters);
             drawn.Step(BladeAt(0.0f, 0.0f), Wall, Vector3.UnitY, FrameSeconds);
             var guardPath = Enumerable.Range(1, 160).Select(step => step * 0.01f).ToList();
             guardPath.AddRange(Enumerable.Range(0, 160).Select(step => 1.6f - (step * 0.01f)));
@@ -171,6 +177,7 @@ namespace VrFencing.Tests.Blade
             var armCapsule = new Capsule(new Vector3(0.0f, 0.5f, 0.45f), new Vector3(0.0f, 1.5f, 0.45f), 0.03f);
             var arm = new BladeObstacle[] { armCapsule };
             var drawn = new DrawnBlade();
+            drawn.SetFeel(LongLeashMeters, LongLeashSeconds, DrawnBlade.GhostLagMeters);
             drawn.Step(BladeAt(-0.2f, 0.0f), arm, Vector3.UnitY, FrameSeconds);
 
             drawn.Step(BladeAt(0.2f, 0.0f), arm, Vector3.UnitY, FrameSeconds);

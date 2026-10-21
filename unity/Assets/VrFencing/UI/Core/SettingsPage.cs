@@ -51,6 +51,13 @@ namespace VrFencing.UI
         RiposteInLungeParries,
         DummyBladeInEveryDrill,
         StartMarkSideTolerance,
+        LeashDistance,
+        LeashTime,
+        BladeFriction,
+        JacketFriction,
+        GhostFrom,
+        LagBuzzStrength,
+        DummyBladeYield,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -142,6 +149,28 @@ namespace VrFencing.UI
             // Strip's side, past which the off-strip pause takes over.
             [SettingId.StartMarkSideTolerance] = new NumberSetting(0.15f, 0.75f, 0.05f, "0", "cm",
                 settings => settings.StartMarkSideToleranceMeters, (settings, value) => settings.StartMarkSideToleranceMeters = value, displayScale: 100.0f),
+
+            // Blade feel (PER-121), for tuning on the headset. The leash from 3 cm (it pops on any real lag) to 20 cm (about
+            // as it was: held), in 1 cm steps; its time from 0.1 s to 1 s in 0.05 s steps.
+            [SettingId.LeashDistance] = new NumberSetting(0.03f, 0.20f, 0.01f, "0", "cm",
+                settings => settings.Blade.Feel.LeashMeters, (settings, value) => settings.Blade.Feel.LeashMeters = value, displayScale: 100.0f),
+            [SettingId.LeashTime] = new NumberSetting(0.10f, 1.00f, 0.05f, "0.00", "s",
+                settings => settings.Blade.Feel.LeashSeconds, (settings, value) => settings.Blade.Feel.LeashSeconds = value),
+            // Friction coefficients: 0 slides at any lean, 1 holds a push 45 degrees off the surface's normal; the jacket up
+            // to 1.5 (56 degrees), as it grips.
+            [SettingId.BladeFriction] = new NumberSetting(0.0f, 1.0f, 0.05f, "0.00", string.Empty,
+                settings => settings.Blade.Feel.BladeFriction, (settings, value) => settings.Blade.Feel.BladeFriction = value),
+            [SettingId.JacketFriction] = new NumberSetting(0.0f, 1.5f, 0.05f, "0.00", string.Empty,
+                settings => settings.Blade.Feel.JacketFriction, (settings, value) => settings.Blade.Feel.JacketFriction = value),
+            // The ghost hilt from 0 (any lag, as before PER-121) to 10 cm, in half centimeters.
+            [SettingId.GhostFrom] = new NumberSetting(0.0f, 0.10f, 0.005f, "0.0", "cm",
+                settings => settings.Blade.Feel.GhostMeters, (settings, value) => settings.Blade.Feel.GhostMeters = value, displayScale: 100.0f),
+            // The lag buzz from 0% (off) to 200%: above 100% it is stronger at small lags, never past full.
+            [SettingId.LagBuzzStrength] = new NumberSetting(0.0f, 2.0f, 0.1f, "0%", string.Empty,
+                settings => settings.Blade.Feel.LagBuzzStrength, (settings, value) => settings.Blade.Feel.LagBuzzStrength = value),
+            // The Dummy's yield shares scaled from 0% (rigid) to 125%: past that its point would give way by more than the press.
+            [SettingId.DummyBladeYield] = new NumberSetting(0.0f, 1.25f, 0.05f, "0%", string.Empty,
+                settings => settings.Blade.Feel.DummyBladeYieldScale, (settings, value) => settings.Blade.Feel.DummyBladeYieldScale = value),
         };
 
         public static IReadOnlyList<SettingId> All { get; } = (SettingId[])Enum.GetValues(typeof(SettingId));
@@ -190,6 +219,13 @@ namespace VrFencing.UI
                 case SettingId.RiposteInLungeParries: return "Riposte: Dummy lunges";
                 case SettingId.DummyBladeInEveryDrill: return "Dummy blade in every Drill";
                 case SettingId.StartMarkSideTolerance: return "Start Mark: side tolerance";
+                case SettingId.LeashDistance: return "Leash: pop back past";
+                case SettingId.LeashTime: return "Leash: pop back after";
+                case SettingId.BladeFriction: return "Point friction on blade";
+                case SettingId.JacketFriction: return "Point friction on jacket";
+                case SettingId.GhostFrom: return "Ghost hilt from";
+                case SettingId.LagBuzzStrength: return "Lag buzz (0 = off)";
+                case SettingId.DummyBladeYield: return "Dummy blade gives way";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -278,6 +314,13 @@ namespace VrFencing.UI
                 case SettingId.HapticFullStrengthSpeed:
                 case SettingId.ClashHaptic:
                 case SettingId.ClashHapticFloor:
+                case SettingId.LeashDistance:
+                case SettingId.LeashTime:
+                case SettingId.BladeFriction:
+                case SettingId.JacketFriction:
+                case SettingId.GhostFrom:
+                case SettingId.LagBuzzStrength:
+                case SettingId.DummyBladeYield:
                     return SettingImpact.Blade;
                 case SettingId.DummyBladeInEveryDrill:
                     // The Blade's Armed Dummy decides each frame whether to hold a blade.
@@ -415,6 +458,19 @@ namespace VrFencing.UI
             var saved = changed.Blade.SavedAngles.For(changed.Blade.Mount);
             saved.PitchDegrees = null;
             saved.YawDegrees = null;
+            return changed;
+        }
+
+        /// <summary>The settings with the whole "Blade feel" page (PER-121) back on its defaults; nothing else changes.</summary>
+        public static TrainerSettings ResetBladeFeel(TrainerSettings settings)
+        {
+            if (settings == null)
+            {
+                throw new ArgumentNullException(nameof(settings));
+            }
+
+            var changed = settings.Clone();
+            changed.Blade.Feel = new BladeFeelSettings();
             return changed;
         }
 

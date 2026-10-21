@@ -151,6 +151,12 @@ namespace VrFencing.Settings
         /// </summary>
         public float ClashHapticFloor { get; set; } = 0.35f;
 
+        /// <summary>
+        /// How the drawn blade feels against bodies and the Armed Dummy's blade (PER-121), for tuning on the headset.
+        /// Missing from a file written before PER-121: the defaults.
+        /// </summary>
+        public BladeFeelSettings Feel { get; set; } = new BladeFeelSettings();
+
         /// <summary>The reach Calibrate grip measured with the chosen grip, or null when it has not been measured yet.</summary>
         public float? GetMeasuredReachMeters()
         {
@@ -176,6 +182,55 @@ namespace VrFencing.Settings
                 HapticFullStrengthSpeedMetersPerSecond = HapticFullStrengthSpeedMetersPerSecond,
                 ClashHaptic = ClashHaptic,
                 ClashHapticFloor = ClashHapticFloor,
+                Feel = Feel.Clone(),
+            };
+        }
+    }
+
+    /// <summary>
+    /// The drawn blade's feel (PER-121), on the settings screen's "Blade feel" page. The defaults are the Blade Core's
+    /// constants (an Edit-mode test keeps them equal); the Blade Core takes these values from here, passed in.
+    /// </summary>
+    public sealed class BladeFeelSettings
+    {
+        /// <summary>The drawn hilt pops back to the hand once it trails it by more than this (or the turn worth as much). <c>DrawnBlade.LeashMeters</c>.</summary>
+        public float LeashMeters { get; set; } = 0.08f;
+
+        /// <summary>The drawn hilt pops back to the hand once it has trailed it this long. <c>DrawnBlade.LeashSeconds</c>.</summary>
+        public float LeashSeconds { get; set; } = 0.25f;
+
+        /// <summary>Friction of the point on the Armed Dummy's blade and bell guard. <c>BladeObstacle.BladeFriction</c>.</summary>
+        public float BladeFriction { get; set; } = 0.35f;
+
+        /// <summary>Friction of the point on the Dummy's jacket (its body). <c>BladeObstacle.JacketFriction</c>.</summary>
+        public float JacketFriction { get; set; } = 0.7f;
+
+        /// <summary>The ghost hilt (where the hand really is) shows once the drawn hilt trails it by more than this. <c>DrawnBlade.GhostMeters</c>.</summary>
+        public float GhostMeters { get; set; } = 0.03f;
+
+        /// <summary>
+        /// The lag buzz's strength: 0 off, 1 as designed, up to 2 (stronger at small lags, never past full).
+        /// <c>BladeHaptics.GetLagStrength</c>.
+        /// </summary>
+        public float LagBuzzStrength { get; set; } = 1.0f;
+
+        /// <summary>
+        /// How far the Armed Dummy's blade gives way when pressed, as a scale on its yield shares
+        /// (<c>BladeBind.PressYieldAtDummyGuard</c> and <c>PressYieldAtDummyPoint</c>): 1 as they are, 0 rigid.
+        /// </summary>
+        public float DummyBladeYieldScale { get; set; } = 1.0f;
+
+        public BladeFeelSettings Clone()
+        {
+            return new BladeFeelSettings
+            {
+                LeashMeters = LeashMeters,
+                LeashSeconds = LeashSeconds,
+                BladeFriction = BladeFriction,
+                JacketFriction = JacketFriction,
+                GhostMeters = GhostMeters,
+                LagBuzzStrength = LagBuzzStrength,
+                DummyBladeYieldScale = DummyBladeYieldScale,
             };
         }
     }

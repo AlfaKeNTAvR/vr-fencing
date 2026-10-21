@@ -78,7 +78,6 @@ namespace VrFencing.Blade
             Bell,
         }
 
-        private bool IsBell => _shape == ObstacleShape.Bell;
 
         /// <summary>
         /// The floor: everything below y = 0. In the Strip frame (and the room frame) y = 0 is the tracking floor,
@@ -94,6 +93,15 @@ namespace VrFencing.Blade
         /// blade's pieces, not only its points, and the drawn blade keeps to its side of it.
         /// </summary>
         public bool IsBlade => _shape == ObstacleShape.BladePiece;
+
+        /// <summary>True for another blade's bell guard (<see cref="FromBell"/>).</summary>
+        public bool IsBell => _shape == ObstacleShape.Bell;
+
+        /// <summary>
+        /// True for another blade's piece or bell (steel, not a body): pressed past the bend limit, the drawn blade slides
+        /// off it instead of wedging (PER-121).
+        /// </summary>
+        public bool IsSteel => IsBlade || IsBell;
 
         /// <summary>
         /// The point's friction coefficient on this surface: the pressed point holds while the part of the blade's push
@@ -217,6 +225,77 @@ namespace VrFencing.Blade
             }
 
             return separation;
+        }
+
+        /// <summary>
+        /// Which way is out of this obstacle on the side <paramref name="point"/> is on: for another blade, the side the
+        /// drawn blade keeps to (<see cref="FromBladePiece"/>) when it has one; otherwise out of the surface nearest the
+        /// point. The way a drawn blade pressed on it slides off to its near side (PER-121).
+        /// </summary>
+        public Vector3 FindNearSide(Vector3 point)
+        {
+            return IsBlade && _side != Vector3.Zero ? _side : FindOutwardNormal(point);
+        }
+
+        /// <summary>The unit direction a blade piece runs in, or a bell's axis (the blade's direction through it); zero for any other obstacle.</summary>
+        public Vector3 FindSteelAxis()
+        {
+            if (IsBell)
+            {
+                return _planeNormal;
+            }
+
+            var axis = _capsule.End - _capsule.Start;
+            return IsBlade && axis.LengthSquared() > 1e-12f ? Vector3.Normalize(axis) : Vector3.Zero;
+        }
+
+        /// <summary>
+        /// True when the straight blade from <paramref name="start"/> to <paramref name="end"/> lies across this steel on
+        /// its far side from the drawn blade, at any distance: a drawn blade put there would have gone through it
+        /// (PER-121). For a blade piece, across it on the far side of the side the drawn blade keeps to
+        /// (<see cref="FromBladePiece"/>); past the piece's end (round the blade's point) it is not across. For a bell,
+        /// through the bell's depth with the bell between it and <paramref name="drawnNear"/>; wholly in front of or
+        /// behind the bell (round it) it is not. False for any other obstacle, or a piece with no side.
+        /// </summary>
+        /// <param name="drawnNear">The drawn blade's point nearest this obstacle.</param>
+        public bool IsAcrossOnFarSide(Vector3 start, Vector3 end, Vector3 drawnNear)
+        {
+            if (IsBell)
+            {
+                return IsAcrossBell(start, end, drawnNear);
+            }
+
+            if (!IsBlade || _side == Vector3.Zero)
+            {
+                return false;
+            }
+
+            var isAcross = BladeCrossing.FindClosest(start, end, 0, _capsule.Start, _capsule.End, _joints, out var onGiven, out var onThis, out _, out _);
+            return isAcross && Vector3.Dot(onGiven - onThis, _side) < 0.0f;
+        }
+
+        /// <summary>
+        /// The bell's part of <see cref="IsAcrossOnFarSide"/>: the straight blade passes within the bell's depth, and the
+        /// line from <paramref name="drawnNear"/> to its point there nearest the bell's axis runs into the bell.
+        /// </summary>
+        private bool IsAcrossBell(Vector3 start, Vector3 end, Vector3 drawnNear)
+        {
+            var step = end - start;
+            var low = 0.0f;
+            var high = 1.0f;
+            var halfDepth = BellGuard.DepthMeters * 0.5f;
+            if (!BladeCrossing.ClipToSlab(Vector3.Dot(start - _planePoint, _planeNormal), Vector3.Dot(step, _planeNormal), -halfDepth, halfDepth, ref low, ref high))
+            {
+                return false;
+            }
+
+            var radialStart = (start - _planePoint) - (Vector3.Dot(start - _planePoint, _planeNormal) * _planeNormal);
+            var radialStep = step - (Vector3.Dot(step, _planeNormal) * _planeNormal);
+            var fraction = radialStep.LengthSquared() > 1e-10f
+                ? -Vector3.Dot(radialStart, radialStep) / radialStep.LengthSquared()
+                : (low + high) * 0.5f;
+            var nearAxis = start + (step * Math.Clamp(fraction, low, high));
+            return FindDistance(nearAxis) < 0.0f || TryFindEntry(drawnNear, nearAxis, 0.0f, out _);
         }
 
         public static implicit operator BladeObstacle(Capsule capsule)

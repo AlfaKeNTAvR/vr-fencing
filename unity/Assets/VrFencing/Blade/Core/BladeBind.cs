@@ -169,9 +169,18 @@ namespace VrFencing.Blade
         /// Dummy's blade yields to (<see cref="GetPressYieldShare"/> of the deepest press, for where it presses on each
         /// blade, square to it, away from the Fencer's side); zero when nothing presses.
         /// </summary>
-        public Vector3 FindYieldTipOffset(BladeSegment hand, IReadOnlyList<Vector3> dummyLine)
+        /// <param name="yieldScale">
+        /// Scales the shares (the "Dummy blade gives way" Setting, PER-121): 1 as they are, 0 a rigid blade.
+        /// </param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="yieldScale"/> is negative.</exception>
+        public Vector3 FindYieldTipOffset(BladeSegment hand, IReadOnlyList<Vector3> dummyLine, float yieldScale = 1.0f)
         {
             CheckShape(dummyLine);
+            if (!(yieldScale >= 0.0f))
+            {
+                throw new ArgumentOutOfRangeException(nameof(yieldScale), yieldScale, "The Dummy's blade cannot give way by a negative share.");
+            }
+
             PressMeters = 0.0f;
             if (!_side.HasValue)
             {
@@ -197,7 +206,7 @@ namespace VrFencing.Blade
             var chord = dummyLine[PieceCount] - dummyLine[0];
             var dummyFraction = FindFraction(pressedAt, dummyLine[0], dummyLine[PieceCount]);
             var fencerFraction = FindFraction(SegmentMath.FindClosestPointOnSegment(pressedAt, hand.GuardPosition, hand.TipPosition), hand.GuardPosition, hand.TipPosition);
-            return -MakeSquare(_side.Value, chord) * (GetPressYieldShare(dummyFraction, fencerFraction) * PressMeters);
+            return -MakeSquare(_side.Value, chord) * (GetPressYieldShare(dummyFraction, fencerFraction) * yieldScale * PressMeters);
         }
 
         /// <summary>
@@ -259,9 +268,9 @@ namespace VrFencing.Blade
 
         /// <summary>
         /// Adds the Dummy's blade (<paramref name="dummyShape"/>, as drawn this frame) to <paramref name="obstacles"/> as
-        /// <see cref="PieceCount"/> blade pieces kept to <see cref="Side"/>.
+        /// <see cref="PieceCount"/> blade pieces kept to <see cref="Side"/>, with the point's <paramref name="friction"/> on them.
         /// </summary>
-        public void AddObstacles(IReadOnlyList<Vector3> dummyShape, ICollection<BladeObstacle> obstacles)
+        public void AddObstacles(IReadOnlyList<Vector3> dummyShape, ICollection<BladeObstacle> obstacles, float friction = BladeObstacle.BladeFriction)
         {
             CheckShape(dummyShape);
             if (obstacles == null)
@@ -272,7 +281,7 @@ namespace VrFencing.Blade
             var side = _side ?? Vector3.Zero;
             for (var piece = 0; piece < PieceCount; piece++)
             {
-                obstacles.Add(BladeObstacle.FromBladePiece(dummyShape[piece], dummyShape[piece + 1], side, piece > 0, piece < PieceCount - 1));
+                obstacles.Add(BladeObstacle.FromBladePiece(dummyShape[piece], dummyShape[piece + 1], side, piece > 0, piece < PieceCount - 1, friction));
             }
         }
 

@@ -46,6 +46,9 @@ namespace VrFencing.Blade
     /// never through a body. When the hand asks for more, front or side, the drawn hilt stops following
     /// (<see cref="IsDecoupled"/>): it takes the allowed pose closest to the hand on the way to the blade lined up on the
     /// point at the deepest push, or holds where it was; it follows again once the hand is back within reach.</item>
+    /// <item>On steel (the Armed Dummy's blade or bell, <see cref="BladeObstacle.IsSteel"/>) pressed past those limits,
+    /// the point does not wedge (PER-121): it slips with no friction the way the push leans (or the hand's point is off
+    /// the pin), off to the side or round the end, and lets go there.</item>
     /// <item>The point lets go only when the straight point is outside every body and has a clear path to the pin
     /// (the hand came back out or went around), or when the body moved away. It pins again only on a new entry from
     /// outside, found along the point's whole path since the last pose so a fast thrust cannot tunnel.</item>
@@ -115,6 +118,10 @@ namespace VrFencing.Blade
         // (a blade cannot pull), and a slide stops this far short of where the blade could not be drawn.
         private const float SlideMarginMeters = 0.002f;
 
+        // A push on the steel leaning less than this (squared, of a unit push: about 1 degree) off its normal gives no
+        // way to slip: the hand's point decides it.
+        private const float SlipLeanSquared = 3e-4f;
+
         private static readonly float SlantSine = (float)Math.Sin(SlantDegrees * Math.PI / 180.0);
 
         // Past the band round the hand's line, the bow plane turns toward the point gradually: it weighs the last plane
@@ -149,6 +156,8 @@ namespace VrFencing.Blade
         private float _bowMeters;
         private IReadOnlyList<BladeObstacle> _bodies;
         private Vector3[] _drawnBefore;
+        private float _slideFriction;
+        private bool _isSlipping;
 
         public BladeContactBend()
         {
@@ -178,6 +187,16 @@ namespace VrFencing.Blade
 
         /// <summary>Which way the drawn blade bends, perpendicular to it at the guard.</summary>
         public Vector3 BowDirection => _bowDirection;
+
+        /// <summary>
+        /// Lets the point go at once, the hand's point now at <paramref name="tip"/>: the drawn blade popped back to the
+        /// hand (<see cref="DrawnBlade.LeashMeters"/>, PER-121). A new pin needs a new entry from there.
+        /// </summary>
+        public void LetGo(Vector3 tip)
+        {
+            Unpin();
+            _previousTip = tip;
+        }
 
         /// <summary>Forgets the pin and the point's last position, e.g. after the blade or the Strip jumped.</summary>
         public void Reset()
@@ -327,6 +346,11 @@ namespace VrFencing.Blade
             var start = _pinnedPoint;
             var normal = body.FindOutwardNormal(start);
             _warmShape = _shape;
+
+            // Pressed past the bend limit on the Dummy's blade or bell (steel, PER-121), the point does not wedge: it
+            // slips the way the push leans, off to the side it is on or round the end.
+            _isSlipping = IsDecoupled && body.IsSteel;
+            _slideFriction = _isSlipping ? 0.0f : body.FrictionCoefficient;
             if (!IsInReach(straightBlade, start))
             {
                 DragTowardStraightPoint(straightBlade, body, start, normal);
@@ -346,7 +370,7 @@ namespace VrFencing.Blade
                 return;
             }
 
-            if (IsInsideFrictionCone(push, normal, body.FrictionCoefficient))
+            if (IsInsideFrictionCone(push, normal, _slideFriction))
             {
                 // Held: the drawn shape is solved again from this one, already on the pin.
                 _shape = _candidateShape;
@@ -354,6 +378,13 @@ namespace VrFencing.Blade
             }
 
             var along = push - (Vector3.Dot(push, normal) * normal);
+            if (_isSlipping && along.LengthSquared() < SlipLeanSquared)
+            {
+                // Pushed square onto the steel: it slips the way the hand's point is off the pin along the surface.
+                var towardTip = straightBlade.TipPosition - start;
+                along = towardTip - (Vector3.Dot(towardTip, normal) * normal);
+            }
+
             if (along.LengthSquared() < 1e-12f)
             {
                 return;
@@ -488,8 +519,9 @@ namespace VrFencing.Blade
 
             // A push that now leans back against the slide has passed through the cone on the way: held there.
             var normal = body.FindOutwardNormal(point);
-            var isLeaningBack = Vector3.Dot(push, direction) - (Vector3.Dot(push, normal) * Vector3.Dot(normal, direction)) <= 0.0f;
-            return isLeaningBack || IsInsideFrictionCone(push, normal, body.FrictionCoefficient) ? SlideState.Held : SlideState.Sliding;
+            // Slipping off steel past the bend limit, it goes on until it is held on the normal or out of reach.
+            var isLeaningBack = !_isSlipping && Vector3.Dot(push, direction) - (Vector3.Dot(push, normal) * Vector3.Dot(normal, direction)) <= 0.0f;
+            return isLeaningBack || IsInsideFrictionCone(push, normal, _slideFriction) ? SlideState.Held : SlideState.Sliding;
         }
 
         /// <summary>True when the push leans off the surface's inward normal by no more than the friction allows.</summary>

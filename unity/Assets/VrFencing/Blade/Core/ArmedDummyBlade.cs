@@ -86,7 +86,7 @@ namespace VrFencing.Blade
 
             var lineDroop = BladeDroop.Create(forte.Direction, gripUp, down, blade);
             FillRestShape(lineDroop.GetChord(forte), lineDroop, _line);
-            _deflection.HoldAt(_bind.FindYieldTipOffset(fencerHand, _line));
+            _deflection.HoldAt(_bind.FindYieldTipOffset(fencerHand, _line, blade.Feel.DummyBladeYieldScale));
             _deflection.Step(deltaSeconds);
 
             var droop = Deflect(forte, shoulder, gripUp, down, blade, out var chord);
@@ -166,15 +166,16 @@ namespace VrFencing.Blade
         /// its blade, and its bell guard on the drawn hilt (PER-120), so a press near its guard meets the bell. The hand
         /// behind the bell is the Dummy's body's.
         /// </summary>
-        public void AddObstacles(ICollection<BladeObstacle> obstacles)
+        /// <param name="friction">The Fencer's point on this steel (the "Blade-on-blade friction" Setting, PER-121).</param>
+        public void AddObstacles(ICollection<BladeObstacle> obstacles, float friction = BladeObstacle.BladeFriction)
         {
             if (!_hasShape)
             {
                 return;
             }
 
-            _bind.AddObstacles(_shape, obstacles);
-            obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection));
+            _bind.AddObstacles(_shape, obstacles, friction);
+            obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection, friction));
         }
 
         /// <summary>After the Fencer's drawn blade moved this frame: updates which side of this blade it is on.</summary>

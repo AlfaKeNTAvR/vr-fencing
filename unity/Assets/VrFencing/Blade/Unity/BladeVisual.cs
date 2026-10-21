@@ -105,9 +105,10 @@ namespace VrFencing.Blade
             var hiltDirection = _mount.InverseTransformDirection(
                 System.Numerics.Vector3.Transform(drawnBlade.HiltDirection, stripInRoom.Rotation).ToUnity());
             _hilt.localRotation = hiltDirection.sqrMagnitude > 1e-8f ? Quaternion.FromToRotation(Vector3.forward, hiltDirection) : Quaternion.identity;
-            if (_ghost.activeSelf != drawnBlade.IsDecoupled)
+            // The ghost hilt only past its own threshold (PER-121): small lags flickered it on.
+            if (_ghost.activeSelf != drawnBlade.IsGhostShown)
             {
-                _ghost.SetActive(drawnBlade.IsDecoupled);
+                _ghost.SetActive(drawnBlade.IsGhostShown);
             }
 
             for (var index = 0; index <= BladePieceCount; index++)
