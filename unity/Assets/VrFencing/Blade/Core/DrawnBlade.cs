@@ -29,9 +29,11 @@ namespace VrFencing.Blade
     /// blade stay solid. Visual only, like all of this: Touches, clashes and Parries are judged on the hand's blade, so a
     /// pop never scores.</item>
     /// </list>
-    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules and the floor, and the Armed Dummy's blade as
-    /// thin pieces the drawn blade keeps to its side of (<see cref="BladeBind"/>, PER-104). Positions in any one frame
-    /// (the Strip frame in the app), meters, time in seconds.
+    /// The bodies are <see cref="BladeObstacle"/>s: the Dummy's capsules, the floor and the other blade's bell guard.
+    /// The other blade itself is not one (PER-122): the contact solver (<see cref="BladeContactSolver"/>) gives this
+    /// blade its chord and rest shape against it, turned in the grip and bowed, the hilt in the hand, so the lag, the
+    /// ghost hilt and the leash above only ever come from bodies, the floor and the bell. Positions in any one frame (the
+    /// Strip frame in the app), meters, time in seconds.
     /// </summary>
     public sealed class DrawnBlade
     {

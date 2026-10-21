@@ -47,11 +47,11 @@ namespace VrFencing.Tests.UI
         }
 
         [Test]
-        public void TheGroupsAreTheSixNikitaChoseInHisOrderThenTheArmedDummyAndTheBladeFeel()
+        public void TheGroupsAreTheSixNikitaChoseInHisOrderThenTheArmedDummy()
         {
             Assert.That(
                 SettingGroups.All.Select(SettingGroups.GetLabel),
-                Is.EqualTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy", "Blade feel" }));
+                Is.EqualTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy" }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.You), Is.EqualTo(new[] { SettingId.Hand, SettingId.FencerHeight, SettingId.LaserTilt }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Drills), Is.EqualTo(new[]
             {
@@ -74,7 +74,7 @@ namespace VrFencing.Tests.UI
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Blade), Is.EqualTo(new[]
             {
-                SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex,
+                SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex, SettingId.ContactSound,
             }));
             Assert.That(SettingGroups.GetSettings(SettingGroup.Haptics), Is.EqualTo(new[]
             {
@@ -82,18 +82,12 @@ namespace VrFencing.Tests.UI
                 SettingId.ClashHaptic, SettingId.ClashHapticFloor,
             }));
 
-            // PER-100: the Parry rule and each Parry Drill's Riposte switch. PER-117: the blade in the other Drills.
+            // PER-100: the Parry rule and each Parry Drill's Riposte switch. PER-117: the blade in the other Drills. PER-122:
+            // its hand's strength.
             Assert.That(SettingGroups.GetSettings(SettingGroup.ArmedDummy), Is.EqualTo(new[]
             {
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
-                SettingId.RiposteInLungeParries, SettingId.DummyBladeInEveryDrill,
-            }));
-
-            // PER-121: the drawn blade's feel, for tuning on the headset.
-            Assert.That(SettingGroups.GetSettings(SettingGroup.BladeFeel), Is.EqualTo(new[]
-            {
-                SettingId.LeashDistance, SettingId.LeashTime, SettingId.BladeFriction, SettingId.JacketFriction, SettingId.GhostFrom,
-                SettingId.LagBuzzStrength, SettingId.DummyBladeYield,
+                SettingId.RiposteInLungeParries, SettingId.DummyBladeInEveryDrill, SettingId.OpponentHand,
             }));
         }
 
@@ -101,12 +95,6 @@ namespace VrFencing.Tests.UI
         public void OnlyTheBladeGroupOpensTheGripCalibration()
         {
             Assert.That(SettingGroups.All.Where(SettingGroups.HasGripCalibration), Is.EqualTo(new[] { SettingGroup.Blade }));
-        }
-
-        [Test]
-        public void OnlyTheBladeFeelGroupHasItsResetButton()
-        {
-            Assert.That(SettingGroups.All.Where(SettingGroups.HasBladeFeelReset), Is.EqualTo(new[] { SettingGroup.BladeFeel }));
         }
     }
 }

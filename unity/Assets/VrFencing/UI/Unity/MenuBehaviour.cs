@@ -360,7 +360,7 @@ namespace VrFencing.UI
                 () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance, CycleFreePractice);
             _partnerScreen = new PartnerScreen(_mainPanel, () => _partner?.Host(), () => _partner?.BeginEnteringCode(), code => _partner?.Join(code),
                 () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), ResetPairedPracticeTally, () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
-            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings, ResetBladeFeel);
+            _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings);
             _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenSettingsGroup(SettingGroup.Blade));
             _calibrationTarget = new CalibrationTargetView(transform);
             _results = new ResultsScreen(_mainPanel, RunAgain, () => OpenPage(MenuScreen.History), () => OpenPage(MenuScreen.Home));
@@ -630,12 +630,6 @@ namespace VrFencing.UI
         {
             ApplyChangedSettings(SettingsPage.ResetGripAngles(_settings), SettingImpact.Blade);
             _gripMessage = $"{SettingsPage.FormatMount(_settings.Blade.Mount)} is back on its computed angles";
-        }
-
-        /// <summary>The "Blade feel" page back on its defaults (PER-121).</summary>
-        private void ResetBladeFeel()
-        {
-            ApplyChangedSettings(SettingsPage.ResetBladeFeel(_settings), SettingImpact.Blade);
         }
 
         /// <summary>

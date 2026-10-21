@@ -17,7 +17,7 @@ namespace VrFencing.UI
         private const float FirstRowY = 0.165f;
         private const float RowStep = 0.055f;
 
-        // The group list: two columns of up to four large buttons (eight groups since PER-121), between the title (its
+        // The group list: two columns of up to four large buttons (seven groups since PER-100), between the title (its
         // bottom at 0.205) and the Back button (its top at -0.2225).
         private const int GroupColumns = 2;
         private const float GroupColumnX = 0.18f;
@@ -31,7 +31,6 @@ namespace VrFencing.UI
         private readonly TextMeshPro _titleText;
         private readonly TextMeshPro _messageText;
         private readonly UiButton _gripButton;
-        private readonly UiButton _resetFeelButton;
         private readonly Action<SettingId, int> _changeSetting;
 
         private TrainerSettings _settings = new TrainerSettings();
@@ -40,9 +39,8 @@ namespace VrFencing.UI
         /// <param name="openGroup">Shows one group's Settings.</param>
         /// <param name="openGrip">Opens the grip page: the angles compared and the thrust calibration (PER-52).</param>
         /// <param name="back">From a group back to the list of groups, from the list back to Home.</param>
-        /// <param name="resetBladeFeel">Puts the "Blade feel" page back on its defaults (PER-121).</param>
         public SettingsScreen(
-            Transform panel, Action<SettingId, int> changeSetting, Action<SettingGroup> openGroup, Action openGrip, Action back, Action resetBladeFeel)
+            Transform panel, Action<SettingId, int> changeSetting, Action<SettingGroup> openGroup, Action openGrip, Action back)
         {
             _changeSetting = changeSetting;
             _root = new GameObject("Settings");
@@ -72,8 +70,6 @@ namespace VrFencing.UI
 
             _gripButton = UiButton.Create(root, "Grip Angles", new Vector2(0.075f, -0.25f), new Vector2(0.19f, 0.055f), UiKit.SmallFontSize, openGrip);
             _gripButton.SetLabel("Calibrate grip");
-            _resetFeelButton = UiButton.Create(root, "Reset Blade Feel", new Vector2(-0.04f, -0.25f), new Vector2(0.38f, 0.055f), UiKit.SmallFontSize, resetBladeFeel);
-            _resetFeelButton.SetLabel("Reset blade feel to defaults");
             var backButton = UiButton.Create(root, "Back", new Vector2(0.27f, -0.25f), new Vector2(0.18f, 0.055f), UiKit.BodyFontSize, back);
             backButton.SetLabel("Back");
         }
@@ -116,7 +112,6 @@ namespace VrFencing.UI
             }
 
             _gripButton.SetVisible(!isGroupList && SettingGroups.HasGripCalibration(_group.Value));
-            _resetFeelButton.SetVisible(!isGroupList && SettingGroups.HasBladeFeelReset(_group.Value));
         }
 
         /// <summary>One line: the Setting's name, a step down, its value, a step up.</summary>
