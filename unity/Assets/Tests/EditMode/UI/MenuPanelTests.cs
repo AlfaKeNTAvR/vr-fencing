@@ -7,6 +7,7 @@ using TMPro;
 using UnityEngine;
 using VrFencing.Drills;
 using VrFencing.Dummy;
+using VrFencing.Settings;
 using VrFencing.UI;
 
 namespace VrFencing.Tests.UI
@@ -70,10 +71,10 @@ namespace VrFencing.Tests.UI
         public void AGreyedOutDrillShowsItsLengthAndCannotBeChosen()
         {
             var started = new List<string>();
-            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { });
+            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var entries = DrillPicker.BuildEntries(new[] { Drill("long", 1, 6.0f), Drill("short", 2, 2.0f) }, 4.0f, false);
 
-            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner", areSoloDrillsAllowed: true);
+            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner", areSoloDrillsAllowed: true, FreePracticeBehavior.KeepDistance);
 
             var buttons = _created[0].GetComponentsInChildren<UiButton>();
             var longRow = buttons.First(button => button.Label == "Drill long");
@@ -91,10 +92,10 @@ namespace VrFencing.Tests.UI
         public void StartIsOffWhileConnectedToAPartner()
         {
             var started = new List<string>();
-            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { });
+            var home = new HomeScreen(CreatePanel(), started.Add, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var entries = DrillPicker.BuildEntries(new[] { Drill("short", 1, 2.0f) }, 4.0f, false);
 
-            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner: on", areSoloDrillsAllowed: false);
+            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner: on", areSoloDrillsAllowed: false, FreePracticeBehavior.KeepDistance);
 
             var buttons = _created[0].GetComponentsInChildren<UiButton>();
             var start = buttons.First(button => button.Label == "Start");
@@ -102,6 +103,35 @@ namespace VrFencing.Tests.UI
             start.Press();
             Assert.That(started, Is.Empty);
             Assert.That(buttons.Any(button => button.Label == "Partner: on"), Is.True);
+        }
+
+        [Test]
+        public void TheFreePracticeRowNamesTheBehaviorAndCyclesOnPress()
+        {
+            var cycles = 0;
+            var home = new HomeScreen(CreatePanel(), _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => cycles++);
+            var entries = DrillPicker.BuildEntries(new[] { Drill("short", 1, 2.0f) }, 4.0f, false);
+
+            home.Refresh(entries, "Strip: 4.0 m", 0.2f, string.Empty, "Partner", areSoloDrillsAllowed: true, FreePracticeBehavior.Attacks);
+
+            var row = _created[0].GetComponentsInChildren<UiButton>().First(button => button.name == "Free Practice");
+            Assert.That(row.Label, Is.EqualTo("Dummy: attacks"));
+            row.Press();
+            Assert.That(cycles, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TheHomeButtonsStackWithoutOverlapping()
+        {
+            new HomeScreen(CreatePanel(), _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+
+            var names = new[] { "Free Practice", "Start", "Partner", "Settings", "History", "Re-place Strip", "Tolerance" };
+            var buttons = _created[0].GetComponentsInChildren<UiButton>(includeInactive: true);
+            var heights = names.Select(name => buttons.First(button => button.name == name).transform.localPosition.y).ToArray();
+            for (var index = 1; index < heights.Length; index++)
+            {
+                Assert.That(heights[index - 1] - heights[index], Is.GreaterThan(0.052f), $"{names[index]} overlaps the button above it.");
+            }
         }
 
         [Test]

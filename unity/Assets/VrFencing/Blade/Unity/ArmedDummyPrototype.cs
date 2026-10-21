@@ -31,10 +31,23 @@ namespace VrFencing.Blade
     /// capsules from the headset plus the sword arm): when it lands, the thrust stops there, a red flash and the hit buzz
     /// play, and the runner gets the hit with the body that judged it. A thrust that ends its hold without reaching the
     /// Fencer is reported too, with no hit.
+    /// Outside any Drill it is armed for Free Practice (PER-123, <see cref="FreePractice"/>), whatever the "Dummy blade
+    /// in every Drill" Setting says: it holds its en garde line, or, with <see cref="FreePracticeBehavior.Attacks"/>, thrusts
+    /// now and then from the test Drill's script (<see cref="FreeAttackSchedule"/>), judged the same way (the clash, the
+    /// Parry, the red flash and hit buzz) but never reported to the runner: no Reps, no score.
     /// All rules are in the Core; this only poses, draws, plays and forwards.
     /// </summary>
     internal sealed class ArmedDummyPrototype : IDisposable
     {
+        // Why the Dummy holds a blade now: a Drill's run, Free Practice holding its line, Free Practice attacking, or not at all.
+        private enum ArmedMode
+        {
+            Unarmed,
+            Drill,
+            FreeGuard,
+            FreeAttacks,
+        }
+
         private const string MaterialResourcePath = "VrFencingBlade";
         private const float SparkDiameterMeters = 0.03f;
         private const float SparkSeconds = 0.12f;
@@ -44,6 +57,8 @@ namespace VrFencing.Blade
 
         private readonly DummyBehaviour _dummy;
         private readonly DrillRunner _runner;
+        private readonly Func<FreePracticeBehavior?> _getFreePractice;
+        private readonly FreeAttackSchedule _freeAttacks;
         private readonly BladeHapticPlayer _haptics;
         private readonly Random _random = new Random();
         private readonly BladeClashDetector _detector = new BladeClashDetector();
@@ -70,15 +85,20 @@ namespace VrFencing.Blade
         private bool _hasReportedLanding;
         private BladeSegment? _lastFencerBlade;
         private bool _isActive;
+        private ArmedMode _mode = ArmedMode.Unarmed;
         private float _sparkEndsAt = float.NegativeInfinity;
         private float _sparkBladeFraction;
         private int _loggedPlanCount;
         private bool _hasLoggedWait;
 
-        public ArmedDummyPrototype(DummyBehaviour dummy, DrillRunner runner, BladeHapticPlayer haptics, OVRCameraRig cameraRig)
+        /// <param name="getFreePractice">What the Dummy does in Free Practice this frame, or null while it is off.</param>
+        public ArmedDummyPrototype(
+            DummyBehaviour dummy, DrillRunner runner, Func<FreePracticeBehavior?> getFreePractice, BladeHapticPlayer haptics, OVRCameraRig cameraRig)
         {
             _dummy = dummy ?? throw new ArgumentNullException(nameof(dummy));
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
+            _getFreePractice = getFreePractice ?? throw new ArgumentNullException(nameof(getFreePractice));
+            _freeAttacks = new FreeAttackSchedule(_random);
             _haptics = haptics;
             _bodyReader = new FencerBodyReader(cameraRig);
             _hitFlash = new HitFlash(cameraRig != null ? cameraRig.centerEyeAnchor : null);
@@ -115,15 +135,20 @@ namespace VrFencing.Blade
         {
             _lastFencerBlade = fencerBlade;
             _hitFlash.Update();
-            var isActive = IsTestDrillRunning() && _dummy.Layout != null;
-            if (isActive != _isActive)
+            var mode = GetArmedMode();
+            if (mode != _mode)
             {
-                SetActive(isActive);
+                SetMode(mode);
             }
 
-            if (!isActive)
+            if (mode == ArmedMode.Unarmed)
             {
                 return;
+            }
+
+            if (mode == ArmedMode.FreeAttacks)
+            {
+                PlanFreeAttack(nowSeconds);
             }
 
             // The upper body turns a little with a knocked arm (PER-116), from the next posing of the legs on.
@@ -169,6 +194,15 @@ namespace VrFencing.Blade
             MoveSpark(stripInRoom);
         }
 
+        /// <summary>The Dummy is hidden or has no Strip: puts the blade away until a <see cref="Step"/> arms it again.</summary>
+        public void Disarm()
+        {
+            if (_mode != ArmedMode.Unarmed)
+            {
+                SetMode(ArmedMode.Unarmed);
+            }
+        }
+
         /// <summary>Adds the Dummy's blade, as drawn this frame, to the Fencer's drawn blade's obstacles while armed.</summary>
         public void AddBladeObstacles(System.Collections.Generic.ICollection<BladeObstacle> obstacles)
         {
@@ -207,6 +241,45 @@ namespace VrFencing.Blade
                 && _runner.Drill.HoldsDummyBlade(_settings.ArmedDummy.BladeInEveryDrill);
         }
 
+        // Free Practice (PER-123) arms the Dummy outside any Drill, whatever the "Dummy blade in every Drill" Setting says.
+        private ArmedMode GetArmedMode()
+        {
+            if (_dummy.Layout == null)
+            {
+                return ArmedMode.Unarmed;
+            }
+
+            if (IsTestDrillRunning())
+            {
+                return ArmedMode.Drill;
+            }
+
+            var freePractice = _getFreePractice();
+            if (!freePractice.HasValue)
+            {
+                return ArmedMode.Unarmed;
+            }
+
+            return freePractice.Value == FreePracticeBehavior.Attacks ? ArmedMode.FreeAttacks : ArmedMode.FreeGuard;
+        }
+
+        // Free Practice: nothing is reported to the runner (no Reps, no score), only played and logged.
+        private bool IsFreePractice => _mode == ArmedMode.FreeGuard || _mode == ArmedMode.FreeAttacks;
+
+        /// <summary>
+        /// Free Practice attacks (PER-123): once the last thrust is over and the rest after it too, plans the next one from
+        /// the test Drill's script, standing at extension distance (further back for the arm) as that Drill does.
+        /// </summary>
+        private void PlanFreeAttack(double nowSeconds)
+        {
+            var isAttackUnderWay = _attack != null && _attack.GetPhase(nowSeconds) != AttackPhase.Done;
+            var next = _freeAttacks.Step(nowSeconds, isAttackUnderWay);
+            if (next.HasValue)
+            {
+                PlanAttack(next.Value.Target, next.Value.Speed, FreePractice.AttackDistance, lungeMeters: 0.0f, "Free Practice");
+            }
+        }
+
         /// <summary>
         /// Judges this frame's contact against the attack under way (thrust or hold, not yet parried), forwards a Parry
         /// to the runner and cuts the thrust short, and reports a thrust that got through its hold as landed.
@@ -225,7 +298,10 @@ namespace VrFencing.Blade
                 {
                     _hasReportedLanding = true;
                     Debug.Log("[ArmedDummy] Thrust ended short of the Fencer: not parried, no hit.");
-                    _runner.ReportAttackLanded();
+                    if (!IsFreePractice)
+                    {
+                        _runner.ReportAttackLanded();
+                    }
                 }
 
                 return;
@@ -237,7 +313,8 @@ namespace VrFencing.Blade
             }
 
             // A Stop Hit Drill (PER-101) asks for a Touch, not a Parry: the thrust carries on through blade contact.
-            if (_runner.Drill.SuccessRule != SuccessRule.Parry)
+            // Free Practice judges every attack's Parry, as the test Drill does.
+            if (!IsFreePractice && _runner.Drill.SuccessRule != SuccessRule.Parry)
             {
                 return;
             }
@@ -275,8 +352,11 @@ namespace VrFencing.Blade
             Debug.Log($"[ArmedDummy] Parry {(int)report.Line} during the {phase}: point off the body by {report.DeflectionMeters * 100.0f:0} cm, " +
                 $"Fencer blade at {report.FencerBladeFraction:0.00}, Dummy blade at {report.DummyBladeFraction:0.00}, " +
                 $"{(report.IsForteOnFoible ? "forte on foible" : "not forte on foible")}, rule {_settings.Blade.ParryRule}: " +
-                (report.CountsAsParry ? "counts." : "does not count."));
-            _runner.ReportParry(report);
+                (report.CountsAsParry ? "counts." : "does not count.") + (IsFreePractice ? " Free Practice: not scored." : string.Empty));
+            if (!IsFreePractice)
+            {
+                _runner.ReportParry(report);
+            }
         }
 
         /// <summary>This frame's Fencer body (IOBT or the headset capsules), logging when the source changes.</summary>
@@ -323,7 +403,7 @@ namespace VrFencing.Blade
             _attack.ReportLanded(nowSeconds);
             _hasReportedLanding = true;
             var landed = hit.Value;
-            if (_runner.State != DrillState.Window)
+            if (!IsFreePractice && _runner.State != DrillState.Window)
             {
                 // The Rep was already judged (a Stop Hit that landed clear of the double window): like the épée's
                 // lock-out, the late point lights nothing.
@@ -333,16 +413,24 @@ namespace VrFencing.Blade
 
             _hitFlash.Show();
             _haptics?.PlayArmedDummyHit();
-            Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried.");
-            _runner.ReportAttackLanded(landed);
+            Debug.Log($"[ArmedDummy] Hit on the Fencer: {landed.Part}, judged by {landed.Source}, during the {phase}: not parried." +
+                (IsFreePractice ? " Free Practice: not scored." : string.Empty));
+            if (!IsFreePractice)
+            {
+                _runner.ReportAttackLanded(landed);
+            }
         }
 
-        private void SetActive(bool isActive)
+        /// <summary>Arms or disarms the Dummy, or changes why it is armed: every change starts the blade and the attacks over.</summary>
+        private void SetMode(ArmedMode mode)
         {
+            _mode = mode;
+            var isActive = mode != ArmedMode.Unarmed;
             _isActive = isActive;
             _attack = null;
             _judge = null;
             _inLinePose = null;
+            _freeAttacks.Reset();
             Restart();
             _clashBuzzGate.Reset();
             _visual.SetVisible(isActive);
@@ -352,11 +440,24 @@ namespace VrFencing.Blade
                 _dummy.SetArmPose(SwordArmPose.ArmInLine);
             }
 
-            Debug.Log(!isActive
-                ? "[ArmedDummy] Disarmed."
-                : _runner.Drill.UsesArmedDummy
-                    ? "[ArmedDummy] Armed: the Dummy holds a blade."
-                    : "[ArmedDummy] Armed: the Dummy holds its blade in line, no attacks (Dummy blade in every Drill).");
+            Debug.Log(DescribeMode(mode));
+        }
+
+        private string DescribeMode(ArmedMode mode)
+        {
+            switch (mode)
+            {
+                case ArmedMode.Drill:
+                    return _runner.Drill.UsesArmedDummy
+                        ? "[ArmedDummy] Armed: the Dummy holds a blade."
+                        : "[ArmedDummy] Armed: the Dummy holds its blade in line, no attacks (Dummy blade in every Drill).";
+                case ArmedMode.FreeGuard:
+                    return "[ArmedDummy] Armed for Free Practice: the Dummy holds its blade in line, no attacks.";
+                case ArmedMode.FreeAttacks:
+                    return "[ArmedDummy] Armed for Free Practice: the Dummy attacks now and then, not scored.";
+                default:
+                    return "[ArmedDummy] Disarmed.";
+            }
         }
 
         private void OnRepCued(RepCue cue)
@@ -377,10 +478,20 @@ namespace VrFencing.Blade
                 return;
             }
 
+            var lungeMeters = _runner.Drill.Attacks.Lunges ? ArmedDummyAttack.GetLungeMeters(_dummy.Layout.HeightMeters) : 0.0f;
+            PlanAttack(cue.AttackTarget.Value, cue.AttackSpeed.Value, cue.DummyDistance, lungeMeters, $"Rep {cue.RepIndex + 1}");
+        }
+
+        /// <summary>
+        /// Plans one thrust at <paramref name="target"/> and <paramref name="speed"/> after a random delay, standing the
+        /// Dummy at <paramref name="distance"/> first (further back for a thrust at the arm). <paramref name="label"/>
+        /// names the Rep, or Free Practice, in the log.
+        /// </summary>
+        private void PlanAttack(AttackTarget target, AttackSpeed speed, DummyDistance distance, float lungeMeters, string label)
+        {
             var layout = _dummy.Layout;
-            var speed = cue.AttackSpeed.Value;
-            var target = cue.AttackTarget.Value;
-            StandForAttack(cue);
+            var standBackMeters = AttackAim.GetStandBackMeters(target);
+            StandForAttack(distance, standBackMeters);
             var delay = ArmedDummyAttack.DrawDelaySeconds(_random);
             // Chest and thigh aim at the Fencer's body as tracked (the Dummy frame is the Strip frame turned and moved, its
             // own inverse); hand and forearm, or no body, by the stand-in.
@@ -388,7 +499,6 @@ namespace VrFencing.Blade
                 ? DummyLayout.DummyToStrip(aimOnStrip, _dummy.DistanceMeters)
                 : AttackAim.GetAimInDummyFrame(
                     target, layout, _dummy.DistanceMeters, _lastFencerBlade?.GuardPosition, _lastFencerBlade?.Direction ?? System.Numerics.Vector3.UnitZ);
-            var lungeMeters = _runner.Drill.Attacks.Lunges ? ArmedDummyAttack.GetLungeMeters(layout.HeightMeters) : 0.0f;
             _attack = ArmedDummyAttack.Plan(
                 Time.timeAsDouble, delay, layout.HeightMeters, layout.Hand, aim, speed, BladePose.BladeLengthMeters, lungeMeters);
             _hasReportedAttackUnderWay = false;
@@ -397,22 +507,23 @@ namespace VrFencing.Blade
             _hasAttackClashed = false;
             _hasReportedLanding = false;
             var missMeters = System.Numerics.Vector3.Distance(_attack.Path.AimPoint, aim);
-            Debug.Log($"[ArmedDummy] Rep {cue.RepIndex + 1}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
-                $"Dummy at {_dummy.DistanceMeters:0.00} m ({cue.DummyStandBackMeters:0.00} m back, lunge {lungeMeters:0.00} m), " +
+            Debug.Log($"[ArmedDummy] {label}: thrust at the {target}, {speed} ({ArmedDummyAttack.GetPeakPointSpeed(speed):0.0#} m/s), " +
+                $"Dummy at {_dummy.DistanceMeters:0.00} m ({standBackMeters:0.00} m back, lunge {lungeMeters:0.00} m), " +
                 $"after {delay:0.0} s, thrust {_attack.ThrustSeconds * 1000.0f:0} ms over {_attack.Path.LengthMeters * 100.0f:0} cm" +
                 (missMeters > 0.01f ? $", lands {missMeters * 100.0f:0} cm off the aim (out of the arm's reach)." : "."));
         }
 
         /// <summary>
-        /// Stands the Dummy at the Rep's Dummy Distance, further back by <see cref="RepCue.DummyStandBackMeters"/> for a
-        /// thrust at the arm (PER-100), so every Rep starts from its own distance. The Blade restarts its sweeps on the jump.
+        /// Stands the Dummy at the Rep's Dummy Distance, further back by <paramref name="standBackMeters"/> for a thrust at
+        /// the arm (PER-100, <see cref="RepCue.DummyStandBackMeters"/>), so every Rep starts from its own distance. The
+        /// Blade restarts its sweeps on the jump.
         /// </summary>
-        private void StandForAttack(RepCue cue)
+        private void StandForAttack(DummyDistance distance, float standBackMeters)
         {
-            _dummy.SetDistance(cue.DummyDistance);
-            if (cue.DummyStandBackMeters > 0.0f)
+            _dummy.SetDistance(distance);
+            if (standBackMeters > 0.0f)
             {
-                _dummy.SetDistanceMeters(_dummy.DistanceMeters + cue.DummyStandBackMeters);
+                _dummy.SetDistanceMeters(_dummy.DistanceMeters + standBackMeters);
             }
 
             _attackDistanceMeters = _dummy.DistanceMeters;
@@ -425,7 +536,7 @@ namespace VrFencing.Blade
         /// </summary>
         private void HoldBladeInLine(RepCue cue)
         {
-            StandForAttack(cue);
+            StandForAttack(cue.DummyDistance, cue.DummyStandBackMeters);
             _attack = null;
             _judge = null;
             _beatJudge.Reset();
@@ -440,7 +551,7 @@ namespace VrFencing.Blade
         /// <summary>Stop Hit Drills (PER-101): tells the runner once the attack's wind-up starts, so a Touch on the arm now counts.</summary>
         private void ReportAttackUnderWay(double nowSeconds)
         {
-            if (_attack == null || _hasReportedAttackUnderWay || _attack.GetPhase(nowSeconds) == AttackPhase.Waiting)
+            if (IsFreePractice || _attack == null || _hasReportedAttackUnderWay || _attack.GetPhase(nowSeconds) == AttackPhase.Waiting)
             {
                 return;
             }

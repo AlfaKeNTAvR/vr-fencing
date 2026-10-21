@@ -125,8 +125,9 @@ namespace VrFencing.Blade
             _haptics = new BladeHapticPlayer();
             if (_dummy != null && _drillRunner != null && _drillRunner.Runner != null)
             {
-                // The Armed Dummy feel test (PER-95): only live while its development Drill runs.
-                _armedDummy = new ArmedDummyPrototype(_dummy, _drillRunner.Runner, _haptics, _cameraRig);
+                // The Armed Dummy (PER-95): live in the Drills that arm it and in Free Practice outside any Drill (PER-123).
+                var drillRunner = _drillRunner;
+                _armedDummy = new ArmedDummyPrototype(_dummy, drillRunner.Runner, () => drillRunner.FreePracticeNow, _haptics, _cameraRig);
             }
 
             ApplySettings(SettingsFile.Load());
@@ -188,6 +189,11 @@ namespace VrFencing.Blade
                 // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones.
                 _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom, _drawnBlade);
                 DetectContacts(now, bladeInStrip);
+            }
+            else
+            {
+                // A hidden Dummy (Partner session) or no Strip: no blade either, even in Free Practice (PER-123).
+                _armedDummy?.Disarm();
             }
 
             var wasDecoupled = _drawnBlade.IsDecoupled;

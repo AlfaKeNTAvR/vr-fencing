@@ -8,6 +8,19 @@ namespace VrFencing.Settings
     }
 
     /// <summary>
+    /// What the Dummy does in Free Practice (PER-123), outside any Drill: the Armed Dummy holds its blade and, with no
+    /// Reps or scoring, stands in guard, keeps its distance from the Fencer, runs through its footwork, or attacks now and
+    /// then. Picked on the home screen.
+    /// </summary>
+    public enum FreePracticeBehavior
+    {
+        Guard,
+        KeepDistance,
+        Footwork,
+        Attacks,
+    }
+
+    /// <summary>
     /// Everything the Fencer can change, persisted as JSON by <see cref="SettingsStorage"/>.
     /// A new instance holds the defaults agreed in the Drill decision (PER-21) and the Strip decision (PER-24).
     /// </summary>
@@ -68,6 +81,12 @@ namespace VrFencing.Settings
         /// </summary>
         public float StartMarkSideToleranceMeters { get; set; } = 0.45f;
 
+        /// <summary>
+        /// What the armed Dummy does outside any Drill (PER-123). Keeping its distance by default, Nikita's pick; a file
+        /// from before PER-123 loads that too.
+        /// </summary>
+        public FreePracticeBehavior FreePractice { get; set; } = FreePracticeBehavior.KeepDistance;
+
         /// <summary>A deep copy, so a settings screen can change values without touching the settings in use.</summary>
         public TrainerSettings Clone()
         {
@@ -98,6 +117,7 @@ namespace VrFencing.Settings
                 BoutDoubleWindowSeconds = BoutDoubleWindowSeconds,
                 ArmedDummy = ArmedDummy.Clone(),
                 StartMarkSideToleranceMeters = StartMarkSideToleranceMeters,
+                FreePractice = FreePractice,
             };
         }
     }
