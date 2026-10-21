@@ -16,6 +16,8 @@ namespace VrFencing.Blade
         private readonly Dictionary<(BladeEventType, HapticPattern), ClipPlayer> _players = new Dictionary<(BladeEventType, HapticPattern), ClipPlayer>();
         private ClipPlayer _playing;
         private ClipPlayer _pressPlayer;
+        private ClipPlayer _lagPlayer;
+        private ClipPlayer _clickPlayer;
         private readonly Dictionary<HapticPattern, ClipPlayer> _clashPlayers = new Dictionary<HapticPattern, ClipPlayer>();
         private ClipPlayer _beingTouchedPlayer;
         private ClipPlayer _armedDummyHitPlayer;
@@ -63,6 +65,48 @@ namespace VrFencing.Blade
             {
                 _pressPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.PressPulse), BladeHaptics.PressPulse);
                 StartPlaying(_pressPlayer, strength, swordHand);
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
+        /// <summary>
+        /// One pulse of the lag buzz (<see cref="BladeHaptics.LagPulse"/>, PER-121) while the drawn hilt trails the hand,
+        /// at <paramref name="strength"/>. An event pattern still playing is not cut short.
+        /// </summary>
+        public void PlayLag(float strength, Hand swordHand)
+        {
+            if (_hasFailed || Time.time < _eventEndsAt || !(strength > 0.0f))
+            {
+                return;
+            }
+
+            try
+            {
+                _lagPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.LagPulse), BladeHaptics.LagPulse);
+                StartPlaying(_lagPlayer, strength, swordHand);
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
+        /// <summary>The leash's click (<see cref="BladeHaptics.LeashClick"/>, PER-121) at full strength: the drawn blade popped back to the hand.</summary>
+        public void PlayLeashClick(Hand swordHand)
+        {
+            if (_hasFailed)
+            {
+                return;
+            }
+
+            try
+            {
+                _clickPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.LeashClick), BladeHaptics.LeashClick);
+                StartPlaying(_clickPlayer, 1.0f, swordHand);
+                _eventEndsAt = Time.time + _clickPlayer.DurationSeconds;
             }
             catch (Exception error)
             {
@@ -164,6 +208,10 @@ namespace VrFencing.Blade
             _players.Clear();
             _pressPlayer?.Dispose();
             _pressPlayer = null;
+            _lagPlayer?.Dispose();
+            _lagPlayer = null;
+            _clickPlayer?.Dispose();
+            _clickPlayer = null;
             foreach (var player in _clashPlayers.Values)
             {
                 player.Dispose();

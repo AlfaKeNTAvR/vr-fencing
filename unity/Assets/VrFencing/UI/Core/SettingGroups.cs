@@ -14,6 +14,7 @@ namespace VrFencing.UI
         Blade,
         Haptics,
         ArmedDummy,
+        BladeFeel,
     }
 
     /// <summary>
@@ -66,6 +67,14 @@ namespace VrFencing.UI
                 SettingId.ParryRule, SettingId.RiposteInSlowParries, SettingId.RiposteInFastParries, SettingId.RiposteInLowParries,
                 SettingId.RiposteInLungeParries, SettingId.DummyBladeInEveryDrill,
             },
+
+            // How the drawn blade feels against bodies and the Dummy's blade (PER-121), for tuning on the headset; the page
+            // also has "Reset blade feel to defaults" (HasBladeFeelReset).
+            [SettingGroup.BladeFeel] = new[]
+            {
+                SettingId.LeashDistance, SettingId.LeashTime, SettingId.BladeFriction, SettingId.JacketFriction, SettingId.GhostFrom,
+                SettingId.LagBuzzStrength, SettingId.DummyBladeYield,
+            },
         };
 
         public static IReadOnlyList<SettingGroup> All { get; } = (SettingGroup[])Enum.GetValues(typeof(SettingGroup));
@@ -81,6 +90,7 @@ namespace VrFencing.UI
                 case SettingGroup.Blade: return "Blade";
                 case SettingGroup.Haptics: return "Haptics";
                 case SettingGroup.ArmedDummy: return "Armed Dummy";
+                case SettingGroup.BladeFeel: return "Blade feel";
                 default: throw new ArgumentOutOfRangeException(nameof(group), group, "Not a settings group.");
             }
         }
@@ -112,6 +122,12 @@ namespace VrFencing.UI
         public static bool HasGripCalibration(SettingGroup group)
         {
             return group == SettingGroup.Blade;
+        }
+
+        /// <summary>The group's page also has "Reset blade feel to defaults" (<see cref="SettingsPage.ResetBladeFeel"/>, PER-121).</summary>
+        public static bool HasBladeFeelReset(SettingGroup group)
+        {
+            return group == SettingGroup.BladeFeel;
         }
     }
 }

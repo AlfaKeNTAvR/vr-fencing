@@ -162,6 +162,42 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
+        /// The lag buzz (PER-121): while the drawn hilt trails the hand, a low, steady hum in place of the force a real
+        /// blade would push back with (controllers have none). Each pulse runs a little past the next one's start
+        /// (<see cref="LagPulseIntervalSeconds"/>), so it is continuous, unlike the gapped press buzz; low (0.15) where the
+        /// clash rings high (0.7 to 1) and the Touch, flat and glance are short.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> LagPulse { get; } = new[] { new HapticSegment(1.0f, 0.15f, 0.075f) };
+
+        /// <summary>How often the lag buzz's pulse restarts while the drawn hilt lags.</summary>
+        public const float LagPulseIntervalSeconds = 0.06f;
+
+        /// <summary>The lag buzz at the smallest lag, as a fraction of full: still felt. It rises to full at the leash.</summary>
+        public const float LagFloor = 0.2f;
+
+        /// <summary>
+        /// The leash's click (PER-121): the drawn blade popped back to the hand. One very short, sharp tick, shorter than
+        /// any blade event's.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> LeashClick { get; } = new[] { new HapticSegment(1.0f, 1.0f, 0.012f) };
+
+        /// <summary>
+        /// How hard the lag buzz plays: 0 while the drawn hilt follows the hand; from <see cref="LagFloor"/> rising in a
+        /// straight line with the lag to full at the leash (<paramref name="leashMeters"/>, where it pops), times the
+        /// Fencer's <paramref name="buzzStrength"/> (0 turns it off; above 1 it is stronger at small lags, never past full).
+        /// </summary>
+        public static float GetLagStrength(float lagMeters, float leashMeters, float buzzStrength)
+        {
+            if (!(lagMeters > 0.0f) || !(leashMeters > 0.0f) || !(buzzStrength > 0.0f))
+            {
+                return 0.0f;
+            }
+
+            var lagFraction = Clamp01(lagMeters / leashMeters);
+            return Clamp01(buzzStrength * (LagFloor + ((1.0f - LagFloor) * lagFraction)));
+        }
+
+        /// <summary>
         /// A Meta Haptics Studio clip (.haptic, version 1) for the segments: stepped amplitude and frequency envelopes.
         /// Plain text, so the Unity layer can build clips at runtime without assets.
         /// </summary>

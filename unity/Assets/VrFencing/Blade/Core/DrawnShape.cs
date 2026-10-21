@@ -13,11 +13,23 @@ namespace VrFencing.Blade
     /// </summary>
     public static class DrawnShape
     {
-        /// <summary>A drawn hilt this far (or turned this far) from the hand's counts as lagging it.</summary>
+        /// <summary>
+        /// A drawn hilt this far (or turned this far) from the hand's counts as lagging it: the logic's threshold (the
+        /// drawn blade stops following and the leash's clock runs), kept tight so a held blade is never taken as
+        /// following. What shows (the ghost hilt) and what is felt use their own, larger thresholds on
+        /// <see cref="FindLagMeters"/> (PER-121).
+        /// </summary>
         public const float LagMeters = 0.002f;
 
         /// <summary>See <see cref="LagMeters"/>.</summary>
         public const float LagDegrees = 1.0f;
+
+        /// <summary>
+        /// A turn of the drawn hilt off the hand's counts as a lag of the turn (in radians) times this, so one distance
+        /// stands for both (PER-121): about where the forte leaves the bell, a third of the blade. 8 cm of lag is then
+        /// a 15 degree turn, 3 cm a 6 degree one.
+        /// </summary>
+        public const float TurnLeverMeters = 0.3f;
 
         // Bisection steps between the hand's pose and the fallback: 2^-11 of the way, under half a millimeter for the
         // longest lags (each step builds a whole shape, so fewer keeps a lagging frame cheap on the Quest).
@@ -194,6 +206,17 @@ namespace VrFencing.Blade
         {
             return Vector3.Distance(drawnGuard, hand.GuardPosition) > LagMeters
                 || SegmentMath.FindAngleDegrees(drawnDirection, hand.Direction) > LagDegrees;
+        }
+
+        /// <summary>
+        /// How far the drawn hilt at <paramref name="drawnGuard"/> along <paramref name="drawnDirection"/> trails the
+        /// hand's: the guards' distance or the turn between them as a distance (<see cref="TurnLeverMeters"/>), whichever
+        /// is more.
+        /// </summary>
+        public static float FindLagMeters(Vector3 drawnGuard, Vector3 drawnDirection, BladeSegment hand)
+        {
+            var turnRadians = SegmentMath.FindAngleDegrees(drawnDirection, hand.Direction) * (float)(Math.PI / 180.0);
+            return Math.Max(Vector3.Distance(drawnGuard, hand.GuardPosition), turnRadians * TurnLeverMeters);
         }
 
         private static Vector3 TurnToward(Vector3 from, Vector3 to, float fraction)

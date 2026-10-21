@@ -52,7 +52,7 @@ namespace VrFencing.EditorTools
             var typing = new PartnerSession();
             typing.BeginEnteringCode();
 
-            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, _ => { }, () => { }, () => { });
+            var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, _ => { }, () => { }, () => { }, () => { });
 
             var gripSettings = settings.Clone();
             gripSettings.Blade.Mount = BladeMount.French;
