@@ -418,8 +418,9 @@ namespace VrFencing.Blade
                 _side = FindGeometricSide(_lastShapeA, _lastShapeB, out var closest, out _);
                 ClosestMeters = closest;
             }
-            else
+            else if (!IsEngaged || _relativeMotion > EngagedMeters)
             {
+                // Engaged and moving slowly (a press, a bind), nothing goes round in a frame: not looked at, to save the time.
                 FollowRoundCrossing();
             }
 
