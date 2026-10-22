@@ -110,7 +110,79 @@ namespace VrFencing.Tests.Blade
             Assert.That(Math.Abs(drops[drops.Count - 1] - drops[drops.Count - 10]), Is.LessThan(0.002f), "Settled, not oscillating.");
             Assert.That(scene.Contact.GiveB.BowMeters, Is.GreaterThan(0.001f), "The Dummy's blade bows from the contact.");
             Assert.That(scene.Contact.GiveA.BowMeters, Is.GreaterThan(0.001f), "So does the Fencer's.");
-            Assert.That(scene.Dummy.Deflection.TipOffset.Y, Is.LessThan(-0.005f), "The Dummy's hand gives way to the press.");
+            Assert.That(scene.Dummy.Deflection.TipOffset.Length(), Is.LessThan(1e-4f), "The Dummy's hand holds a moderate press: its blade takes it (PER-122 fix).");
+        }
+
+        [Test]
+        public void AFirmPressOnTheDummysFoibleVisiblyBowsIt([Values(OpponentHand.Light, OpponentHand.Medium, OpponentHand.Strong)] OpponentHand hand)
+        {
+            // Nikita's headset test after PR 72: the Dummy's blade did not bend in binds and presses. Its hand gave way as
+            // readily as its foible bends, so a press mostly turned the whole blade (a 2 to 3 cm bow at the contact, under
+            // a centimeter of curve to see). Now the hand holds a press up to its hold force and the blade bows first. The
+            // Fencer's forte crosses the Dummy's foible (85% out) and presses 5 cm past its line for a second.
+            var scene = new BladePairScene(hasDroop: false, hand: hand);
+            var crossingZ = DummyForte.GuardPosition.Z - (0.85f * BladePose.BladeLengthMeters);
+            for (var height = DummyHeight + 0.10f; height > DummyHeight - 0.05f; height -= 0.5f * FrameSeconds)
+            {
+                scene.Frame(AcrossAt(new Vector3(0.0f, height, crossingZ), 0.0f, Vector3.Zero), DummyForte);
+            }
+
+            for (var frame = 0; frame < 72; frame++)
+            {
+                scene.Frame(AcrossAt(new Vector3(0.0f, DummyHeight - 0.05f, crossingZ), 0.0f, Vector3.Zero), DummyForte);
+            }
+
+            // How far the drawn point is off the line its drawn hilt points along: the bow, as seen past the bell.
+            var drawn = scene.Dummy.Drawn;
+            var toPoint = drawn.GetSample(DrawnBlade.SampleCount) - drawn.GuardPosition;
+            var hilt = drawn.HiltDirection;
+            var offHilt = (toPoint - (Vector3.Dot(toPoint, hilt) * hilt)).Length();
+            TestContext.WriteLine($"{hand}: bow {scene.Contact.GiveB.BowMeters * 100.0f:0.0} cm at the contact, point {offHilt * 100.0f:0.0} cm off the hilt's line, hand moved {scene.Dummy.Deflection.TipOffset.Length() * 100.0f:0.0} cm.");
+            Assert.That(scene.Contact.IsInContact, Is.True, "Setup: pressing.");
+            Assert.That(scene.Contact.GiveB.BowMeters, Is.GreaterThan(0.03f), "The Dummy's foible bows a few centimeters where it is pressed.");
+            Assert.That(offHilt, Is.GreaterThan(0.04f), "Its point is well off the line of its hilt: a bend to see, not a turn.");
+            Assert.That(scene.Dummy.Deflection.TipOffset.Length(), Is.LessThan(scene.Contact.GiveB.BowMeters), "The blade, not the hand, takes the press.");
+        }
+
+        [Test]
+        public void WithTheHandFixedAHardPressOrABeatLeavesTheDummysHandExactlyWhereItWas()
+        {
+            // Free Practice "hand fixed" (a test stand for blade on blade contact): the Dummy's hand never moves or gives,
+            // so only the two blades react, through the contact solver.
+            var scene = new BladePairScene();
+            scene.Dummy.IsHandFixed = true;
+            scene.Frame(Across(DummyHeight + 0.10f), DummyForte);
+            var handBefore = scene.Dummy.HandChord;
+            PressDown(scene, 0.12f);
+            scene.Dummy.Deflection.Kick(new BladeClash(0.0, Vector3.Zero, 0.3f, 0.8f, 2.0f, -Vector3.UnitY));
+            var bowed = 0.0f;
+            for (var frame = 0; frame < 72; frame++)
+            {
+                scene.Frame(Across(DummyHeight - 0.12f), DummyForte);
+                bowed = Math.Max(bowed, scene.Contact.GiveB.BowMeters);
+                Assert.That(scene.Dummy.HandChord.GuardPosition, Is.EqualTo(handBefore.GuardPosition), $"Frame {frame}: the hand moved.");
+                Assert.That(scene.Dummy.HandChord.TipPosition, Is.EqualTo(handBefore.TipPosition), $"Frame {frame}: the hand turned.");
+                Assert.That(scene.Dummy.ArmTurn.IsIdentity, Is.True, $"Frame {frame}: the arm was knocked.");
+                Assert.That(scene.FindSeparationAlong(scene.Contact.Side.Value), Is.GreaterThan(Contact - Tolerance), $"Frame {frame}: through.");
+            }
+
+            Assert.That(scene.Contact.PressNewtons, Is.GreaterThan(ArmedDummyBlade.MediumHoldNewtons), "Setup: a press a Medium hand would give way to.");
+            Assert.That(bowed, Is.GreaterThan(0.01f), "The blades still give: the Dummy's bows.");
+        }
+
+        [Test]
+        public void AHardPressPastWhatTheHandHoldsMovesIt()
+        {
+            // Past its hold force the Dummy's hand gives way to the rest of the press, as before (PER-122).
+            var scene = new BladePairScene();
+            PressDown(scene, 0.12f);
+            for (var frame = 0; frame < 72; frame++)
+            {
+                scene.Frame(Across(DummyHeight - 0.12f), DummyForte);
+            }
+
+            Assert.That(scene.Contact.PressNewtons, Is.GreaterThan(ArmedDummyBlade.MediumHoldNewtons * 0.5f), "Setup: a hard press.");
+            Assert.That(scene.Dummy.Deflection.TipOffset.Y, Is.LessThan(-0.005f), "The Dummy's hand gives way to a press past what it holds.");
         }
 
         [Test]
@@ -188,6 +260,15 @@ namespace VrFencing.Tests.Blade
             {
                 var pulled = Math.Min(0.5f, frame * 2.0f * FrameSeconds);
                 scene.Frame(AcrossAt(crossing, -depth, away * pulled), DummyForte);
+                if (pull == 0 && pulled >= 0.3f - BellGuard.RadiusMeters)
+                {
+                    // Pulled along its own blade, the Fencer's bell and then its hand reach the Dummy's forte (30 cm in):
+                    // past that there is no Fencer's blade there to keep a side of, only its hilt and arm, which the
+                    // Dummy's blade rides over. The blades stay out of each other.
+                    Assert.That(BladePairScene.FindDistance(scene.FencerSamples(), scene.DummySamples()), Is.GreaterThan(Contact - Tolerance), $"pulled {pulled:0.00} m: into the Fencer's blade.");
+                    continue;
+                }
+
                 AssertNotThrough(scene, $"pulled {pulled:0.00} m");
             }
 

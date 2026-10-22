@@ -51,8 +51,8 @@ namespace VrFencing.UI
                 SettingId.TouchRule, SettingId.TouchPressure, SettingId.ShowTargetZones, SettingId.ZoneOpacity, SettingId.ZoneThickness,
                 SettingId.BodyOpacity,
             },
-            // The steel scrape of pressed blades (PER-122) is here: Haptics is full (7), and it is about the blade.
-            [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex, SettingId.ContactSound },
+            // The steel scrape of pressed blades (PER-122) and the floor buzz toggle are here: Haptics is full (7).
+            [SettingGroup.Blade] = new[] { SettingId.BladeMount, SettingId.BladePitch, SettingId.BladeYaw, SettingId.BladeSet, SettingId.BladeFlex, SettingId.ContactSound, SettingId.FloorBuzz },
             // The Armed Dummy's clash buzz (PER-99) fills the group to 7; the hit-on-Fencer buzz is fixed, with no Setting.
             [SettingGroup.Haptics] = new[]
             {

@@ -150,8 +150,18 @@ namespace VrFencing.Blade
         /// line with the push to full at <see cref="BladeContactBend.MaxPushMeters"/>, and full while the hand is past
         /// it (the drawn blade lags the hand).
         /// </summary>
-        public static float GetPressStrength(float pushMeters, bool isDecoupled)
+        /// <param name="isOnFloor">The point is pinned on the floor, not a body.</param>
+        /// <param name="isFloorBuzzOn">
+        /// The "Floor buzz" Setting (<see cref="BladeSettings.FloorBuzz"/>): off, a point on the floor buzzes not at all (0).
+        /// The blade still stops and bends on the floor; only the buzz goes.
+        /// </param>
+        public static float GetPressStrength(float pushMeters, bool isDecoupled, bool isOnFloor = false, bool isFloorBuzzOn = true)
         {
+            if (isOnFloor && !isFloorBuzzOn)
+            {
+                return 0.0f;
+            }
+
             if (isDecoupled)
             {
                 return 1.0f;

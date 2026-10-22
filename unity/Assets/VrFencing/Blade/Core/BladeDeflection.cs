@@ -75,11 +75,23 @@ namespace VrFencing.Blade
     /// </summary>
     public sealed class BladeDeflection
     {
-        /// <summary>The light-touch spring's natural frequency: it peaks in about 0.07 s and is back in about 0.3 s.</summary>
-        public const float FrequencyHertz = 2.5f;
+        /// <summary>
+        /// The light-touch spring's natural frequency: knocked, it peaks in about 0.1 s; let go off line, it is back
+        /// within 5% in about 0.5 s (Nikita's headset test after PR 72: 2.5 Hz came back too fast and felt like a spring).
+        /// </summary>
+        public const float FrequencyHertz = 1.5f;
 
-        /// <summary>The spring's damping ratio: a small overshoot past the line on the way back, as fingers catching a tap.</summary>
-        public const float DampingRatio = 0.6f;
+        /// <summary>
+        /// While a press holds the point aside (<see cref="HoldAt"/>), the spring follows it at this frequency, as
+        /// promptly as before the calmer return (a hand gives way at once and comes back slowly). Also critically damped.
+        /// </summary>
+        public const float PressFollowHertz = 2.5f;
+
+        /// <summary>
+        /// The spring's damping ratio: critically damped, so the point comes back to its line and never crosses it (0.6
+        /// overshot past the line by about a tenth, a springy bounce).
+        /// </summary>
+        public const float DampingRatio = 1.0f;
 
         /// <summary>
         /// A clash this fast or faster, square to the Dummy's blade, is a beat; slower is a touch or the start of a press.
@@ -212,14 +224,17 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// The kick speed that, from rest, takes the light-touch spring out to <paramref name="peakMeters"/>: the peak of
-        /// v / w * exp(-z w t) * sin(w_d t) is v / w * exp(-z acos(z) / sqrt(1 - z^2)).
+        /// The kick speed that, from rest, takes the light-touch spring out to <paramref name="peakMeters"/>. Critically
+        /// damped, the peak of v t exp(-w t) is v / (w e); underdamped, that of v / w * exp(-z w t) * sin(w_d t) is
+        /// v / w * exp(-z acos(z) / sqrt(1 - z^2)).
         /// </summary>
         public static float GetKickSpeed(float peakMeters)
         {
             var omega = 2.0 * Math.PI * FrequencyHertz;
-            var damping = DampingRatio;
-            var peakPerSpeed = Math.Exp(-damping * Math.Acos(damping) / Math.Sqrt(1.0 - (damping * damping))) / omega;
+            const double Damping = DampingRatio;
+            var peakPerSpeed = Damping >= 1.0
+                ? 1.0 / (omega * Math.E)
+                : Math.Exp(-Damping * Math.Acos(Damping) / Math.Sqrt(1.0 - (Damping * Damping))) / omega;
             return (float)(peakMeters / peakPerSpeed);
         }
 
@@ -489,7 +504,8 @@ namespace VrFencing.Blade
 
         private void StepSpring(float deltaSeconds)
         {
-            var omega = (float)(2.0 * Math.PI * FrequencyHertz);
+            // A held press is followed promptly; let go, the point comes back calmly. Critically damped either way.
+            var omega = (float)(2.0 * Math.PI * (_heldOffset != Vector3.Zero ? PressFollowHertz : FrequencyHertz));
             var steps = (int)Math.Ceiling(deltaSeconds / MaxStepSeconds);
             var step = deltaSeconds / steps;
             var offset = TipOffset;

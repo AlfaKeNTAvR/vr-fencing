@@ -1,6 +1,8 @@
 // The settings screen's rules (PER-36): every Setting is on it, steps stay in range and on the step grid,
 // and a change never touches the settings in use.
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using VrFencing.Drills;
@@ -314,6 +316,39 @@ namespace VrFencing.Tests.UI
             Assert.That(strong.Clone().ArmedDummy.OpponentHand, Is.EqualTo(OpponentHand.Strong), "Cloned with the rest.");
             Assert.That(SettingsPage.GetImpact(SettingId.OpponentHand), Is.EqualTo(SettingImpact.Blade));
             Assert.That(SettingGroups.GetGroup(SettingId.OpponentHand), Is.EqualTo(SettingGroup.ArmedDummy));
+        }
+
+        [Test]
+        public void TheFloorBuzzIsAnOffByDefaultBladeToggleSavedWithTheRest()
+        {
+            var settings = new TrainerSettings();
+
+            Assert.That(settings.Blade.FloorBuzz, Is.False, "Off by default: Nikita found it distracting.");
+            Assert.That(SettingsPage.GetLabel(SettingId.FloorBuzz), Is.EqualTo("Floor buzz"));
+            Assert.That(SettingsPage.FormatValue(settings, SettingId.FloorBuzz), Is.EqualTo("Off"));
+            var on = SettingsPage.Change(settings, SettingId.FloorBuzz, 1);
+            Assert.That(on.Blade.FloorBuzz, Is.True);
+            Assert.That(SettingsPage.FormatValue(on, SettingId.FloorBuzz), Is.EqualTo("On"));
+            Assert.That(on.Clone().Blade.FloorBuzz, Is.True, "Cloned with the rest.");
+            Assert.That(SettingsPage.GetImpact(SettingId.FloorBuzz), Is.EqualTo(SettingImpact.Blade));
+            Assert.That(SettingGroups.GetGroup(SettingId.FloorBuzz), Is.EqualTo(SettingGroup.Blade));
+
+            var directory = Path.Combine(Path.GetTempPath(), "vrfencing-floor-buzz-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var path = Path.Combine(directory, "settings.json");
+                SettingsStorage.Save(on, path);
+                Assert.That(SettingsStorage.Load(path).Blade.FloorBuzz, Is.True, "Saved and loaded.");
+                File.WriteAllText(path, "{}");
+                Assert.That(SettingsStorage.Load(path).Blade.FloorBuzz, Is.False, "Missing from an older file: off.");
+            }
+            finally
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
         }
 
         [Test]

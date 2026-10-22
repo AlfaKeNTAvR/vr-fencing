@@ -85,12 +85,17 @@ namespace VrFencing.Blade
     /// proportion to each one's compliance there: each grip turning about its hand (a soft angular spring, compliance
     /// r^2 / k, at most <see cref="GripTurnMaxDegrees"/>) and each blade bowing (compliance r^3 / 3EI, at most the blade's
     /// curvature limit). Forte on foible, the foible gives; foible on forte, the foible gives too. A stage at its limit
-    /// passes its share on to the others; a second look takes what is left along a long bind.</item>
+    /// passes its share on to the others; two more looks take what is left along a long bind.</item>
     /// <item><b>Release.</b> When every stage is at its limit, the weaker blade (the more compliant at the contact)
     /// slides off toward its point: it turns aside in the grip, square to the press, as the press goes on past the
     /// limits, until the other blade is past its point, and any overlap left meanwhile turns it further away. Then the
     /// side follows the hands and the blade swings back to the hand over <see cref="ReleaseSeconds"/>. It never holds and
     /// never jumps through.</item>
+    /// <item><b>Hilts.</b> Each blade's hilt, its bell guard (<see cref="BellGuard"/>) and the grip behind it
+    /// (<see cref="GripRadiusMeters"/>), is solid for the other blade, held in its hand as the blade is (PER-122 fix):
+    /// the other blade meets it by the same rules. A side memory per hilt, the overlap taken by that blade's grip turn
+    /// and bow up to their limits, and past them it slides off round the bell's rim or the grip's end; a point pressed
+    /// straight onto the bell's face skids along it to the rim. Neither hilt ever leaves its hand for this.</item>
     /// </list>
     /// Deterministic: the same inputs and memory give the same outputs, and swapping the two blades mirrors them.
     /// Positions in any one frame (the Strip frame in the app), meters, newtons, seconds.
@@ -144,8 +149,31 @@ namespace VrFencing.Blade
         /// <summary>Each blade is taken as this many straight pieces of its drawn curve (a few millimeters off it at most).</summary>
         public const int PieceCount = 12;
 
-        // A second look after the first split takes the overlap left along a long bind.
-        private const int Passes = 2;
+        /// <summary>
+        /// The grip behind the bell, solid for the other blade: as thick as the drawn pommel (3.2 cm across; the grip
+        /// itself is 2.4 cm), from the bell's back face to past the pommel.
+        /// </summary>
+        public const float GripRadiusMeters = 0.016f;
+
+        /// <summary>The grip's length behind the bell's back face, the pommel included.</summary>
+        public const float GripLengthMeters = 0.136f;
+
+        // Each piece of a blade is looked at in this many steps against a hilt (about a centimeter each).
+        private const int HiltStepsPerPiece = 8;
+
+        // Overlap with a hilt left after its give smaller than this is not looked at again.
+        private const float HiltSettledMeters = 0.0005f;
+
+        // A sliding blade's way off a hilt is taken across the blade only when its line, seen along the press, is at
+        // least this long a share of it: nearer end-on (a point on the bell's face), the way out is straight from the
+        // hilt's axis.
+        private const float EndOnShare = 0.3f;
+
+        // A side within this cosine of the hilt's axis is the bell's face (front or back); nearer square, its rim.
+        private const float BackShare = 0.5f;
+
+        // Two more looks after the first split take the overlap left along a long bind.
+        private const int Passes = 3;
 
         // Pieces crossing at more than this sine (about 10 degrees) have one crossing whose normal is the side.
         private const float CrossingSine = 0.17f;
@@ -202,6 +230,10 @@ namespace VrFencing.Blade
         private Vector3 _returningAxis;
         private float _returningRadians;
         private float _returningSeconds;
+        private readonly HiltMemory _onHiltA = new HiltMemory();
+        private readonly HiltMemory _onHiltB = new HiltMemory();
+        private readonly Vector3[] _otherPoints = new Vector3[PieceCount + 1];
+        private Vector3 _otherBladeSide;
 
         /// <summary>What blade A is drawn as after the last <see cref="Solve"/>.</summary>
         public BladeGive GiveA { get; private set; }
@@ -235,7 +267,22 @@ namespace VrFencing.Blade
         /// (<see cref="BladeFlex.MaxBendMeters"/>) could carry it into the other, which the contact does not see: the
         /// callers hold both flexes still then. Also while engaged (pressed deep, the hands' blades may be far through).
         /// </summary>
-        public bool IsNear => IsEngaged || ClosestMeters < ContactMeters + BladeFlex.MaxBendMeters;
+        public bool IsNear => IsEngaged || IsNearHilt || ClosestMeters < ContactMeters + BladeFlex.MaxBendMeters;
+
+        /// <summary>
+        /// True while a blade touches or nearly touches the other's hilt (bell or grip): the hilts are not obstacles of
+        /// the drawn blades, so a flex whip must not carry a blade into one either.
+        /// </summary>
+        public bool IsNearHilt => _onHiltA.IsEngaged || _onHiltB.IsEngaged;
+
+        /// <summary>True while blade B presses on blade A's hilt (bell or grip) this frame.</summary>
+        public bool IsBOnHiltA => _onHiltA.PressMeters > 0.0f;
+
+        /// <summary>True while blade A presses on blade B's hilt (bell or grip) this frame.</summary>
+        public bool IsAOnHiltB => _onHiltB.PressMeters > 0.0f;
+
+        /// <summary>How far a blade presses into the other's hilt (the deeper of the two), 0 when neither touches.</summary>
+        public float HiltPressMeters => Math.Max(_onHiltA.PressMeters, _onHiltB.PressMeters);
 
         /// <summary>The force the press stands for (the spring stages' load), newtons; 0 when apart.</summary>
         public float PressNewtons { get; private set; }
@@ -272,6 +319,8 @@ namespace VrFencing.Blade
             IsEngaged = false;
             PressMeters = 0.0f;
             PressNewtons = 0.0f;
+            _onHiltA.Reset();
+            _onHiltB.Reset();
         }
 
         /// <summary>Solves this frame's contact of the two hands' blades into <see cref="GiveA"/> and <see cref="GiveB"/>.</summary>
@@ -315,6 +364,16 @@ namespace VrFencing.Blade
             else
             {
                 _slidingWeaker = -1;
+            }
+
+            // Then each blade against the other's hilt, slid off the side it is on of the other blade.
+            SolveHilt(_b, _shapeB, _a, new Hilt(_a.ToGive()), _onHiltA, -side, IsEngaged);
+            SolveHilt(_a, _shapeA, _b, new Hilt(_b.ToGive()), _onHiltB, side, IsEngaged);
+            if (IsNearHilt && IsEngaged)
+            {
+                // A blade pressed between the other's blade and its bell (the wedge): the hilt's push must not have
+                // carried it into or through that blade. One more look at the blades, which come first.
+                LookAgainAtBlades();
             }
 
             GiveA = _a.ToGive();
@@ -389,6 +448,27 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
+        /// The blades as given so far looked at once more along the held side: any overlap is shared out again, and what
+        /// is left turns the weaker blade on past its grip's limit, so it never ends a frame through the other.
+        /// </summary>
+        private void LookAgainAtBlades()
+        {
+            FillShape(_a, _shapeA, _unitA);
+            FillShape(_b, _shapeB, _unitB);
+            var hit = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, _side.Value, _engagedMeters);
+            if (!hit.IsFound || hit.Overlap <= SettledMeters)
+            {
+                return;
+            }
+
+            var left = Split(hit, out _);
+            if (left > 0.0f)
+            {
+                TurnAway(_slidingWeaker >= 0 ? _slidingWeaker : FindWeaker(hit), hit, left);
+            }
+        }
+
+        /// <summary>
         /// Shares <paramref name="hit"/>'s overlap out over the four stages by compliance, each up to its limit (a stage
         /// at its limit hands its share on). Returns the overlap no stage could take; <paramref name="newtons"/> is the
         /// stages' load.
@@ -400,11 +480,24 @@ namespace VrFencing.Blade
             stages[1] = _a.FindBowStage(hit.FractionA, hit.Normal);
             stages[2] = _b.FindTurnStage(hit.OnB, hit.FractionB, -hit.Normal);
             stages[3] = _b.FindBowStage(hit.FractionB, -hit.Normal);
-
-            // Water-filling: the load rises until each stage takes compliance times load or its limit.
-            var remaining = hit.Overlap;
-            Span<bool> isFull = stackalloc bool[4];
             Span<float> taken = stackalloc float[4];
+            var remaining = ShareOut(stages, hit.Overlap, taken, out newtons);
+
+            _a.Turn(hit.OnA, hit.Normal, taken[0]);
+            _a.AddBow(hit.FractionA, hit.Normal, taken[1]);
+            _b.Turn(hit.OnB, -hit.Normal, taken[2]);
+            _b.AddBow(hit.FractionB, -hit.Normal, taken[3]);
+            return remaining;
+        }
+
+        /// <summary>
+        /// Water-filling: the load rises until each stage takes compliance times load or its limit, together
+        /// <paramref name="overlap"/>. Fills <paramref name="taken"/>; returns what no stage could take.
+        /// </summary>
+        private static float ShareOut(Span<Stage> stages, float overlap, Span<float> taken, out float newtons)
+        {
+            var remaining = overlap;
+            Span<bool> isFull = stackalloc bool[stages.Length];
             newtons = 0.0f;
             for (var round = 0; round < stages.Length; round++)
             {
@@ -448,10 +541,6 @@ namespace VrFencing.Blade
                 break;
             }
 
-            _a.Turn(hit.OnA, hit.Normal, taken[0]);
-            _a.AddBow(hit.FractionA, hit.Normal, taken[1]);
-            _b.Turn(hit.OnB, -hit.Normal, taken[2]);
-            _b.AddBow(hit.FractionB, -hit.Normal, taken[3]);
             return Math.Max(0.0f, remaining);
         }
 
@@ -686,9 +775,8 @@ namespace VrFencing.Blade
 
                     // Seen along the side, the pieces must lie over each other (or within the slack of a push through).
                     // Alongside each other, a blade found behind the other went through it, wherever, unless they meet
-                    // at a blade's end.
-                    var isAtEnd = (pieceA == 0 && alongA <= 0.0f) || (pieceA == PieceCount - 1 && alongA >= 1.0f)
-                        || (pieceB == 0 && alongB <= 0.0f) || (pieceB == PieceCount - 1 && alongB >= 1.0f);
+                    // at a blade's point. Never round its guard end: the bell and the hand are there (the hilt, below).
+                    var isAtEnd = (pieceA == PieceCount - 1 && alongA >= 1.0f) || (pieceB == PieceCount - 1 && alongB >= 1.0f);
                     var along = apart - (signed * normal);
                     var meanDirection = Vector3.Dot(unitA[pieceA], unitB[pieceB]) >= 0.0f ? unitA[pieceA] + unitB[pieceB] : unitA[pieceA] - unitB[pieceB];
                     meanDirection = meanDirection.LengthSquared() > 1e-12f ? Vector3.Normalize(meanDirection) : unitA[pieceA];
@@ -867,6 +955,558 @@ namespace VrFencing.Blade
         private static float Clamp01(float value)
         {
             return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+        }
+
+        /// <summary>
+        /// One blade (<paramref name="blade"/>, as given so far) against the other's hilt, its bell and then its grip:
+        /// for each, the overlap along the side held in <paramref name="memory"/> taken by the blade's grip turn and bow,
+        /// past their limits slid off, and the side kept for the next frame. <paramref name="otherBladeSide"/> is which
+        /// way this blade is from the other blade (held while <paramref name="isOtherBladeEngaged"/>): it slides off the
+        /// hilt that way, not through the blade.
+        /// </summary>
+        private void SolveHilt(Work blade, Vector3[] shape, Work other, Hilt hilt, HiltMemory memory, Vector3 otherBladeSide, bool isOtherBladeEngaged)
+        {
+            var hint = isOtherBladeEngaged ? otherBladeSide : Vector3.Zero;
+            FillPoints(other, _otherPoints);
+            _otherBladeSide = hint;
+            SolveHiltPart(blade, shape, hilt, HiltPart.Bell, memory.Bell, hint);
+            SolveHiltPart(blade, shape, hilt, HiltPart.Grip, memory.Grip, hint);
+        }
+
+        /// <summary>
+        /// One part of the hilt (<see cref="SolveHilt"/>). While the blade was engaged with it last frame, the side held
+        /// then stands (the hand's blade may have gone right through in between); otherwise it is taken from the blade.
+        /// </summary>
+        private void SolveHiltPart(Work blade, Vector3[] shape, Hilt hilt, HiltPart part, HiltPartMemory memory, Vector3 otherBladeSide)
+        {
+            FillPoints(blade, shape);
+            if (!memory.IsEngaged && !hilt.IsNear(shape, _engagedMeters))
+            {
+                // Far from it (most frames): nothing to look at, and the side is taken afresh when it comes near.
+                memory.Side = null;
+                memory.PressMeters = 0.0f;
+                return;
+            }
+
+            var side = memory.IsEngaged && memory.Side.HasValue ? memory.Side.Value : hilt.FindSide(shape, part, memory.Side, _engagedMeters);
+            var hit = FindHiltDeepest(shape, hilt, part, side);
+            memory.IsEngaged = hit.Overlap > -_engagedMeters;
+            memory.PressMeters = Math.Max(0.0f, hit.Overlap);
+            Span<Stage> stages = stackalloc Stage[2];
+            Span<float> taken = stackalloc float[2];
+            for (var pass = 0; pass < Passes && hit.Overlap > (pass == 0 ? 0.0f : HiltSettledMeters); pass++)
+            {
+                // Each look shares what is left out again (the bowed blade's curve moves the deepest spot a little).
+                stages[0] = blade.FindTurnStage(hit.Point, hit.Fraction, side);
+                stages[1] = blade.FindBowStage(hit.Fraction, side);
+                var excess = ShareOut(stages, hit.Overlap, taken, out _);
+                blade.Turn(hit.Point, side, taken[0]);
+                blade.AddBow(hit.Fraction, side, taken[1]);
+                if (excess > 0.0f)
+                {
+                    SlideOffHilt(blade, shape, hilt, part, side, hit, excess, otherBladeSide);
+                }
+
+                FillPoints(blade, shape);
+                hit = FindHiltDeepest(shape, hilt, part, side);
+            }
+
+            // The side follows the blade as drawn, out of the hilt: off the bell's face, round its rim, round the grip.
+            // Only a frame's move is measured along the held side, so a fast one cannot carry it through. Pressed on the
+            // bell, it never goes to the bell's back (the hand is there): it slides off forward or round the rim.
+            var drawnSide = hilt.FindSide(shape, part, side, _engagedMeters);
+            var isToBack = part == HiltPart.Bell && Vector3.Dot(drawnSide, hilt.Axis) < -BackShare && Vector3.Dot(side, hilt.Axis) >= -BackShare;
+            memory.Side = memory.IsEngaged && isToBack ? side : drawnSide;
+        }
+
+        /// <summary>
+        /// Past the grip's and the bow's limits by <paramref name="excess"/>: the blade slides off the hilt's part as off a
+        /// blade, turning in the grip toward the nearer way round (the bell's rim, the grip's ends) by the share of that
+        /// turn the excess is of <see cref="ReleaseSpanMeters"/>. What overlap is left turns it on, past its grip's limit,
+        /// and a blade end-on to the press (its point on the bell's face) skids on until it is clear: never through.
+        /// </summary>
+        private void SlideOffHilt(Work blade, Vector3[] shape, Hilt hilt, HiltPart part, Vector3 side, HiltHit hit, float excess, Vector3 otherBladeSide)
+        {
+            var axis = FindHiltSlideAxis(shape, blade.Guard, hilt, part, side, hit.Point, otherBladeSide, out var isEndOn);
+            if (axis != Vector3.Zero && !isEndOn)
+            {
+                // Across the press: it slides off round the hilt as the press goes on past the limits. End-on (a point on
+                // the bell's face), or with no way round within the release's turn, it only skids, below.
+                var clearRadians = FindHiltClearingTurn(shape, blade.Guard, hilt, part, side, axis, isSeenAlong: true);
+                var share = Math.Min(1.0f, excess / ReleaseSpanMeters);
+                var radians = clearRadians < MaxReleaseRadians ? clearRadians * share * share * (3.0f - (2.0f * share)) : 0.0f;
+                blade.TurnAbout(axis, radians);
+            }
+
+            FillPoints(blade, shape);
+            var left = FindHiltDeepest(shape, hilt, part, side);
+            if (left.Overlap > HiltSettledMeters)
+            {
+                // Pushed on out of the hilt along the side, past the grip's limit, unless that carries it through the
+                // other blade (wedged between that blade and this bell, the blade comes first).
+                var lever = left.Point - blade.Guard;
+                var turnAxis = Vector3.Cross(lever, side);
+                var leverSquare = turnAxis.Length();
+                if (leverSquare > 1e-6f)
+                {
+                    var radians = left.Overlap / leverSquare;
+                    turnAxis /= leverSquare;
+                    if (!IsThroughOtherBlade(shape, blade.Guard, turnAxis, radians))
+                    {
+                        blade.TurnAbout(turnAxis, radians);
+                    }
+                }
+
+                FillPoints(blade, shape);
+                left = FindHiltDeepest(shape, hilt, part, side);
+            }
+
+            if (left.Overlap > HiltSettledMeters && axis != Vector3.Zero)
+            {
+                // A turn that clears it at all (none: it stays pressed into the hilt rather than through the blade).
+                var clearRadians = FindHiltClearingTurn(shape, blade.Guard, hilt, part, side, axis, isSeenAlong: false);
+                if (clearRadians < MaxReleaseRadians)
+                {
+                    blade.TurnAbout(axis, clearRadians);
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="shape"/> turned by <paramref name="radians"/> about <paramref name="axis"/> through
+        /// <paramref name="guard"/> would be in or through the other blade (<see cref="_otherPoints"/>): closer than
+        /// touching, or on its far side from <see cref="_otherBladeSide"/> where the two lie over each other. Never with
+        /// the blades apart (no side held).
+        /// </summary>
+        private bool IsThroughOtherBlade(Vector3[] shape, Vector3 guard, Vector3 axis, float radians)
+        {
+            if (_otherBladeSide == Vector3.Zero)
+            {
+                return false;
+            }
+
+            var turn = Quaternion.CreateFromAxisAngle(axis, radians);
+            for (var index = 0; index <= PieceCount; index++)
+            {
+                _turned[index] = guard + Vector3.Transform(shape[index] - guard, turn);
+            }
+
+            for (var piece = 0; piece < PieceCount; piece++)
+            {
+                for (var otherPiece = 0; otherPiece < PieceCount; otherPiece++)
+                {
+                    FindClosest(_turned[piece], _turned[piece + 1], _otherPoints[otherPiece], _otherPoints[otherPiece + 1], out var onThis, out var onOther, out _, out _);
+                    var apart = onThis - onOther;
+                    if (apart.LengthSquared() < ContactMeters * ContactMeters * 0.25f)
+                    {
+                        return true;
+                    }
+
+                    if (Vector3.Dot(apart, _otherBladeSide) < 0.0f && Flatten(apart, _otherBladeSide).Length() < ContactMeters)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The axis (through the sliding blade's guard) it turns about to slide off the hilt's part: its press spot moves
+        /// square to the press and to the blade, away from the hilt's axis, or the way <paramref name="otherBladeSide"/>
+        /// says when there is one, so it never slides through the other blade; end-on (<paramref name="isEndOn"/>),
+        /// straight away from the hilt's axis. Zero when there is no such turn.
+        /// </summary>
+        private static Vector3 FindHiltSlideAxis(Vector3[] shape, Vector3 guard, Hilt hilt, HiltPart part, Vector3 side, Vector3 point, Vector3 otherBladeSide, out bool isEndOn)
+        {
+            var away = Flatten(point - hilt.FindClosestOnAxis(point, part), side);
+            var along = Flatten(shape[PieceCount] - shape[0], side);
+            var bladeLength = Vector3.Distance(shape[PieceCount], shape[0]);
+            isEndOn = along.Length() < EndOnShare * bladeLength;
+            if (!isEndOn && part == HiltPart.Bell && Math.Abs(Vector3.Dot(side, hilt.Axis)) < BackShare)
+            {
+                // Across the bell's own depth, pressed on its rim: it slides off its front face, not round to the back
+                // (the hand is there) and not the long way round the rim.
+                away = hilt.Axis;
+            }
+            else if (!isEndOn)
+            {
+                var direction = Vector3.Normalize(along);
+                away -= Vector3.Dot(away, direction) * direction;
+                var hint = Flatten(otherBladeSide, side);
+                hint -= Vector3.Dot(hint, direction) * direction;
+                if (hint.LengthSquared() > 1e-6f)
+                {
+                    away = Vector3.Dot(away, hint) < 0.0f || away.LengthSquared() < 1e-8f ? hint : away;
+                }
+            }
+
+            if (away.LengthSquared() < 1e-10f)
+            {
+                return Vector3.Zero;
+            }
+
+            var axis = Vector3.Cross(point - guard, Vector3.Normalize(away));
+            return axis.LengthSquared() > 1e-10f ? Vector3.Normalize(axis) : Vector3.Zero;
+        }
+
+        /// <summary>
+        /// The least turn of <paramref name="shape"/> about <paramref name="axis"/> through <paramref name="guard"/> that
+        /// clears the hilt's part: seen along <paramref name="side"/> (no spot over it) when <paramref name="isSeenAlong"/>,
+        /// else only out of it along the side. At most <see cref="MaxReleaseDegrees"/>.
+        /// </summary>
+        private float FindHiltClearingTurn(Vector3[] shape, Vector3 guard, Hilt hilt, HiltPart part, Vector3 side, Vector3 axis, bool isSeenAlong)
+        {
+            if (IsClearOfHilt(shape, guard, hilt, part, side, axis, 0.0f, isSeenAlong))
+            {
+                return 0.0f;
+            }
+
+            if (!IsClearOfHilt(shape, guard, hilt, part, side, axis, MaxReleaseRadians, isSeenAlong))
+            {
+                return MaxReleaseRadians;
+            }
+
+            var blocked = 0.0f;
+            var clear = MaxReleaseRadians;
+            for (var step = 0; step < ReleaseSearchSteps; step++)
+            {
+                var middle = (blocked + clear) * 0.5f;
+                if (IsClearOfHilt(shape, guard, hilt, part, side, axis, middle, isSeenAlong))
+                {
+                    clear = middle;
+                }
+                else
+                {
+                    blocked = middle;
+                }
+            }
+
+            return clear;
+        }
+
+        private bool IsClearOfHilt(Vector3[] shape, Vector3 guard, Hilt hilt, HiltPart part, Vector3 side, Vector3 axis, float radians, bool isSeenAlong)
+        {
+            var turn = Quaternion.CreateFromAxisAngle(axis, radians);
+            for (var index = 0; index <= PieceCount; index++)
+            {
+                _turned[index] = guard + Vector3.Transform(shape[index] - guard, turn);
+            }
+
+            var deepest = FindHiltDeepest(_turned, hilt, part, side);
+            var isClear = isSeenAlong ? !deepest.IsOver : deepest.Overlap <= HiltSettledMeters * 0.5f;
+            return isClear && !IsThroughOtherBlade(shape, guard, axis, radians);
+        }
+
+        /// <summary>
+        /// The spot of <paramref name="shape"/> deepest in the hilt's part along <paramref name="side"/>: for each spot
+        /// whose line along the side runs through the part, how far it must move along the side to be out of it
+        /// (negative: already clear by that much). A spot behind the part counts as pushed through it, however far.
+        /// </summary>
+        private static HiltHit FindHiltDeepest(Vector3[] shape, Hilt hilt, HiltPart part, Vector3 side)
+        {
+            var best = new HiltHit { Overlap = -float.MaxValue };
+            for (var piece = 0; piece < PieceCount; piece++)
+            {
+                for (var step = piece == 0 ? 0 : 1; step <= HiltStepsPerPiece; step++)
+                {
+                    var along = (float)step / HiltStepsPerPiece;
+                    var point = Vector3.Lerp(shape[piece], shape[piece + 1], along);
+                    if (hilt.TryFindExit(point, side, part, out var exit) && exit > best.Overlap)
+                    {
+                        best = new HiltHit { IsOver = true, Overlap = exit, Point = point, Fraction = (piece + along) / PieceCount };
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>The blade as given so far, as <see cref="PieceCount"/> + 1 points.</summary>
+        private static void FillPoints(Work work, Vector3[] shape)
+        {
+            var give = work.ToGive();
+            for (var index = 0; index <= PieceCount; index++)
+            {
+                var fraction = (float)index / PieceCount;
+                shape[index] = Vector3.Lerp(give.Chord.GuardPosition, give.Chord.TipPosition, fraction) + give.Droop.GetChordOffset(fraction);
+            }
+        }
+
+        /// <summary>The two solid parts of a hilt.</summary>
+        private enum HiltPart
+        {
+            Bell,
+            Grip,
+        }
+
+        /// <summary>
+        /// A blade's hilt as the other blade meets it, where the hand holds it: the bell (<see cref="BellGuard"/>, its
+        /// front face on the guard) and the grip behind it, one round cylinder each about the hilt's axis, each grown by
+        /// the other blade's half-width (<see cref="DrawnBlade.BladeRadiusMeters"/>).
+        /// </summary>
+        private readonly struct Hilt
+        {
+            // The other blade's half-width, and 2 mm for its drawn curve between the solver's straight pieces.
+            private const float Margin = DrawnBlade.BladeRadiusMeters + 0.002f;
+            private const float BellRadius = BellGuard.RadiusMeters + Margin;
+            private const float BellFront = Margin;
+            private const float BellBack = -BellGuard.DepthMeters - Margin;
+            private const float GripRadius = GripRadiusMeters + Margin;
+            private const float GripFront = -BellGuard.DepthMeters;
+            private const float GripBack = GripFront - GripLengthMeters - Margin;
+
+            public Hilt(BladeGive blade)
+            {
+                Guard = blade.Chord.GuardPosition;
+                var axis = blade.Droop.GetHiltDirection(blade.Chord.Direction);
+                Axis = axis.LengthSquared() > 1e-12f ? Vector3.Normalize(axis) : Vector3.UnitZ;
+            }
+
+            public Vector3 Guard { get; }
+
+            /// <summary>Along the blade, out of the bell's front face.</summary>
+            public Vector3 Axis { get; }
+
+            /// <summary>
+            /// False when no piece of <paramref name="shape"/> comes within <paramref name="bandMeters"/> of the hilt's
+            /// bounding sphere (about its middle, reaching the bell's rim and the grip's end).
+            /// </summary>
+            public bool IsNear(Vector3[] shape, float bandMeters)
+            {
+                var middle = Guard + (Axis * (GripBack * 0.5f));
+                var reach = (float)Math.Sqrt((BellRadius * BellRadius) + (GripBack * GripBack * 0.25f)) + bandMeters;
+                for (var piece = 0; piece < PieceCount; piece++)
+                {
+                    var onPiece = SegmentMath.FindClosestPointOnSegment(middle, shape[piece], shape[piece + 1]);
+                    if (Vector3.DistanceSquared(onPiece, middle) <= reach * reach)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            /// <summary>The point on the part's axis nearest <paramref name="point"/>.</summary>
+            public Vector3 FindClosestOnAxis(Vector3 point, HiltPart part)
+            {
+                GetRange(part, out var back, out var front, out _);
+                return Guard + (Axis * Math.Clamp(Vector3.Dot(point - Guard, Axis), back, front));
+            }
+
+            /// <summary>
+            /// Which way from the part <paramref name="shape"/> is. The bell is a thin disc: a blade that does not run
+            /// through its depth is in front of it or behind it; one that does outside the rim went round it, out from
+            /// the rim there; one that does inside the rim went through, so the side held (<paramref name="held"/>)
+            /// stands. The grip: out of it where the blade comes closest. Within <paramref name="bandMeters"/> of either,
+            /// a side opposite the one held is a blade pushed right through in one frame, not round: the held one stands.
+            /// </summary>
+            public Vector3 FindSide(Vector3[] shape, HiltPart part, Vector3? held, float bandMeters)
+            {
+                var side = part == HiltPart.Bell ? FindBellSide(shape, held, out var distance) : FindGripSide(shape, held, out distance);
+                return held.HasValue && distance < bandMeters && Vector3.Dot(side, held.Value) < 0.0f ? held.Value : side;
+            }
+
+            /// <summary>
+            /// How far along <paramref name="side"/> <paramref name="point"/> must move to be out of the grown part, when its
+            /// line along the side runs through it (false when it misses).
+            /// </summary>
+            public bool TryFindExit(Vector3 point, Vector3 side, HiltPart part, out float exit)
+            {
+                GetRange(part, out var back, out var front, out var radius);
+                exit = 0.0f;
+                var offset = point - Guard;
+                var along = Vector3.Dot(offset, Axis);
+                var sideAlong = Vector3.Dot(side, Axis);
+                var low = -float.MaxValue;
+                var high = float.MaxValue;
+                if (Math.Abs(sideAlong) < 1e-6f)
+                {
+                    if (along < back || along > front)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    var first = (back - along) / sideAlong;
+                    var second = (front - along) / sideAlong;
+                    low = Math.Min(first, second);
+                    high = Math.Max(first, second);
+                }
+
+                var radial = offset - (along * Axis);
+                var radialStep = side - (sideAlong * Axis);
+                var a = radialStep.LengthSquared();
+                var b = Vector3.Dot(radial, radialStep);
+                var c = radial.LengthSquared() - (radius * radius);
+                if (a < 1e-9f)
+                {
+                    if (c > 0.0f)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    var discriminant = (b * b) - (a * c);
+                    if (discriminant < 0.0f)
+                    {
+                        return false;
+                    }
+
+                    var root = (float)Math.Sqrt(discriminant);
+                    low = Math.Max(low, (-b - root) / a);
+                    high = Math.Min(high, (-b + root) / a);
+                }
+
+                exit = high;
+                return low <= high;
+            }
+
+            private static void GetRange(HiltPart part, out float back, out float front, out float radius)
+            {
+                back = part == HiltPart.Bell ? BellBack : GripBack;
+                front = part == HiltPart.Bell ? BellFront : GripFront;
+                radius = part == HiltPart.Bell ? BellRadius : GripRadius;
+            }
+
+            private Vector3 FindBellSide(Vector3[] shape, Vector3? held, out float distance)
+            {
+                // Where the blade runs through the bell's own depth (between its faces) nearest its axis, if it does.
+                const float Front = 0.0f;
+                const float Back = -BellGuard.DepthMeters;
+                var nearest = float.MaxValue;
+                var outward = Vector3.Zero;
+                for (var piece = 0; piece < PieceCount; piece++)
+                {
+                    var start = shape[piece] - Guard;
+                    var step = shape[piece + 1] - shape[piece];
+                    var startAlong = Vector3.Dot(start, Axis);
+                    var stepAlong = Vector3.Dot(step, Axis);
+                    var low = 0.0f;
+                    var high = 1.0f;
+                    if (Math.Abs(stepAlong) < 1e-9f)
+                    {
+                        if (startAlong < Back || startAlong > Front)
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        var first = (Back - startAlong) / stepAlong;
+                        var second = (Front - startAlong) / stepAlong;
+                        low = Math.Max(low, Math.Min(first, second));
+                        high = Math.Min(high, Math.Max(first, second));
+                        if (low > high)
+                        {
+                            continue;
+                        }
+                    }
+
+                    var radialStart = start - (startAlong * Axis);
+                    var radialStep = step - (stepAlong * Axis);
+                    var stepSquared = radialStep.LengthSquared();
+                    var at = stepSquared > 1e-12f ? Math.Clamp(-Vector3.Dot(radialStart, radialStep) / stepSquared, low, high) : low;
+                    var radial = radialStart + (radialStep * at);
+                    var radius = radial.Length();
+                    if (radius < nearest)
+                    {
+                        nearest = radius;
+                        outward = radius > 1e-6f ? radial / radius : Vector3.Zero;
+                    }
+                }
+
+                if (nearest == float.MaxValue)
+                {
+                    // Wholly in front of the bell or behind it.
+                    distance = float.MaxValue;
+                    var center = BellGuard.FindCenter(Guard, Axis);
+                    foreach (var point in shape)
+                    {
+                        distance = Math.Min(distance, BellGuard.FindDistance(point, center, Axis, out _));
+                    }
+
+                    return Vector3.Dot(shape[0] - Guard, Axis) >= (Front + Back) * 0.5f ? Axis : -Axis;
+                }
+
+                distance = nearest - BellRadius;
+                if (nearest >= BellRadius - HiltSettledMeters && outward != Vector3.Zero)
+                {
+                    return outward;
+                }
+
+                return held ?? Axis;
+            }
+
+            private Vector3 FindGripSide(Vector3[] shape, Vector3? held, out float distance)
+            {
+                var closest = float.MaxValue;
+                var outward = Axis;
+                var half = (GripFront - GripBack) * 0.5f;
+                var center = Guard + (Axis * (GripBack + half));
+                for (var piece = 0; piece < PieceCount; piece++)
+                {
+                    for (var step = piece == 0 ? 0 : 1; step <= HiltStepsPerPiece; step++)
+                    {
+                        var point = Vector3.Lerp(shape[piece], shape[piece + 1], (float)step / HiltStepsPerPiece);
+                        var pointDistance = BellGuard.FindCylinderDistance(point, center, Axis, GripRadius, half, out var surfaceOutward);
+                        if (pointDistance < closest)
+                        {
+                            closest = pointDistance;
+                            outward = surfaceOutward;
+                        }
+                    }
+                }
+
+                distance = closest;
+                return closest < -HiltSettledMeters && held.HasValue ? held.Value : outward;
+            }
+        }
+
+        /// <summary>What one blade remembers about the other's hilt: which way from each part it is, and whether it is near.</summary>
+        private sealed class HiltMemory
+        {
+            public HiltPartMemory Bell { get; } = new HiltPartMemory();
+
+            public HiltPartMemory Grip { get; } = new HiltPartMemory();
+
+            public bool IsEngaged => Bell.IsEngaged || Grip.IsEngaged;
+
+            public float PressMeters => Math.Max(Bell.PressMeters, Grip.PressMeters);
+
+            public void Reset()
+            {
+                Bell.Reset();
+                Grip.Reset();
+            }
+        }
+
+        /// <summary>What one blade remembers about one part of the other's hilt.</summary>
+        private sealed class HiltPartMemory
+        {
+            public Vector3? Side;
+            public bool IsEngaged;
+            public float PressMeters;
+
+            public void Reset()
+            {
+                Side = null;
+                IsEngaged = false;
+                PressMeters = 0.0f;
+            }
+        }
+
+        /// <summary>A blade's deepest spot in a part of the other's hilt.</summary>
+        private struct HiltHit
+        {
+            public bool IsOver;
+            public float Overlap;
+            public Vector3 Point;
+            public float Fraction;
         }
 
         /// <summary>The deepest spot found: where, along which side, and how far into each other.</summary>

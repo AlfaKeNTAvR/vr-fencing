@@ -251,13 +251,8 @@ namespace VrFencing.Blade
                 }
             }
 
+            // The Armed Dummy's blade and its hilt (bell guard and grip) are the contact solver's (PER-122), not obstacles.
             _obstacles.Add(BladeObstacle.Floor);
-            if (hasDummy)
-            {
-                // The Armed Dummy's bell guard while it holds a blade (PER-120): solid for the point. Its blade is the
-                // contact solver's (PER-122).
-                _armedDummy?.AddBladeObstacles(_obstacles);
-            }
 
             // The opponent's body (PER-81), last, so its place in the list stays put.
             foreach (var obstacle in _extraObstacles)
@@ -293,7 +288,12 @@ namespace VrFencing.Blade
             }
 
             _lastPressHapticAt = now;
-            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, _drawnBlade.IsDecoupled), _settings.Hand);
+            var strength = BladeHaptics.GetPressStrength(
+                _drawnBlade.Contact.PushMeters, _drawnBlade.IsDecoupled, _drawnBlade.Contact.IsPinnedOnPlane, _settings.Blade.FloorBuzz);
+            if (strength > 0.0f)
+            {
+                _haptics.PlayPress(strength, _settings.Hand);
+            }
         }
 
         /// <summary>A Strip re-placed or the Dummy stood at another distance moves every zone at once: a jump, not motion.</summary>

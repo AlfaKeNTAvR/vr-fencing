@@ -30,6 +30,7 @@ namespace VrFencing.Drills
             switch (behavior)
             {
                 case FreePracticeBehavior.Guard:
+                case FreePracticeBehavior.HandFixed:
                 case FreePracticeBehavior.KeepDistance:
                     return DummyDistance.Lunge;
                 case FreePracticeBehavior.Footwork:
@@ -44,10 +45,20 @@ namespace VrFencing.Drills
         private static readonly FreePracticeBehavior[] Order =
         {
             FreePracticeBehavior.Guard,
+            FreePracticeBehavior.HandFixed,
             FreePracticeBehavior.KeepDistance,
             FreePracticeBehavior.Footwork,
             FreePracticeBehavior.Attacks,
         };
+
+        /// <summary>
+        /// True for <see cref="FreePracticeBehavior.HandFixed"/>: the Dummy stands en garde and its hand never moves or
+        /// gives (no give to a press, no knock from a beat, no footwork), so only the blades themselves react.
+        /// </summary>
+        public static bool IsHandFixed(FreePracticeBehavior? behavior)
+        {
+            return behavior == FreePracticeBehavior.HandFixed;
+        }
 
         /// <summary>
         /// Whether Free Practice drives the Dummy now: no Drill is on (neither its task line nor its run, paused or not),

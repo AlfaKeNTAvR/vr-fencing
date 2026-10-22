@@ -74,8 +74,10 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void ALightTouchIsBackWithinAThirdOfASecond()
+        public void ALightTouchComesCalmlyBackInAboutHalfASecond()
         {
+            // Nikita's headset test after PR 72: the hand bounced back too fast (2.5 Hz, about 0.3 s) and overshot. Now a
+            // calmer, critically damped return: still well out at 0.3 s, back by 0.6 s.
             var deflection = new BladeDeflection();
             deflection.Kick(Clash(0.3f, 1.0f, Vector3.UnitX));
             var peak = 0.0f;
@@ -85,13 +87,58 @@ namespace VrFencing.Tests.Blade
                 peak = Math.Max(peak, deflection.TipOffset.Length());
                 Assert.That(deflection.Phase, Is.EqualTo(DeflectionPhase.Spring), "A light touch never opens the line.");
                 Assert.That(deflection.IsOffLine, Is.False);
-                if (time >= 0.3f)
+                if (Math.Abs(time - 0.3f) < FrameSeconds * 0.5f)
+                {
+                    Assert.That(deflection.TipOffset.Length(), Is.GreaterThan(0.01f), "Not snapped back at 0.3 s.");
+                }
+
+                if (time >= 0.6f)
                 {
                     Assert.That(deflection.TipOffset.Length(), Is.LessThan(0.005f), $"Back at {time:0.00} s.");
                 }
             }
 
             Assert.That(peak, Is.EqualTo(BladeDeflection.LightTouchMeters).Within(0.003f), "A slow touch moves it at most 5 cm.");
+        }
+
+        [Test]
+        public void ThePointNeverCrossesItsLineComingBack(
+            [Values("touch", "beat", "small press", "big press")] string what)
+        {
+            // Nikita's headset test after PR 72: let go after a hit or a press, the Dummy's point came back past its line
+            // to the other side, like a spring. Now it comes back and stops on its line, whatever moved it off.
+            var deflection = new BladeDeflection();
+            switch (what)
+            {
+                case "touch":
+                    deflection.Kick(Clash(0.4f, 1.0f, Vector3.UnitX));
+                    break;
+                case "beat":
+                    deflection.Kick(Clash(2.0f, 0.8f, Vector3.UnitX));
+                    break;
+                default:
+                    var held = what == "small press" ? 0.03f : 0.12f;
+                    for (var time = 0.0f; time < 1.0f; time += FrameSeconds)
+                    {
+                        deflection.HoldAt(Vector3.UnitX * held);
+                        deflection.Step(FrameSeconds);
+                        Assert.That(deflection.TipOffset.X, Is.LessThanOrEqualTo(held + 1e-4f), "Pressed, it goes where the press holds it, no further.");
+                    }
+
+                    deflection.HoldAt(Vector3.Zero);
+                    break;
+            }
+
+            var most = 0.0f;
+            for (var time = 0.0f; time < 3.0f; time += FrameSeconds)
+            {
+                deflection.Step(FrameSeconds);
+                most = Math.Max(most, deflection.TipOffset.X);
+                Assert.That(deflection.TipOffset.X, Is.GreaterThanOrEqualTo(-1e-5f), $"{what}: at {time:0.00} s it crossed its line.");
+            }
+
+            Assert.That(most, Is.GreaterThan(0.01f), "Setup: it was moved off its line.");
+            Assert.That(deflection.TipOffset.Length(), Is.LessThan(0.001f), "Back on its line.");
         }
 
         [Test]
@@ -182,7 +229,7 @@ namespace VrFencing.Tests.Blade
         {
             var deflection = new BladeDeflection();
             deflection.HoldAt(new Vector3(0.0f, -0.15f, 0.0f));
-            Run(deflection, 0.5f);
+            Run(deflection, 0.8f); // The calmer spring (PER-122 fix) follows a press in about half a second.
             Assert.That(deflection.TipOffset.Y, Is.EqualTo(-0.15f).Within(0.005f), "Setup: held aside by the press.");
             Assert.That(deflection.IsOffLine, Is.True, "A press holding it well aside keeps the Dummy from attacking.");
 
@@ -212,16 +259,20 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void TheHandGivesWayByThePressOverItsYieldStiffnessSquareToTheBlade()
+        public void TheHandGivesWayByThePressPastWhatItHoldsOverItsYieldStiffnessSquareToTheBlade()
         {
+            // 1 N past what each hand holds (PER-122 fix: a press first bows the blade, the hand gives only past it).
             var push = Vector3.Normalize(new Vector3(0.0f, -1.0f, 0.3f));
-            var light = ArmedDummyBlade.FindYieldTipOffset(1.0f, push, -Vector3.UnitZ, OpponentHand.Light);
-            var strong = ArmedDummyBlade.FindYieldTipOffset(1.0f, push, -Vector3.UnitZ, OpponentHand.Strong);
+            var light = ArmedDummyBlade.FindYieldTipOffset(ArmedDummyBlade.LightHoldNewtons + 1.0f, push, -Vector3.UnitZ, OpponentHand.Light);
+            var strong = ArmedDummyBlade.FindYieldTipOffset(ArmedDummyBlade.StrongHoldNewtons + 1.0f, push, -Vector3.UnitZ, OpponentHand.Strong);
 
             Assert.That(light.Z, Is.EqualTo(0.0f).Within(1e-6f), "Square to its blade.");
             Assert.That(light.Y, Is.EqualTo(-1.0f / ArmedDummyBlade.LightYieldStiffness).Within(1e-5f));
             Assert.That(light.Length(), Is.GreaterThan(3.0f * strong.Length()), "A light hand gives way four times as far as a strong one.");
             Assert.That(ArmedDummyBlade.FindYieldTipOffset(0.0f, push, -Vector3.UnitZ, OpponentHand.Light), Is.EqualTo(Vector3.Zero));
+            Assert.That(ArmedDummyBlade.FindYieldTipOffset(ArmedDummyBlade.MediumHoldNewtons, push, -Vector3.UnitZ, OpponentHand.Medium), Is.EqualTo(Vector3.Zero), "A press it holds moves it not at all.");
+            Assert.That(ArmedDummyBlade.LightHoldNewtons, Is.LessThan(ArmedDummyBlade.MediumHoldNewtons));
+            Assert.That(ArmedDummyBlade.MediumHoldNewtons, Is.LessThan(ArmedDummyBlade.StrongHoldNewtons));
         }
 
         // ---- The knocked arm ----

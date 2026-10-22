@@ -71,7 +71,6 @@ namespace VrFencing.Tests.Blade
             _obstacles.Clear();
             _obstacles.AddRange(_body);
             _obstacles.Add(BladeObstacle.Floor);
-            Dummy.AddObstacles(_obstacles);
             if (Contact.IsNear)
             {
                 Fencer.Flex.Reset();

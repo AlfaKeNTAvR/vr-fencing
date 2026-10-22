@@ -24,6 +24,8 @@ namespace VrFencing.UI
             {
                 case FreePracticeBehavior.Guard:
                     return "guard";
+                case FreePracticeBehavior.HandFixed:
+                    return "hand fixed";
                 case FreePracticeBehavior.KeepDistance:
                     return "keep distance";
                 case FreePracticeBehavior.Footwork:

@@ -53,6 +53,7 @@ namespace VrFencing.UI
         StartMarkSideTolerance,
         OpponentHand,
         ContactSound,
+        FloorBuzz,
     }
 
     /// <summary>What else must follow a changed Setting, beyond saving it.</summary>
@@ -194,6 +195,7 @@ namespace VrFencing.UI
                 case SettingId.StartMarkSideTolerance: return "Start Mark: side tolerance";
                 case SettingId.OpponentHand: return "Opponent's hand";
                 case SettingId.ContactSound: return "Contact sound";
+                case SettingId.FloorBuzz: return "Floor buzz";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, "Not a Setting.");
             }
         }
@@ -244,6 +246,8 @@ namespace VrFencing.UI
                     return settings.ArmedDummy.OpponentHand.ToString();
                 case SettingId.ContactSound:
                     return settings.Blade.ContactSound ? "On" : "Off";
+                case SettingId.FloorBuzz:
+                    return settings.Blade.FloorBuzz ? "On" : "Off";
                 default:
                     var number = Numbers[id];
                     return FormatNumber(number.Get(settings) * number.DisplayScale, number.Format, number.Unit);
@@ -287,6 +291,7 @@ namespace VrFencing.UI
                 case SettingId.ClashHaptic:
                 case SettingId.ClashHapticFloor:
                 case SettingId.ContactSound:
+                case SettingId.FloorBuzz:
                     return SettingImpact.Blade;
                 case SettingId.OpponentHand:
                     // The Blade's Armed Dummy reads it each frame.
@@ -389,6 +394,9 @@ namespace VrFencing.UI
                     break;
                 case SettingId.ContactSound:
                     changed.Blade.ContactSound = !settings.Blade.ContactSound;
+                    break;
+                case SettingId.FloorBuzz:
+                    changed.Blade.FloorBuzz = !settings.Blade.FloorBuzz;
                     break;
                 default:
                     Numbers[id].Step(changed, Math.Sign(direction));
