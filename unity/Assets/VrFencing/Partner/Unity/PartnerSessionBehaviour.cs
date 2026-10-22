@@ -110,6 +110,8 @@ namespace VrFencing.Partner
             _network.OnClientConnectedCallback += OnClientConnected;
             _network.OnClientDisconnectCallback += OnClientDisconnected;
             _network.OnTransportFailure += OnTransportFailure;
+            _network.OnServerStarted += KeepOwnScene;
+            _network.OnClientStarted += KeepOwnScene;
         }
 
         private void Start()
@@ -125,6 +127,8 @@ namespace VrFencing.Partner
                 _network.OnClientConnectedCallback -= OnClientConnected;
                 _network.OnClientDisconnectCallback -= OnClientDisconnected;
                 _network.OnTransportFailure -= OnTransportFailure;
+                _network.OnServerStarted -= KeepOwnScene;
+                _network.OnClientStarted -= KeepOwnScene;
             }
 
             DetachSession();
@@ -410,6 +414,31 @@ namespace VrFencing.Partner
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
                 Debug.Log($"{LogTag} Signed in anonymously as {AuthenticationService.Instance.PlayerId}.");
             }
+        }
+
+        /// <summary>
+        /// Each app keeps its own scene (PER-143, <see cref="PartnerScenes"/>): Netcode's scene sync would otherwise make
+        /// the joining side load the Host's scene and unload its own (the PC Editor's Fencer replay). Netcode makes a new
+        /// scene manager on every start, so this is set on each.
+        /// </summary>
+        private void KeepOwnScene()
+        {
+            if (_network.SceneManager != null)
+            {
+                _network.SceneManager.VerifySceneBeforeLoading = ShouldSyncScene;
+            }
+        }
+
+        private static bool ShouldSyncScene(int buildIndex, string sceneName, UnityEngine.SceneManagement.LoadSceneMode mode)
+        {
+            var activeSceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            var isSynced = PartnerScenes.ShouldSyncScene(buildIndex, sceneName, activeSceneName);
+            if (!isSynced)
+            {
+                Debug.Log($"{LogTag} Keeping this app's scene ('{activeSceneName}'): scene '{sceneName}' is not synced.");
+            }
+
+            return isSynced;
         }
 
         /// <summary>Sets what this side sends in its connection request: its version.</summary>
