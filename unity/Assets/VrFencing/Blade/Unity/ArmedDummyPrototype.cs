@@ -38,7 +38,7 @@ namespace VrFencing.Blade
     /// Parry, the red flash and hit buzz) but never reported to the runner: no Reps, no score.
     /// All rules are in the Core; this only poses, draws, plays and forwards.
     /// </summary>
-    internal sealed class ArmedDummyPrototype : IDisposable
+    internal sealed partial class ArmedDummyPrototype : IDisposable
     {
         // Why the Dummy holds a blade now: a Drill's run, Free Practice holding its line, Free Practice attacking, or not at all.
         private enum ArmedMode

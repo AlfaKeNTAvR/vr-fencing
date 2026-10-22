@@ -43,6 +43,21 @@ namespace VrFencing.Tracking
 
         public bool IsRecording => _writer != null;
 
+        /// <summary>
+        /// Raised when a recording starts, with its UTC start (the files' stem): other logs written alongside it start
+        /// then (PER-136, the blade-contact log).
+        /// </summary>
+        public event Action<DateTimeOffset> RecordingStarted;
+
+        /// <summary>Raised when a recording stops, with why; logs written alongside it close then.</summary>
+        public event Action<string> RecordingStopped;
+
+        /// <summary>Seconds since the recording started (the time in every frame and log row); 0 while not recording.</summary>
+        public double ElapsedSeconds => IsRecording ? Time.realtimeSinceStartupAsDouble - _startedRealtimeSeconds : 0.0;
+
+        /// <summary>The button that starts and stops a recording, by name, for hints: the off-hand thumbstick.</summary>
+        public string ToggleButtonName => _settings != null && _settings.Hand == Hand.Left ? "right thumbstick" : "left thumbstick";
+
         /// <summary>Where recordings go: on the Quest <c>/sdcard/Android/data/com.alfakentavr.vrfencing/files/recordings/</c>.</summary>
         public static string RecordingsFolder => Path.Combine(Application.persistentDataPath, RecordingsFolderName);
 
@@ -92,6 +107,7 @@ namespace VrFencing.Tracking
         // LateUpdate: OVRCameraRig moves the head and controller anchors in Update; read them after that.
         private void LateUpdate()
         {
+            _indicator?.UpdateNote(Time.realtimeSinceStartupAsDouble);
             if (!IsRecording)
             {
                 _indicator?.Show(false, 0.0);
@@ -148,6 +164,12 @@ namespace VrFencing.Tracking
             _indicator?.Destroy();
         }
 
+        /// <summary>Shows a short note under the REC line for <paramref name="seconds"/> (a mark's confirmation, a hint).</summary>
+        public void ShowNote(string text, Color color, double seconds)
+        {
+            _indicator?.ShowNote(text, color, Time.realtimeSinceStartupAsDouble + seconds);
+        }
+
         private void OnSettingsChanged(TrainerSettings settings)
         {
             _settings = settings;
@@ -193,6 +215,7 @@ namespace VrFencing.Tracking
             _recordedSkeletonChangedCount = null;
             var stripNote = header.StripLengthMeters.HasValue ? "in the Strip frame" : "with no Strip placed (room origin)";
             Debug.Log($"[Recorder] Recording the Fencer {stripNote} to {path}; press the off-hand thumbstick again to stop.");
+            RecordingStarted?.Invoke(startedUtc);
         }
 
         private void StopRecording(string reason)
@@ -217,6 +240,7 @@ namespace VrFencing.Tracking
             _indicator?.Show(false, 0.0);
             var megabytes = File.Exists(_path) ? new FileInfo(_path).Length / BytesPerMegabyte : 0.0f;
             Debug.Log($"[Recorder] Recording stopped ({reason}): {frames} frames, {seconds:0.0} s, {megabytes:0.0} MB, {_path}.");
+            RecordingStopped?.Invoke(reason);
         }
 
         private void WriteFrame(double elapsedSeconds)
