@@ -65,6 +65,28 @@ namespace VrFencing.Blade
         /// </summary>
         public const float MaxYieldMeters = 0.25f;
 
+        /// <summary>
+        /// A beat carries the Dummy's blade on only where the Fencer's blade is into its outer part, from this share of
+        /// the way to its point: the part a knock of the point moves. Nearer its guard (a point driven at its forte) the
+        /// two blades' give and slide take the press, as for any press.
+        /// </summary>
+        public const float MinCarryFraction = 0.5f;
+
+        /// <summary>
+        /// A beat carries the Dummy's blade on where the Fencer's blade is this share of its lead off to the side, seen
+        /// along the knock, as well as where they lie over each other: a fast sweep slips sideways a little as it pushes.
+        /// </summary>
+        public const float CarrySlack = 0.5f;
+
+        // The outer part of the Dummy's blade is looked at in this many steps (about 6 cm each).
+        private const int CarrySamples = 8;
+
+        // The least carry that clears the Fencer's blade is found to about 4 mm by halving this many times.
+        private const int CarrySearchSteps = 8;
+
+        // The knock must be at least this square to the blade to carry it (else it slides along it).
+        private const float MinCarrySquare = 0.3f;
+
         private readonly BladeDeflection _deflection = new BladeDeflection();
         private readonly BladeContactSolver _solver = new BladeContactSolver();
         private readonly DrawnBlade _drawn = new DrawnBlade();
@@ -176,8 +198,10 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// One frame: the Dummy's hand reads last frame's press and moves, then the two blades' contact is solved and
-        /// the Dummy's blade drawn. Call before the Fencer's drawn blade steps with <see cref="FencerGive"/>.
+        /// One frame: the Dummy's hand reads last frame's press and moves, a beat (<see cref="Knock"/>) carrying it on with
+        /// the blade that hit it (PER-138: the knock is motion the contact sees, on the side it was hit, never a jump
+        /// through); then the two blades' contact is solved and the Dummy's blade drawn. Call before the Fencer's drawn
+        /// blade steps with <see cref="FencerGive"/>.
         /// </summary>
         /// <param name="forte">The guard to the undrooped point, where the Dummy's arm holds it in line (not deflected).</param>
         /// <param name="shoulder">The Dummy's sword shoulder: the knocked arm turns about it.</param>
@@ -221,15 +245,19 @@ namespace VrFencing.Blade
             }
 
             var droop = Deflect(forte, shoulder, gripUp, down, blade, out var handChord);
-            HandChord = handChord;
-            ArmTurn = _deflection.GetArmTurn(forte, shoulder);
 
             // The blades: the Fencer's is A, the Dummy's is B.
             var bendStiffness = BladeContactSolver.GetBendStiffness(blade.Flex);
-            _solver.Solve(
-                new BladeHold(fencerHand, fencerDroop, BladeContactSolver.FencerGripStiffness, bendStiffness),
-                new BladeHold(handChord, droop, GetGripStiffness(hand), bendStiffness),
-                deltaSeconds);
+            var fencerHold = new BladeHold(fencerHand, fencerDroop, BladeContactSolver.FencerGripStiffness, bendStiffness);
+            if (_deflection.IsKnockedOut && TryFindCarry(forte, shoulder, gripUp, down, blade, fencerHand, out var carry))
+            {
+                _deflection.CarryBy(carry);
+                droop = Deflect(forte, shoulder, gripUp, down, blade, out handChord);
+            }
+
+            HandChord = handChord;
+            ArmTurn = _deflection.GetArmTurn(forte, shoulder);
+            _solver.Solve(fencerHold, new BladeHold(handChord, droop, GetGripStiffness(hand), bendStiffness), deltaSeconds);
             FencerGive = _solver.GiveA;
             var give = _solver.GiveB;
             Chord = give.Chord;
@@ -278,6 +306,112 @@ namespace VrFencing.Blade
         public Vector3 GetPointAt(float fraction)
         {
             return _drawn.GetCenterlinePoint(fraction);
+        }
+
+        /// <summary>
+        /// A clash (<see cref="BladeClashDetector"/>) knocks the Dummy's hand (<see cref="BladeDeflection.Kick"/>), the next
+        /// step carrying it on with the blade that hit it. Only away from the Fencer's blade, on the side the contact holds
+        /// (PER-138): a blade drawn back off the Dummy's (a pull-back grazing it) knocks nothing, so a knock never moves the
+        /// Dummy's blade toward or through the Fencer's. Nothing for a hand that never moves (<see cref="IsHandFixed"/>).
+        /// </summary>
+        public void Knock(BladeClash clash)
+        {
+            if (IsHandFixed || (_solver.Side.HasValue && Vector3.Dot(clash.PushDirection, _solver.Side.Value) >= 0.0f))
+            {
+                return;
+            }
+
+            _deflection.Kick(clash);
+        }
+
+        /// <summary>
+        /// While a beat knocks the Dummy's hand out, the blade that hit it carries it on (PER-138): where the Fencer's
+        /// hand's blade is into or past the outer part of the Dummy's hand's blade (<see cref="MinCarryFraction"/>) the way
+        /// it was knocked, the Dummy's point moves on that way by the least that clears it, at most to
+        /// <see cref="BladeDeflection.MaxCarriedMeters"/>. False when there is nothing to carry.
+        /// </summary>
+        private bool TryFindCarry(BladeSegment forte, Vector3 shoulder, Vector3 gripUp, Vector3 down, BladeSettings blade, BladeSegment fencer, out Vector3 carry)
+        {
+            carry = Vector3.Zero;
+            var start = _deflection.Apply(forte, shoulder);
+            var bladeDirection = start.Direction;
+            var direction = _deflection.KnockDirection - (Vector3.Dot(_deflection.KnockDirection, bladeDirection) * bladeDirection);
+            if (direction.Length() < MinCarrySquare || !(FindCarryOverlap(0.0f) > 0.0f))
+            {
+                return false;
+            }
+
+            direction = Vector3.Normalize(direction);
+
+            // As far as the largest carried offset allows: |offset + direction t| = MaxCarriedMeters.
+            var offset = _deflection.TipOffset;
+            var along = Vector3.Dot(offset, direction);
+            var most = -along + (float)Math.Sqrt(Math.Max(0.0f, (along * along) - offset.LengthSquared() + (BladeDeflection.MaxCarriedMeters * BladeDeflection.MaxCarriedMeters)));
+            var clear = most;
+            if (FindCarryOverlap(most) <= 0.0f)
+            {
+                var blocked = 0.0f;
+                for (var step = 0; step < CarrySearchSteps; step++)
+                {
+                    var middle = (blocked + clear) * 0.5f;
+                    if (FindCarryOverlap(middle) > 0.0f)
+                    {
+                        blocked = middle;
+                    }
+                    else
+                    {
+                        clear = middle;
+                    }
+                }
+            }
+
+            carry = direction * clear;
+            return clear > 0.0f;
+
+            float FindCarryOverlap(float meters)
+            {
+                var swung = _deflection.Apply(forte, shoulder, direction * meters);
+                var chord = BladeDroop.Create(swung.Direction, gripUp, down, blade).GetChord(swung);
+                return FindLead(fencer, chord, direction);
+            }
+        }
+
+        /// <summary>
+        /// How far <paramref name="fencer"/> is ahead of the outer part of <paramref name="dummy"/> (from
+        /// <see cref="MinCarryFraction"/> to its point) along <paramref name="knock"/>, plus touching, at the spot of that
+        /// part furthest behind it where the two lie over each other seen along the knock (within the slack a fast
+        /// sweep slips sideways, <see cref="CarrySlack"/>): above 0, the Fencer's blade is into or past the Dummy's that
+        /// way. Far below 0 when they do not lie over each other.
+        /// </summary>
+        private static float FindLead(BladeSegment fencer, BladeSegment dummy, Vector3 knock)
+        {
+            var fencerStart = Flatten(fencer.GuardPosition, knock);
+            var fencerEnd = Flatten(fencer.TipPosition, knock);
+            var fencerAlong = fencerEnd - fencerStart;
+            var fencerLengthSquared = Math.Max(1e-12f, fencerAlong.LengthSquared());
+            var most = -float.MaxValue;
+            for (var index = 0; index <= CarrySamples; index++)
+            {
+                var fraction = MinCarryFraction + ((1.0f - MinCarryFraction) * index / CarrySamples);
+                var dummyPoint = Vector3.Lerp(dummy.GuardPosition, dummy.TipPosition, fraction);
+                var flatDummy = Flatten(dummyPoint, knock);
+                var onFencer = Math.Clamp(Vector3.Dot(flatDummy - fencerStart, fencerAlong) / fencerLengthSquared, 0.0f, 1.0f);
+                var sideways = Vector3.Distance(flatDummy, fencerStart + (fencerAlong * onFencer));
+                var fencerPoint = Vector3.Lerp(fencer.GuardPosition, fencer.TipPosition, onFencer);
+                var lead = Vector3.Dot(fencerPoint - dummyPoint, knock) + BladeContactSolver.ContactMeters;
+                if (sideways <= BladeContactSolver.ContactMeters + (CarrySlack * Math.Max(0.0f, lead)))
+                {
+                    most = Math.Max(most, lead);
+                }
+            }
+
+            return most;
+        }
+
+        /// <summary><paramref name="point"/> seen along <paramref name="axis"/> (unit): its part along it taken away.</summary>
+        private static Vector3 Flatten(Vector3 point, Vector3 axis)
+        {
+            return point - (Vector3.Dot(point, axis) * axis);
         }
 
         /// <summary>The blade turned by the hand's deflection, and its droop; <paramref name="chord"/> is the guard to the real point.</summary>

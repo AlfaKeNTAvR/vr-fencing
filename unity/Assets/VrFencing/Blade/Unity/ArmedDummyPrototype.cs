@@ -677,7 +677,7 @@ namespace VrFencing.Blade
 
         private void OnClash(BladeClash clash, double nowSeconds)
         {
-            _blade.Deflection.Kick(clash);
+            _blade.Knock(clash);
             _lastClash = clash;
             var phase = _attack?.GetPhase(nowSeconds);
             var buzzStrength = ClashHaptics.GetStrength(_settings.Blade.ClashHapticFloor, clash.RelativeSpeedMetersPerSecond);

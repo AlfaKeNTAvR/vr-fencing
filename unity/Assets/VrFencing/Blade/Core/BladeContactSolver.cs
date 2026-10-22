@@ -80,7 +80,11 @@ namespace VrFencing.Blade
     /// <item><b>Side.</b> A small memory of which side of blade B blade A is on (<see cref="Side"/>), from the geometry
     /// while they are apart and held while they touch or nearly touch (<see cref="EngagedMeters"/>). A hand that went
     /// across between two frames, at any speed and also with the blades nearly parallel (a bind, a glide), is pressing,
-    /// not through: the overlap is measured along the held side.</item>
+    /// not through: the overlap is measured along the held side. Fast hits (PER-138): the hands' move between frames is
+    /// swept, so only spots that really went through each other count as pressed (a point swept over the other's forte
+    /// went round it), a disengage round a point changes the side at once, and after a fast hit the side stays latched
+    /// for <see cref="LatchSeconds"/> once apart, so a hand that swept past and comes straight back is still on its
+    /// side.</item>
     /// <item><b>Split.</b> The overlap at the deepest spot is shared, in one closed-form step, by four give stages in
     /// proportion to each one's compliance there: each grip turning about its hand (a soft angular spring, compliance
     /// r^2 / k, at most <see cref="GripTurnMaxDegrees"/>) and each blade bowing (compliance r^3 / 3EI, at most the blade's
@@ -90,7 +94,8 @@ namespace VrFencing.Blade
     /// slides off toward its point: it turns aside in the grip, square to the press, as the press goes on past the
     /// limits, until the other blade is past its point, and any overlap left meanwhile turns it further away. Then the
     /// side follows the hands and the blade swings back to the hand over <see cref="ReleaseSeconds"/>. It never holds and
-    /// never jumps through.</item>
+    /// never jumps through. Within <see cref="LatchSeconds"/> of a fast hit it is not let go: it stays slid off while the
+    /// hands stay pressed past, and swings back once they are not.</item>
     /// <item><b>Hilts.</b> Each blade's hilt, its bell guard (<see cref="BellGuard"/>) and the grip behind it
     /// (<see cref="GripRadiusMeters"/>), is solid for the other blade, held in its hand as the blade is (PER-122 fix):
     /// the other blade meets it by the same rules. A side memory per hilt, the overlap taken by that blade's grip turn
@@ -208,6 +213,39 @@ namespace VrFencing.Blade
         // Two bow loads closer than this share of the blade are one.
         private const float SameLoadFraction = 0.05f;
 
+        // A closest spot this far along a blade's last piece is its point.
+        private const float AtPointShare = 0.999f;
+
+        /// <summary>
+        /// After a fast hit (<see cref="LatchSpeedMetersPerSecond"/>), the side stays latched this long once the blades are
+        /// apart (PER-138): a hand that swept past the other blade's reach and comes straight back is still on the side it
+        /// hit from. Only a disengage round a blade's point changes it sooner (<see cref="FollowRoundCrossing"/>). About a
+        /// pull-back's length after a beat (0.1 to 0.2 s).
+        /// </summary>
+        public const float LatchSeconds = 0.3f;
+
+        /// <summary>
+        /// Blades touching while they move against each other at least this fast are a hit (a beat, a fast parry), whose
+        /// side is latched after they come apart (<see cref="LatchSeconds"/>); slower, they part where they are and the
+        /// side follows the hands at once. A press or a glide is well under it.
+        /// </summary>
+        public const float LatchSpeedMetersPerSecond = 5.0f;
+
+        /// <summary>
+        /// The hands' move between two frames is looked at in steps of at most this (a blade's width) when the side is
+        /// to change: through the other blade, or round its point.
+        /// </summary>
+        public const float SweepStepMeters = 0.01f;
+
+        /// <summary>At most this many steps: a 0.32 m move between two frames (a 23 m/s relative speed at 72 Hz).</summary>
+        public const int MaxSweepSteps = 32;
+
+        /// <summary>
+        /// At most this many steps when the side itself is swept (each step looks at every pair of pieces): a disengage
+        /// is told from a move through at a few centimeters' steps.
+        /// </summary>
+        public const int MaxSideSweepSteps = 8;
+
         private static readonly float GripTurnMaxRadians = GripTurnMaxDegrees * (float)Math.PI / 180.0f;
         private static readonly float MaxReleaseRadians = MaxReleaseDegrees * (float)Math.PI / 180.0f;
 
@@ -219,15 +257,32 @@ namespace VrFencing.Blade
         private readonly Vector3[] _unitB = new Vector3[PieceCount];
         private readonly Vector3[] _lastShapeA = new Vector3[PieceCount + 1];
         private readonly Vector3[] _lastShapeB = new Vector3[PieceCount + 1];
+        private readonly Vector3[] _priorShapeA = new Vector3[PieceCount + 1];
+        private readonly Vector3[] _priorShapeB = new Vector3[PieceCount + 1];
+        private readonly Vector3[] _sweepA = new Vector3[PieceCount + 1];
+        private readonly Vector3[] _sweepB = new Vector3[PieceCount + 1];
         private bool _hasLastShapes;
+        private bool _hasPriorShapes;
+        private float _relativeMotion;
+        private float _sinceHitSeconds = LatchSeconds;
+
+        // The hands' blades were on the other side of each other from the side held, last frame.
+        private bool _areHandsAcross;
         private float _engagedMeters = EngagedMeters;
         private Hit _lastHit;
+
+        // Which pairs of pieces of the hands' blades are through each other (behind, gone in by a swept crossing), this
+        // frame and last frame.
+        private bool[] _isBehind = new bool[PieceCount * PieceCount];
+        private bool[] _wasBehind = new bool[PieceCount * PieceCount];
         private readonly Work _a = new Work();
         private readonly Work _b = new Work();
         private Vector3? _side;
         private int _slidingWeaker = -1;
         private int _returningBlade = -1;
         private Vector3 _returningAxis;
+        private Vector3 _slideAxis;
+        private float _slideRadians;
         private float _returningRadians;
         private float _returningSeconds;
         private readonly HiltMemory _onHiltA = new HiltMemory();
@@ -327,6 +382,12 @@ namespace VrFencing.Blade
         {
             _side = null;
             _hasLastShapes = false;
+            _hasPriorShapes = false;
+            _relativeMotion = 0.0f;
+            _sinceHitSeconds = LatchSeconds;
+            _areHandsAcross = false;
+            Array.Clear(_isBehind, 0, _isBehind.Length);
+            Array.Clear(_wasBehind, 0, _wasBehind.Length);
             _slidingWeaker = -1;
             _returningBlade = -1;
             IsInContact = false;
@@ -348,12 +409,19 @@ namespace VrFencing.Blade
             FillShape(_b, _shapeB, _unitB);
 
             // Also keeps this frame's hands' blades (the rest shapes) for the side's update.
-            _engagedMeters = EngagedMeters + Math.Min(MaxMotionBandMeters, MotionReach * FindRelativeMotion());
+            _relativeMotion = FindRelativeMotion();
+            _sinceHitSeconds += Math.Max(0.0f, deltaSeconds);
+            _engagedMeters = EngagedMeters + Math.Min(MaxMotionBandMeters, MotionReach * _relativeMotion);
             ClosestMeters = float.MaxValue;
             if (!_side.HasValue)
             {
-                _side = FindGeometricSide(out var closest);
+                _side = FindGeometricSide(_lastShapeA, _lastShapeB, out var closest, out _);
                 ClosestMeters = closest;
+            }
+            else if (!IsEngaged || _relativeMotion > EngagedMeters)
+            {
+                // Engaged and moving slowly (a press, a bind), nothing goes round in a frame: not looked at, to save the time.
+                FollowRoundCrossing();
             }
 
             var side = _side.Value;
@@ -362,9 +430,15 @@ namespace VrFencing.Blade
             PressMeters = 0.0f;
             PressNewtons = 0.0f;
             SaturatedStages = 0;
-            var first = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, side, _engagedMeters);
+            (_wasBehind, _isBehind) = (_isBehind, _wasBehind);
+            var first = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, side, _engagedMeters, isHands: true);
             _lastHit = first;
             IsEngaged = first.IsFound;
+            if (IsEngaged && deltaSeconds > 0.0f && _relativeMotion >= LatchSpeedMetersPerSecond * deltaSeconds)
+            {
+                _sinceHitSeconds = 0.0f;
+            }
+
             var isReleased = false;
             if (first.IsFound && first.Overlap > 0.0f)
             {
@@ -378,7 +452,7 @@ namespace VrFencing.Blade
             }
             else
             {
-                _slidingWeaker = -1;
+                EndSlide();
             }
 
             // Then each blade against the other's hilt, slid off the side it is on of the other blade.
@@ -411,24 +485,28 @@ namespace VrFencing.Blade
                     most = Math.Max(most, ((_shapeA[index] - _lastShapeA[index]) - (_shapeB[index] - _lastShapeB[index])).Length());
                 }
 
+                // Last frame's hands' blades are kept too, for the sweep when the side is to change.
+                _priorShapeA[index] = _lastShapeA[index];
+                _priorShapeB[index] = _lastShapeB[index];
                 _lastShapeA[index] = _shapeA[index];
                 _lastShapeB[index] = _shapeB[index];
             }
 
+            _hasPriorShapes = _hasLastShapes;
             _hasLastShapes = true;
             return most;
         }
 
         /// <summary>
         /// Shares the overlap of <paramref name="first"/> out, then looks again for what is left; past every limit the
-        /// weaker blade slides off. True when it slid all the way off this frame.
+        /// weaker blade slides off. True when it slid all the way off this frame and is let go.
         /// </summary>
         private bool SolveContact(Hit first)
         {
+            var isReleased = false;
             var excess = Split(first, out var newtons);
             PressNewtons = newtons;
             SaturatedStages = _splitSaturated;
-            var isReleased = false;
             var weaker = -1;
             if (excess > 0.0f)
             {
@@ -438,14 +516,14 @@ namespace VrFencing.Blade
             }
             else
             {
-                _slidingWeaker = -1;
+                EndSlide();
             }
 
             for (var pass = 1; pass < Passes; pass++)
             {
                 FillShape(_a, _shapeA, _unitA);
                 FillShape(_b, _shapeB, _unitB);
-                var hit = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, _side.Value, _engagedMeters);
+                var hit = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, _side.Value, _engagedMeters, isHands: false);
                 _lastHit = hit;
                 if (!hit.IsFound || hit.Overlap <= SettledMeters)
                 {
@@ -471,7 +549,7 @@ namespace VrFencing.Blade
         {
             FillShape(_a, _shapeA, _unitA);
             FillShape(_b, _shapeB, _unitB);
-            var hit = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, _side.Value, _engagedMeters);
+            var hit = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, _side.Value, _engagedMeters, isHands: false);
             if (!hit.IsFound || hit.Overlap <= SettledMeters)
             {
                 return;
@@ -569,7 +647,11 @@ namespace VrFencing.Blade
         /// <summary>
         /// Past every limit by <paramref name="excess"/>: the weaker blade turns aside, square to the press, toward the
         /// other blade's line, so the contact slides toward its point, by the share of the turn that clears it that the
-        /// excess is of <see cref="ReleaseSpanMeters"/>. True once it is all the way off: the release then swings it back.
+        /// excess is of <see cref="ReleaseSpanMeters"/>. True once it is all the way off: it is let go, the side follows
+        /// the hands and the release swings it back. Within <see cref="LatchSeconds"/> of a fast hit it is not let go
+        /// (PER-138): the hand swept through in the hit, the side holds, and swinging back to the hand would carry it
+        /// through the other blade; it stays off while pressed past and swings back once the press is gone
+        /// (<see cref="EndSlide"/>).
         /// </summary>
         private bool SlideOff(int weaker, Hit hit, float excess)
         {
@@ -585,7 +667,9 @@ namespace VrFencing.Blade
             var share = Math.Min(1.0f, excess / ReleaseSpanMeters);
             var radians = clearRadians * share * share * (3.0f - (2.0f * share));
             work.TurnAbout(axis, radians);
-            if (share < 1.0f)
+            _slideAxis = axis;
+            _slideRadians = radians;
+            if (share < 1.0f || _sinceHitSeconds < LatchSeconds)
             {
                 return false;
             }
@@ -595,7 +679,27 @@ namespace VrFencing.Blade
             _returningRadians = radians;
             _returningSeconds = 0.0f;
             _slidingWeaker = -1;
+            _slideRadians = 0.0f;
             return true;
+        }
+
+        /// <summary>
+        /// No longer pressed past every limit: a blade that was sliding off swings back to the hand from where it slid to,
+        /// over <see cref="ReleaseSeconds"/> (it starts there this frame, so it never jumps back), and it never holds.
+        /// </summary>
+        private void EndSlide()
+        {
+            if (_slidingWeaker >= 0 && _slideRadians > 0.0f)
+            {
+                _returningBlade = _slidingWeaker;
+                _returningAxis = _slideAxis;
+                _returningRadians = _slideRadians;
+                _returningSeconds = 0.0f;
+                (_slidingWeaker == 0 ? _a : _b).TurnAbout(_slideAxis, _slideRadians);
+            }
+
+            _slidingWeaker = -1;
+            _slideRadians = 0.0f;
         }
 
         /// <summary>The left-over overlap of <paramref name="hit"/> taken by the blade turning on in its grip past its limit.</summary>
@@ -727,15 +831,32 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// After the solve: the side is held while engaged (following the drawn blades as they roll round each other),
-        /// and taken from the hands while apart or once a blade slid off.
+        /// After the solve: the side latched at first contact (from the last frame the blades were apart) is held while
+        /// engaged, following the drawn blades as they roll round each other, also when a blade slid off (PER-138: the
+        /// hands are through each other then, not round). Apart, it is taken from the hands, but within
+        /// <see cref="LatchSeconds"/> of a fast hit (<see cref="LatchSpeedMetersPerSecond"/>) it stays: a hand that swept
+        /// past in the hit and comes straight back is still on the side it hit from. Only a disengage round a blade's
+        /// point changes it sooner (<see cref="FollowRoundCrossing"/>).
         /// </summary>
         private void UpdateSide(bool isReleased)
         {
-            if (isReleased || !IsEngaged)
+            if (isReleased)
             {
-                _side = FindGeometricSide(out var closest);
+                // Slid all the way off its point, out of a slow press: it went round, and the side follows the hands.
+                _side = FindGeometricSide(_lastShapeA, _lastShapeB, out var releasedClosest, out _);
+                ClosestMeters = releasedClosest;
+                return;
+            }
+
+            if (!IsEngaged)
+            {
+                var geometric = FindGeometricSide(_lastShapeA, _lastShapeB, out var closest, out _);
                 ClosestMeters = closest;
+                if (_sinceHitSeconds >= LatchSeconds)
+                {
+                    _side = geometric;
+                }
+
                 return;
             }
 
@@ -762,9 +883,13 @@ namespace VrFencing.Blade
         /// they lie alongside) and how far A is from B along it. A pair counts when A lies over B seen along that side,
         /// or behind it (pushed through); pieces lying alongside each other count anywhere behind, unless the closest
         /// spot is a blade's end (then they went round it). Found when some pair is within
-        /// <paramref name="engagedMeters"/> of touching.
+        /// <paramref name="engagedMeters"/> of touching. A pair behind counts only when the hands' pieces went through
+        /// each other there (PER-138): they were behind last frame too (a press going on), or since last frame they came
+        /// within touching on the way (swept, <see cref="HasSweptThrough"/>). One that went past the other further off
+        /// than that (a point swept over the other's forte in a fast hit) went round it, not through.
         /// </summary>
-        private static Hit FindDeepest(Vector3[] shapeA, Vector3[] shapeB, Vector3[] unitA, Vector3[] unitB, Vector3 side, float engagedMeters)
+        /// <param name="isHands">The shapes are this frame's hands' blades (no give yet): the pairs found behind are kept for the next frame.</param>
+        private Hit FindDeepest(Vector3[] shapeA, Vector3[] shapeB, Vector3[] unitA, Vector3[] unitB, Vector3 side, float engagedMeters, bool isHands)
         {
             var best = default(Hit);
             best.Overlap = -float.MaxValue;
@@ -778,9 +903,15 @@ namespace VrFencing.Blade
                     var b1 = shapeB[pieceB + 1];
                     FindClosest(a0, a1, b0, b1, out var onA, out var onB, out var alongA, out var alongB);
                     var apart = onA - onB;
+                    var wasBehind = WasThroughNear(pieceA, pieceB);
+                    if (isHands)
+                    {
+                        _isBehind[(pieceA * PieceCount) + pieceB] = false;
+                    }
 
-                    // Nothing here can beat the deepest found so far, even pushed right through.
-                    if (ContactMeters + apart.Length() <= best.Overlap)
+                    // Nothing here can beat the deepest found so far, even pushed right through (the hands' blades are
+                    // all looked at, to keep which pairs are through).
+                    if (!isHands && ContactMeters + apart.Length() <= best.Overlap)
                     {
                         continue;
                     }
@@ -790,7 +921,7 @@ namespace VrFencing.Blade
 
                     // On its own side, how far into each other they really are; behind, how far back it has to go.
                     var overlap = ContactMeters - (signed >= 0.0f ? apart.Length() : signed);
-                    if (overlap < -engagedMeters || overlap <= best.Overlap)
+                    if (overlap < -engagedMeters || (!isHands && overlap <= best.Overlap))
                     {
                         continue;
                     }
@@ -806,6 +937,22 @@ namespace VrFencing.Blade
                     FindClosest(Flatten(a0, normal), Flatten(a1, normal), Flatten(b0, normal), Flatten(b1, normal), out var flatA, out var flatB, out _, out _);
                     var sideways = Vector3.Distance(flatA, flatB);
                     if (!isBehindAlongside && sideways > ContactMeters + (BehindSlack * Math.Max(0.0f, -signed)))
+                    {
+                        continue;
+                    }
+
+                    if (signed < 0.0f && !wasBehind && !HasSweptThrough(pieceA, pieceB))
+                    {
+                        // Behind, but it went past the other off to the side: round it, not through.
+                        continue;
+                    }
+
+                    if (isHands && signed < 0.0f)
+                    {
+                        _isBehind[(pieceA * PieceCount) + pieceB] = true;
+                    }
+
+                    if (overlap <= best.Overlap)
                     {
                         continue;
                     }
@@ -828,6 +975,63 @@ namespace VrFencing.Blade
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// True when this pair of pieces or one next to it (along either blade) was through last frame: a press through
+        /// slides along the blades from piece to piece.
+        /// </summary>
+        private bool WasThroughNear(int pieceA, int pieceB)
+        {
+            for (var nearA = Math.Max(0, pieceA - 1); nearA <= Math.Min(PieceCount - 1, pieceA + 1); nearA++)
+            {
+                for (var nearB = Math.Max(0, pieceB - 1); nearB <= Math.Min(PieceCount - 1, pieceB + 1); nearB++)
+                {
+                    if (_wasBehind[(nearA * PieceCount) + nearB])
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when piece <paramref name="pieceA"/> of the hands' blade A and piece <paramref name="pieceB"/> of B came
+        /// within touching of each other on their way from last frame to this one (each piece moved in steps of at most
+        /// <see cref="SweepStepMeters"/>): they went through each other there. True too with no last frame.
+        /// </summary>
+        private bool HasSweptThrough(int pieceA, int pieceB)
+        {
+            if (!_hasPriorShapes)
+            {
+                return true;
+            }
+
+            var moved = Math.Max(
+                Math.Max(Vector3.Distance(_priorShapeA[pieceA], _lastShapeA[pieceA]), Vector3.Distance(_priorShapeA[pieceA + 1], _lastShapeA[pieceA + 1])),
+                Math.Max(Vector3.Distance(_priorShapeB[pieceB], _lastShapeB[pieceB]), Vector3.Distance(_priorShapeB[pieceB + 1], _lastShapeB[pieceB + 1])));
+            var steps = Math.Clamp((int)Math.Ceiling(2.0f * moved / SweepStepMeters), 1, MaxSweepSteps);
+            for (var step = 0; step <= steps; step++)
+            {
+                var fraction = (float)step / steps;
+                FindClosest(
+                    Vector3.Lerp(_priorShapeA[pieceA], _lastShapeA[pieceA], fraction),
+                    Vector3.Lerp(_priorShapeA[pieceA + 1], _lastShapeA[pieceA + 1], fraction),
+                    Vector3.Lerp(_priorShapeB[pieceB], _lastShapeB[pieceB], fraction),
+                    Vector3.Lerp(_priorShapeB[pieceB + 1], _lastShapeB[pieceB + 1], fraction),
+                    out var onA,
+                    out var onB,
+                    out _,
+                    out _);
+                if (Vector3.DistanceSquared(onA, onB) <= ContactMeters * ContactMeters)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -857,20 +1061,88 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// Which way A is from B with no memory, from this frame's hands' blades (kept by <see cref="FindRelativeMotion"/>):
-        /// where they come closest, the crossing's normal turned toward A, or the way from B to A.
+        /// Before the contact is looked at: when this frame's hands' blades are on the other side of each other from the
+        /// side held, and they went there round each other (a disengage round a point, or over a blade) rather than
+        /// through, the side follows them (PER-138). Through, it stays: that is a press.
         /// </summary>
-        private Vector3 FindGeometricSide(out float closest)
+        private void FollowRoundCrossing()
         {
-            var shapeA = _lastShapeA;
-            var shapeB = _lastShapeB;
+            var geometric = FindGeometricSide(_lastShapeA, _lastShapeB, out _, out _);
+            var wasAcross = _areHandsAcross;
+            _areHandsAcross = Vector3.Dot(geometric, _side.Value) < 0.0f;
+            if (!_areHandsAcross || wasAcross)
+            {
+                // On the side held, or already across it last frame (a press going on): nothing went across this frame.
+                return;
+            }
+
+            if (FindSweptCrossing(_side.Value) == Crossing.Round)
+            {
+                _side = geometric;
+                _areHandsAcross = false;
+            }
+        }
+
+        /// <summary>
+        /// How the hands' blades went from last frame's to this frame's against <paramref name="held"/> (the side as
+        /// held), looked at in steps of at most <see cref="SweepStepMeters"/> of their move against each other: across
+        /// the other blade where they lie over each other (<see cref="Crossing.Through"/>), round a blade's point
+        /// (<see cref="Crossing.Round"/>, a disengage), or not across at all this frame. The last crossing counts.
+        /// </summary>
+        private Crossing FindSweptCrossing(Vector3 held)
+        {
+            if (!_hasPriorShapes)
+            {
+                return Crossing.None;
+            }
+
+            var steps = Math.Clamp((int)Math.Ceiling(_relativeMotion / SweepStepMeters), 1, MaxSideSweepSteps);
+            var crossing = Crossing.None;
+            var wasOnHeldSide = true;
+            var wasDistance = float.MaxValue;
+            var wasAtPoint = false;
+            for (var step = 0; step <= steps; step++)
+            {
+                var fraction = (float)step / steps;
+                for (var index = 0; index <= PieceCount; index++)
+                {
+                    _sweepA[index] = Vector3.Lerp(_priorShapeA[index], _lastShapeA[index], fraction);
+                    _sweepB[index] = Vector3.Lerp(_priorShapeB[index], _lastShapeB[index], fraction);
+                }
+
+                var side = FindGeometricSide(_sweepA, _sweepB, out var distance, out var isAtPoint);
+                var isOnHeldSide = Vector3.Dot(side, held) >= 0.0f;
+                if (step > 0 && isOnHeldSide != wasOnHeldSide)
+                {
+                    // Across beside a blade's point, apart: round it (a disengage). Touching, or across a blade's length:
+                    // through it.
+                    var isRound = (isAtPoint || wasAtPoint) && Math.Min(distance, wasDistance) > ContactMeters;
+                    crossing = isRound ? Crossing.Round : Crossing.Through;
+                }
+
+                wasOnHeldSide = isOnHeldSide;
+                wasDistance = distance;
+                wasAtPoint = isAtPoint;
+            }
+
+            return crossing;
+        }
+
+        /// <summary>
+        /// Which way A is from B with no memory, from <paramref name="shapeA"/> and <paramref name="shapeB"/>: where they
+        /// come closest, the crossing's normal turned toward A, or the way from B to A. <paramref name="isAtPoint"/>: the
+        /// closest spot is a blade's point (beside its end, not across its length).
+        /// </summary>
+        private static Vector3 FindGeometricSide(Vector3[] shapeA, Vector3[] shapeB, out float closest, out bool isAtPoint)
+        {
             closest = float.MaxValue;
+            isAtPoint = false;
             var side = Vector3.UnitY;
             for (var pieceA = 0; pieceA < PieceCount; pieceA++)
             {
                 for (var pieceB = 0; pieceB < PieceCount; pieceB++)
                 {
-                    FindClosest(shapeA[pieceA], shapeA[pieceA + 1], shapeB[pieceB], shapeB[pieceB + 1], out var onA, out var onB, out _, out _);
+                    FindClosest(shapeA[pieceA], shapeA[pieceA + 1], shapeB[pieceB], shapeB[pieceB + 1], out var onA, out var onB, out var alongA, out var alongB);
                     var apart = onA - onB;
                     var distance = apart.Length();
                     if (distance >= closest)
@@ -879,6 +1151,7 @@ namespace VrFencing.Blade
                     }
 
                     closest = distance;
+                    isAtPoint = (pieceA == PieceCount - 1 && alongA >= AtPointShare) || (pieceB == PieceCount - 1 && alongB >= AtPointShare);
                     var cross = Vector3.Cross(Vector3.Normalize(shapeA[pieceA + 1] - shapeA[pieceA]), Vector3.Normalize(shapeB[pieceB + 1] - shapeB[pieceB]));
                     var sine = cross.Length();
                     if (sine > CrossingSine)
@@ -1273,6 +1546,14 @@ namespace VrFencing.Blade
                 var fraction = (float)index / PieceCount;
                 shape[index] = Vector3.Lerp(give.Chord.GuardPosition, give.Chord.TipPosition, fraction) + give.Droop.GetChordOffset(fraction);
             }
+        }
+
+        /// <summary>How the hands' blades went across each other between two frames (<see cref="FindSweptCrossing"/>).</summary>
+        private enum Crossing
+        {
+            None,
+            Through,
+            Round,
         }
 
         /// <summary>The two solid parts of a hilt.</summary>
