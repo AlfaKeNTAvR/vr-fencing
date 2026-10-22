@@ -22,9 +22,10 @@ namespace VrFencing.Blade
     /// shows at the contact and moves with the Dummy's blade, the clash buzz plays on the sword hand, and its point is
     /// knocked off line by how hard and where the blades met, a big knock taking the whole arm and turning the torso a
     /// little, held open, then recovered (<see cref="BladeDeflection"/>, PER-116); a knocked Dummy waits until its arm
-    /// is back in line before winding up its next attack. The two blades are solid against each other
-    /// (<see cref="ArmedDummyBlade"/>, PER-104): the Fencer's drawn blade bends round the Dummy's, and the Dummy's gives
-    /// way to a press and comes back when let go.
+    /// is back in line before winding up its next attack. The two blades never pass through each other
+    /// (<see cref="ArmedDummyBlade"/>, <see cref="BladeContactSolver"/>, PER-122): each turns in its grip and bows, the
+    /// Dummy's hand gives way to a press and comes back when let go, and a steel scrape and the bind buzz play while
+    /// they press.
     /// A contact during the thrust or its hold is judged (<see cref="ParryJudge"/>, PER-97): once it has turned the point
     /// off the Fencer's body the thrust is cut short and recovers, and the runner gets the Parry. Unparried, its point is
     /// judged against the Fencer's body each frame (<see cref="FencerTarget"/>, PER-98: IOBT when confident, else
@@ -67,6 +68,7 @@ namespace VrFencing.Blade
         private readonly Transform _mount;
         private readonly BladeVisual _visual;
         private readonly Renderer _spark;
+        private readonly BladeScrapePlayer _scrape;
         private readonly FencerBodyReader _bodyReader;
         private readonly FencerTarget _fencer = new FencerTarget();
         private readonly HitFlash _hitFlash;
@@ -107,6 +109,7 @@ namespace VrFencing.Blade
             _visual = new BladeVisual(_mount);
             _visual.SetVisible(false);
             _spark = CreateSpark();
+            _scrape = BladeScrapePlayer.TryCreate();
             _runner.RepCued += OnRepCued;
         }
 
@@ -128,10 +131,13 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// One frame, before the Fencer's drawn blade moves: poses the arm, moves the blade (pushed aside by the Fencer's
-        /// drawn blade as drawn last frame), tests the clash, draws. Everything in the Strip frame.
+        /// One frame, before the Fencer's drawn blade moves: poses the arm, lets the Dummy's hand give way to last frame's
+        /// press, solves the two blades' contact (<see cref="ArmedDummyBlade"/>, PER-122), tests the clash, draws.
+        /// Everything in the Strip frame.
         /// </summary>
-        public void Step(double nowSeconds, float deltaSeconds, BladeSegment fencerBlade, TrackedPose stripInRoom, DrawnBlade fencerDrawn)
+        /// <param name="fencerBlade">The Fencer's blade from the hand: its chord to the real point.</param>
+        /// <param name="fencerDroop">The Fencer's blade's rest shape on that chord.</param>
+        public void Step(double nowSeconds, float deltaSeconds, BladeSegment fencerBlade, BladeDroop fencerDroop, TrackedPose stripInRoom)
         {
             _lastFencerBlade = fencerBlade;
             _hitFlash.Update();
@@ -168,14 +174,12 @@ namespace VrFencing.Blade
             _dummy.Layout.PoseArm(scriptPose);
             var (forte, gripUp, shoulder) = GetDummyBladeOnStrip();
             var wasPressed = _blade.IsPressed;
-            _blade.Step(forte, shoulder, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, fencerBlade, fencerDrawn, deltaSeconds);
+            var wasReleasing = _blade.Contact.IsReleasing;
+            var fractionsBefore = (_blade.Contact.FractionA, _blade.Contact.FractionB);
+            _blade.Step(forte, shoulder, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, _settings.ArmedDummy.OpponentHand, fencerBlade, fencerDroop, deltaSeconds);
             _dummy.SetArmPose(_blade.GetKnockedArmPose(scriptPose, _dummy.Layout.Hand));
-            if (_blade.IsPressed != wasPressed)
-            {
-                Debug.Log(_blade.IsPressed
-                    ? "[ArmedDummy] Blades pressed: the Dummy's blade gives way"
-                    : "[ArmedDummy] Blades let go: the Dummy's blade comes back");
-            }
+            LogContact(wasPressed, wasReleasing);
+            PlayScrape(stripInRoom, wasPressed, fractionsBefore, deltaSeconds);
 
             var clash = _detector.Step(nowSeconds, fencerBlade, _blade.Chord);
             if (clash.HasValue)
@@ -203,29 +207,40 @@ namespace VrFencing.Blade
             }
         }
 
-        /// <summary>Adds the Dummy's blade, as drawn this frame, to the Fencer's drawn blade's obstacles while armed.</summary>
+        /// <summary>Adds the Dummy's bell guard, as drawn this frame, to the Fencer's drawn blade's obstacles while armed (PER-120).</summary>
         public void AddBladeObstacles(System.Collections.Generic.ICollection<BladeObstacle> obstacles)
         {
             if (_isActive)
             {
-                _blade.AddObstacles(obstacles, Mathf.Max(0.0f, _settings.Blade.Feel.BladeFriction));
+                _blade.AddObstacles(obstacles);
             }
         }
 
-        /// <summary>After the Fencer's drawn blade moved this frame: which side of the Dummy's blade it is on.</summary>
-        public void UpdateSide(BladeSegment fencerBlade, DrawnBlade fencerDrawn)
+        /// <summary>
+        /// What the Fencer's drawn blade takes this frame while armed: its blade turned and bowed by the contact with the
+        /// Dummy's (PER-122). False while unarmed: the Fencer's blade is drawn as the hand holds it.
+        /// </summary>
+        public bool TryGetFencerGive(out BladeGive give)
         {
-            if (_isActive)
-            {
-                _blade.UpdateSide(fencerBlade, fencerDrawn);
-            }
+            give = _blade.FencerGive;
+            return _isActive;
         }
+
+        /// <summary>How far the blades press into each other this frame (0 while apart or unarmed): the bind buzz's strength.</summary>
+        public float PressMeters => _isActive ? _blade.Contact.PressMeters : 0.0f;
+
+        /// <summary>
+        /// True while armed and the blades are near enough that a flex whip could carry the Fencer's drawn blade into the
+        /// Dummy's (<see cref="BladeContactSolver.IsNear"/>): its flex is held still then.
+        /// </summary>
+        public bool IsBladeNear => _isActive && _blade.Contact.IsNear;
 
         public void Dispose()
         {
             _runner.RepCued -= OnRepCued;
             _visual.Dispose();
             _hitFlash.Dispose();
+            _scrape?.Dispose();
             if (_spark != null)
             {
                 UnityEngine.Object.Destroy(_spark.gameObject);
@@ -341,7 +356,7 @@ namespace VrFencing.Blade
             var line = AttackLine.OnStrip(_attack.Path, _attackDistanceMeters, nowSeconds);
             // Without a headset pose there is no tracked Fencer: the stand-in at the En Garde Line keeps the judging fair.
             var body = _fencer.HasBody ? _fencer.Capsules : AttackAim.GetFencerBodyOnStrip(_dummy.Layout, fencerBlade.GuardPosition);
-            var parry = _judge.Step(nowSeconds, _blade.Deflection.TipOffset, isInContact, line, body);
+            var parry = _judge.Step(nowSeconds, _blade.JudgedTipOffset, isInContact, line, body);
             if (!parry.HasValue)
             {
                 return;
@@ -433,6 +448,7 @@ namespace VrFencing.Blade
             _freeAttacks.Reset();
             Restart();
             _clashBuzzGate.Reset();
+            _scrape?.Silence();
             _visual.SetVisible(isActive);
             if (!isActive && _dummy.Layout != null)
             {
@@ -576,7 +592,7 @@ namespace VrFencing.Blade
                 _beatJudge.ReportClash(clash.Value);
             }
 
-            var beat = _beatJudge.Step(nowSeconds, _blade.Deflection.TipOffset, _detector.IsInContact || _blade.IsPressed);
+            var beat = _beatJudge.Step(nowSeconds, _blade.JudgedTipOffset, _detector.IsInContact || _blade.IsPressed);
             if (!beat.HasValue)
             {
                 return;
@@ -609,6 +625,48 @@ namespace VrFencing.Blade
         }
 
         /// <summary>Logs each knock or release that takes the point well off line.</summary>
+        private void LogContact(bool wasPressed, bool wasReleasing)
+        {
+            var contact = _blade.Contact;
+            if (contact.IsInContact != wasPressed)
+            {
+                Debug.Log(contact.IsInContact
+                    ? $"[ArmedDummy] Blades pressed at {contact.FractionA:0.00} of the Fencer's blade, {contact.FractionB:0.00} of the Dummy's"
+                    : "[ArmedDummy] Blades let go");
+            }
+
+            if (contact.IsReleasing != wasReleasing)
+            {
+                Debug.Log(contact.IsReleasing
+                    ? $"[ArmedDummy] Pressed past every give ({contact.PressMeters * 100.0f:0} cm): the weaker blade slides off toward its point"
+                    : "[ArmedDummy] Slide-off over");
+            }
+        }
+
+        /// <summary>The steel scrape (PER-122): louder the harder the blades press, higher the faster the contact slides.</summary>
+        private void PlayScrape(TrackedPose stripInRoom, bool wasPressed, (float A, float B) fractionsBefore, float deltaSeconds)
+        {
+            if (_scrape == null)
+            {
+                return;
+            }
+
+            var contact = _blade.Contact;
+            if (!_settings.Blade.ContactSound || !contact.IsInContact)
+            {
+                _scrape.Silence();
+                return;
+            }
+
+            var slide = wasPressed
+                ? ScrapeSound.FindSlideSpeed(fractionsBefore.A, contact.FractionA, fractionsBefore.B, contact.FractionB, BladePose.BladeLengthMeters, deltaSeconds)
+                : 0.0f;
+            _scrape.Play(
+                StripFrame.ToRoom(stripInRoom, contact.ContactPoint).ToUnity(),
+                ScrapeSound.GetVolume(contact.PressMeters, slide),
+                ScrapeSound.GetPitch(slide));
+        }
+
         private void LogDeflection()
         {
             var deflection = _blade.Deflection;

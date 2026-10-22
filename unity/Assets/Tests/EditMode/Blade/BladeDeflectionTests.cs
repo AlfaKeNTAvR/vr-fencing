@@ -124,7 +124,7 @@ namespace VrFencing.Tests.Blade
             for (var hit = 0; hit < 5; hit++)
             {
                 deflection.Kick(Clash(6.0f, 1.0f, Vector3.Normalize(new Vector3(1.0f, 0.2f * hit, 0.0f))));
-                deflection.Push(new Vector3(0.1f, 0.0f, 0.0f));
+                deflection.HoldAt(new Vector3(0.7f, 0.0f, 0.0f));
                 for (var frame = 0; frame < 10; frame++)
                 {
                     deflection.Step(FrameSeconds);
@@ -212,30 +212,16 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void APushWhileRecoveringHoldsTheLineOpen()
+        public void TheHandGivesWayByThePressOverItsYieldStiffnessSquareToTheBlade()
         {
-            var deflection = new BladeDeflection();
-            deflection.Kick(Clash(2.0f, 0.8f, Vector3.UnitX));
-            Run(deflection, 0.5f);
-            Assert.That(deflection.Phase, Is.EqualTo(DeflectionPhase.Recover), "Setup: recovering.");
-            var before = deflection.TipOffset;
+            var push = Vector3.Normalize(new Vector3(0.0f, -1.0f, 0.3f));
+            var light = ArmedDummyBlade.FindYieldTipOffset(1.0f, push, -Vector3.UnitZ, OpponentHand.Light);
+            var strong = ArmedDummyBlade.FindYieldTipOffset(1.0f, push, -Vector3.UnitZ, OpponentHand.Strong);
 
-            deflection.Push(new Vector3(0.01f, 0.0f, 0.0f));
-
-            Assert.That(deflection.Phase, Is.EqualTo(DeflectionPhase.Open), "The Fencer's blade in the way: it cannot recover through it.");
-            Assert.That(deflection.TipOffset.X, Is.EqualTo(before.X + 0.01f).Within(1e-5f));
-        }
-
-        [Test]
-        public void AForteOnTheFoiblePressYieldsMoreThanAFoibleOnTheForte()
-        {
-            var forteOnFoible = PressYield(dummyFraction: 0.8f, fencerFraction: 0.2f);
-            var foibleOnForte = PressYield(dummyFraction: 0.2f, fencerFraction: 0.8f);
-
-            Assert.That(forteOnFoible, Is.GreaterThan(3.0f * foibleOnForte));
-            Assert.That(BladeBind.GetPressYieldShare(1.0f, 0.0f), Is.EqualTo(BladeBind.PressYieldAtDummyPoint).Within(1e-6f));
-            Assert.That(BladeBind.GetPressYieldShare(0.0f, 0.0f), Is.EqualTo(BladeBind.PressYieldAtDummyGuard).Within(1e-6f));
-            Assert.That(BladeBind.GetPressYieldShare(1.0f, 1.0f), Is.EqualTo(BladeBind.PressYieldAtDummyPoint * BladeBind.FencerFoiblePressFactor).Within(1e-6f));
+            Assert.That(light.Z, Is.EqualTo(0.0f).Within(1e-6f), "Square to its blade.");
+            Assert.That(light.Y, Is.EqualTo(-1.0f / ArmedDummyBlade.LightYieldStiffness).Within(1e-5f));
+            Assert.That(light.Length(), Is.GreaterThan(3.0f * strong.Length()), "A light hand gives way four times as far as a strong one.");
+            Assert.That(ArmedDummyBlade.FindYieldTipOffset(0.0f, push, -Vector3.UnitZ, OpponentHand.Light), Is.EqualTo(Vector3.Zero));
         }
 
         // ---- The knocked arm ----
@@ -304,7 +290,7 @@ namespace VrFencing.Tests.Blade
                     DummyLayout.DummyToStrip(layout.Arm.GetGuardPosition(), distance),
                     DummyLayout.DummyToStrip(layout.Arm.GetBladePoint(BladePose.BladeLengthMeters), distance));
                 var shoulder = DummyLayout.DummyToStrip(layout.Arm.GetPose(ArmJoint.Shoulder).Position, distance);
-                blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, farAway, null, FrameSeconds);
+                blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, OpponentHand.Medium, farAway, default, FrameSeconds);
                 layout.PoseArm(blade.GetKnockedArmPose(enGarde, hand));
 
                 var guard = DummyLayout.DummyToStrip(layout.Arm.GetGuardPosition(), distance);
@@ -331,11 +317,9 @@ namespace VrFencing.Tests.Blade
             [Values(Hand.Right, Hand.Left)] Hand hand)
         {
             // PER-119: the Fencer's blade comes down at 3 m/s across the Dummy's, a tenth of the way from its guard, to
-            // 30 cm past its line. A solid push can turn the Dummy's point far aside at once (a short lever; here 40 cm
-            // in one frame while pressed, as PER-120's false clearing did), but only the wrist share is instant: the arm
-            // follows at its limit, so its Target Zones stay within the Blade's 5 cm.
-            const int pushedFrame = 60;
-            var bigPush = new Vector3(0.0f, -0.40f, 0.0f);
+            // 30 cm past its line. A hard press on a light hand gives way far (since PER-122 the hand reads the press;
+            // the blades' own contact keeps them apart), but the arm follows at its limit, so its Target Zones stay
+            // within the Blade's 5 cm a frame.
             const float distance = 3.0f;
             const float pressFraction = 0.1f;
             const float pressMetersPerSecond = 3.0f;
@@ -343,14 +327,12 @@ namespace VrFencing.Tests.Blade
             var layout = DummyLayout.Create(height, hand);
             var enGarde = SwordArmReach.PoseEnGarde(height, BladePose.BladeLengthMeters);
             var blade = new ArmedDummyBlade();
-            var fencer = new DrawnBlade();
             var settings = new BladeSettings();
-            var obstacles = new List<BladeObstacle>();
             var zones = new[] { TargetZone.Hand, TargetZone.Wrist, TargetZone.Forearm, TargetZone.UpperArm };
             Capsule[] last = null;
             var above = 0.10f;
-            var mostPointMoved = 0.0f;
-            var mostArm = 0.0f;
+            var mostGive = 0.0f;
+            var wasPressed = false;
 
             for (var frame = 0; frame < 144; frame++)
             {
@@ -363,20 +345,9 @@ namespace VrFencing.Tests.Blade
                 var crossing = Vector3.Lerp(forte.GuardPosition, forte.TipPosition, pressFraction) + new Vector3(0.0f, above, 0.0f);
                 var fencerHand = new BladeSegment(crossing - (0.3f * Vector3.UnitX), crossing + ((BladePose.BladeLengthMeters - 0.3f) * Vector3.UnitX));
 
-                var pointBefore = blade.Deflection.TipOffset;
-                if (frame == pushedFrame)
-                {
-                    blade.Deflection.Push(bigPush);
-                }
-
-                blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, fencerHand, fencer, FrameSeconds);
-                mostPointMoved = Math.Max(mostPointMoved, Vector3.Distance(blade.Deflection.TipOffset, pointBefore));
-                mostArm = Math.Max(mostArm, blade.Deflection.ArmOffset.Length());
-                obstacles.Clear();
-                obstacles.Add(BladeObstacle.Floor);
-                blade.AddObstacles(obstacles);
-                fencer.Step(fencerHand, obstacles, Vector3.UnitY, FrameSeconds);
-                blade.UpdateSide(fencerHand, fencer);
+                blade.Step(forte, shoulder, Vector3.UnitY, -Vector3.UnitY, settings, OpponentHand.Light, fencerHand, default, FrameSeconds);
+                mostGive = Math.Max(mostGive, blade.Deflection.TipOffset.Length());
+                wasPressed |= blade.IsPressed;
 
                 layout.PoseArm(blade.GetKnockedArmPose(enGarde, hand));
                 var guard = DummyLayout.DummyToStrip(layout.Arm.GetGuardPosition(), distance);
@@ -392,9 +363,8 @@ namespace VrFencing.Tests.Blade
                 last = now;
             }
 
-            Assert.That(blade.IsPressed, Is.True, "Setup: the Fencer's hand presses past the Dummy's line.");
-            Assert.That(mostPointMoved, Is.GreaterThan(0.05f), "Setup: the solid push moved the point more than 5 cm in one frame.");
-            Assert.That(mostArm, Is.GreaterThan(0.1f), "Setup: the arm went with the push.");
+            Assert.That(wasPressed, Is.True, "Setup: the Fencer's hand pressed past the Dummy's line.");
+            Assert.That(mostGive, Is.GreaterThan(0.02f), "Setup: the hand gave way.");
         }
 
         [Test]
@@ -402,35 +372,11 @@ namespace VrFencing.Tests.Blade
         {
             var blade = new ArmedDummyBlade();
             var farAway = new BladeSegment(new Vector3(5.0f, 0.0f, 0.0f), new Vector3(5.9f, 0.0f, 0.0f));
-            blade.Step(DummyForte, DummyForte.GuardPosition + new Vector3(0.0f, 0.3f, 0.6f), Vector3.UnitY, -Vector3.UnitY, new BladeSettings(), farAway, null, FrameSeconds);
+            blade.Step(DummyForte, DummyForte.GuardPosition + new Vector3(0.0f, 0.3f, 0.6f), Vector3.UnitY, -Vector3.UnitY, new BladeSettings(), OpponentHand.Medium, farAway, default, FrameSeconds);
 
-            Assert.That(blade.GetPointAt(0.0f), Is.EqualTo(blade.Shape[0]));
-            Assert.That(blade.GetPointAt(1.0f), Is.EqualTo(blade.Shape[BladeBind.PieceCount]));
-            Assert.That(Vector3.Distance(blade.GetPointAt(0.5f), Vector3.Lerp(blade.Shape[0], blade.Shape[BladeBind.PieceCount], 0.5f)), Is.LessThan(0.02f));
-        }
-
-        /// <summary>
-        /// The Dummy's point's yield to a 4 cm press, with the Fencer's blade across it at <paramref name="dummyFraction"/>
-        /// of its blade, at <paramref name="fencerFraction"/> of the Fencer's.
-        /// </summary>
-        private static float PressYield(float dummyFraction, float fencerFraction)
-        {
-            var line = new Vector3[BladeBind.PieceCount + 1];
-            for (var piece = 0; piece <= BladeBind.PieceCount; piece++)
-            {
-                line[piece] = Vector3.Lerp(DummyForte.GuardPosition, DummyForte.TipPosition, (float)piece / BladeBind.PieceCount);
-            }
-
-            var crossing = Vector3.Lerp(DummyForte.GuardPosition, DummyForte.TipPosition, dummyFraction);
-            BladeSegment Across(float height)
-            {
-                var guard = new Vector3(-0.9f * fencerFraction, height, crossing.Z);
-                return new BladeSegment(guard, guard + (Vector3.UnitX * 0.9f));
-            }
-
-            var bind = new BladeBind();
-            bind.UpdateSide(Across(crossing.Y + 0.1f), null, line);
-            return bind.FindYieldTipOffset(Across(crossing.Y - 0.04f), line).Length();
+            Assert.That(blade.GetPointAt(0.0f), Is.EqualTo(blade.Drawn.GetSample(0)));
+            Assert.That(blade.GetPointAt(1.0f), Is.EqualTo(blade.Drawn.GetSample(DrawnBlade.SampleCount)));
+            Assert.That(Vector3.Distance(blade.GetPointAt(0.5f), blade.Drawn.GetSample(DrawnBlade.SampleCount / 2)), Is.LessThan(1e-5f));
         }
     }
 }

@@ -180,7 +180,7 @@ namespace VrFencing.Tests.UI
         public void SettingsStepButtonsChangeTheirGroupsSetting()
         {
             var changes = new List<(SettingId, int)>();
-            var screen = new SettingsScreen(CreatePanel(), (id, direction) => changes.Add((id, direction)), _ => { }, () => { }, () => { }, () => { });
+            var screen = new SettingsScreen(CreatePanel(), (id, direction) => changes.Add((id, direction)), _ => { }, () => { }, () => { });
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), SettingGroup.Drills, string.Empty);
 
             var buttons = _created[0].GetComponentsInChildren<UiButton>();
@@ -195,12 +195,12 @@ namespace VrFencing.Tests.UI
         public void SettingsOpensOnTheGroupButtonsWithNoSettingRows()
         {
             var opened = new List<SettingGroup>();
-            var screen = new SettingsScreen(CreatePanel(), (_, _) => { }, opened.Add, () => { }, () => { }, () => { });
+            var screen = new SettingsScreen(CreatePanel(), (_, _) => { }, opened.Add, () => { }, () => { });
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), null, string.Empty);
 
             var shown = _created[0].GetComponentsInChildren<UiButton>().Select(button => button.Label).ToArray();
-            Assert.That(shown, Is.EquivalentTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy", "Blade feel", "Back" }),
-                "Only the groups and Back: no Setting steps, no Calibrate grip and no blade feel reset.");
+            Assert.That(shown, Is.EquivalentTo(new[] { "You", "Drills", "Strip", "Touch", "Blade", "Haptics", "Armed Dummy", "Back" }),
+                "Only the groups and Back: no Setting steps and no Calibrate grip.");
 
             _created[0].GetComponentsInChildren<UiButton>().First(button => button.Label == "Strip").Press();
             Assert.That(opened, Is.EqualTo(new[] { SettingGroup.Strip }));
@@ -210,7 +210,7 @@ namespace VrFencing.Tests.UI
         public void CalibrateGripShowsOnlyInTheBladeGroup()
         {
             var gripOpened = 0;
-            var screen = new SettingsScreen(CreatePanel(), (_, _) => { }, _ => { }, () => gripOpened++, () => { }, () => { });
+            var screen = new SettingsScreen(CreatePanel(), (_, _) => { }, _ => { }, () => gripOpened++, () => { });
 
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), SettingGroup.Touch, string.Empty);
             Assert.That(_created[0].GetComponentsInChildren<UiButton>().Select(button => button.Label), Has.None.EqualTo("Calibrate grip"));
@@ -218,21 +218,6 @@ namespace VrFencing.Tests.UI
             screen.Refresh(new VrFencing.Settings.TrainerSettings(), SettingGroup.Blade, string.Empty);
             _created[0].GetComponentsInChildren<UiButton>().First(button => button.Label == "Calibrate grip").Press();
             Assert.That(gripOpened, Is.EqualTo(1));
-        }
-
-        [Test]
-        public void ResetBladeFeelShowsOnlyInTheBladeFeelGroup()
-        {
-            const string ResetLabel = "Reset blade feel to defaults";
-            var resets = 0;
-            var screen = new SettingsScreen(CreatePanel(), (_, _) => { }, _ => { }, () => { }, () => { }, () => resets++);
-
-            screen.Refresh(new VrFencing.Settings.TrainerSettings(), SettingGroup.Blade, string.Empty);
-            Assert.That(_created[0].GetComponentsInChildren<UiButton>().Select(button => button.Label), Has.None.EqualTo(ResetLabel));
-
-            screen.Refresh(new VrFencing.Settings.TrainerSettings(), SettingGroup.BladeFeel, string.Empty);
-            _created[0].GetComponentsInChildren<UiButton>().First(button => button.Label == ResetLabel).Press();
-            Assert.That(resets, Is.EqualTo(1));
         }
 
         [Test]

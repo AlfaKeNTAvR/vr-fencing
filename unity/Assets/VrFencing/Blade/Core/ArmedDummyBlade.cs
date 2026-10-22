@@ -7,47 +7,82 @@ using VrFencing.Settings;
 namespace VrFencing.Blade
 {
     /// <summary>
-    /// The Armed Dummy's épée, solid against the Fencer's (PER-104): where the Dummy holds it, knocked off its line by
-    /// clashes and presses, wrist and arm (<see cref="BladeDeflection"/>, PER-116), pushed aside by the Fencer's blade
-    /// (<see cref="BladeBind"/>), and drawn like the Fencer's (<see cref="DrawnBlade"/>). Each frame:
-    /// <list type="number">
-    /// <item><see cref="Step"/>, before the Fencer's drawn blade moves: the press holds the point aside, the deflection
-    /// steps, the blade is pushed out of the Fencer's drawn blade if it moved into it, and it is drawn;</item>
-    /// <item><see cref="AddObstacles"/>: the drawn blade becomes thin obstacles for the Fencer's drawn blade;</item>
-    /// <item><see cref="UpdateSide"/>, after the Fencer's drawn blade moved: which side of this blade the Fencer's is on.</item>
+    /// The Armed Dummy's épée against the Fencer's (PER-104, redesigned in PER-122). Two layers, as with a human partner:
+    /// <list type="bullet">
+    /// <item><b>The Dummy's hand</b> (its behavior). Clashes knock its point off line, wrist and arm, held open and
+    /// recovered (<see cref="BladeDeflection"/>, PER-116), and it reads how hard the Fencer presses its blade
+    /// (<see cref="BladeContactSolver.PressNewtons"/>, last frame's) and gives way to it: its point moves square to its
+    /// blade by the press over its yield stiffness (<see cref="GetYieldStiffness"/>, the "Opponent's hand" Setting),
+    /// and let go after a big press the line stays open and recovers, as after a beat.</item>
+    /// <item><b>The blades' contact</b>, solved for both blades alike from the two hands (<see cref="BladeContactSolver"/>):
+    /// each blade turns in its grip and bows, neither hand moves, they never pass through each other and never wedge.
+    /// The Dummy's blade bends from contact too. The Fencer's drawn blade takes <see cref="FencerGive"/>.</item>
     /// </list>
-    /// Positions in the Strip frame, meters, seconds.
+    /// The Dummy's drawn blade (<see cref="Drawn"/>) keeps out of the floor and of the Fencer's bell guard (solid for its
+    /// point, PER-120); the Fencer's drawn blade keeps out of this blade's bell (<see cref="AddObstacles"/>). Positions in
+    /// the Strip frame, meters, seconds.
     /// </summary>
     public sealed class ArmedDummyBlade
     {
-        // The drawn blade's points taken as the pieces' ends.
-        private const int SamplesPerPiece = DrawnBlade.SampleCount / BladeBind.PieceCount;
+        /// <summary>The Dummy's grip with a Light hand, N m per radian: its blade turns in the hand twice as readily as the Fencer's.</summary>
+        public const float LightGripStiffness = 0.5f * BladeContactSolver.FencerGripStiffness;
 
-        // Pushing the blade out of the Fencer's is checked this many times: turning it about its guard moves the contact
-        // a little along the blades, so a second look catches the rest.
-        private const int ClearingPasses = 2;
+        /// <summary>The Dummy's grip with a Medium hand: as the Fencer's.</summary>
+        public const float MediumGripStiffness = BladeContactSolver.FencerGripStiffness;
 
-        private static readonly BladeObstacle[] FloorOnly = { BladeObstacle.Floor };
+        /// <summary>The Dummy's grip with a Strong hand: half as ready to turn as the Fencer's.</summary>
+        public const float StrongGripStiffness = 2.0f * BladeContactSolver.FencerGripStiffness;
+
+        /// <summary>
+        /// How readily a Light hand gives way to a press, N per meter of its point's move: a press on its forte that the
+        /// blades take up at about 1 N moves its point 5 cm, about as far as the press itself.
+        /// </summary>
+        public const float LightYieldStiffness = 20.0f;
+
+        /// <summary>A Medium hand gives way half as far as a Light one.</summary>
+        public const float MediumYieldStiffness = 40.0f;
+
+        /// <summary>A Strong hand gives way a quarter as far as a Light one.</summary>
+        public const float StrongYieldStiffness = 80.0f;
+
+        /// <summary>
+        /// The most the Dummy's hand gives way to a press, at its point: a hard press opens its line this far (past the
+        /// Beat's 15 cm), its blade then slides off the Fencer's. A beat can still knock it to 60 cm.
+        /// </summary>
+        public const float MaxYieldMeters = 0.25f;
 
         private readonly BladeDeflection _deflection = new BladeDeflection();
-        private readonly BladeBind _bind = new BladeBind();
+        private readonly BladeContactSolver _solver = new BladeContactSolver();
         private readonly DrawnBlade _drawn = new DrawnBlade();
-        private readonly Vector3[] _line = new Vector3[BladeBind.PieceCount + 1];
-        private readonly Vector3[] _shape = new Vector3[BladeBind.PieceCount + 1];
-        private readonly Vector3[] _fencerDrawn = new Vector3[DrawnBlade.SampleCount + 1];
+        private readonly List<BladeObstacle> _obstacles = new List<BladeObstacle>();
         private bool _hasShape;
 
-        /// <summary>The point off its line: knocked by a clash, held aside by a press, the arm going with a big one.</summary>
+        /// <summary>The Dummy's hand: its point off its line, knocked by clashes and giving way to presses.</summary>
         public BladeDeflection Deflection => _deflection;
 
-        /// <summary>The side the Fencer's blade keeps to, and the press.</summary>
-        public BladeBind Bind => _bind;
+        /// <summary>The two blades' contact.</summary>
+        public BladeContactSolver Contact => _solver;
 
         /// <summary>The blade as drawn.</summary>
         public DrawnBlade Drawn => _drawn;
 
-        /// <summary>The guard to the real point this frame (deflected, pushed and drooped): what the clash test uses.</summary>
+        /// <summary>Where the Dummy's hand holds its blade this frame: its line, moved by the hand (guard to the real point).</summary>
+        public BladeSegment HandChord { get; private set; }
+
+        /// <summary>
+        /// The Dummy's blade this frame as the contact leaves it (guard to the real point): turned and bowed off the
+        /// Fencer's. What its point's hits and the clashes are judged on.
+        /// </summary>
         public BladeSegment Chord { get; private set; }
+
+        /// <summary>What the Fencer's drawn blade takes this frame: the hand's blade turned and bowed by the contact.</summary>
+        public BladeGive FencerGive { get; private set; }
+
+        /// <summary>
+        /// The Dummy's point off its line as seen: the hand's knock and give (<see cref="BladeDeflection.TipOffset"/>)
+        /// plus the blade's own give in the contact. What Parries and Beats are judged on.
+        /// </summary>
+        public Vector3 JudgedTipOffset => _deflection.TipOffset + (Chord.TipPosition - HandChord.TipPosition);
 
         /// <summary>
         /// The knocked arm's turn about the shoulder this frame (<see cref="BladeDeflection.GetArmTurn"/>, Strip frame):
@@ -55,72 +90,115 @@ namespace VrFencing.Blade
         /// </summary>
         public Quaternion ArmTurn { get; private set; } = Quaternion.Identity;
 
-        /// <summary>The drawn blade as <see cref="BladeBind.PieceCount"/> + 1 points, guard first (after <see cref="Step"/>).</summary>
-        public IReadOnlyList<Vector3> Shape => _shape;
+        /// <summary>True while the Fencer's blade presses on this one (<see cref="BladeContactSolver.IsInContact"/>).</summary>
+        public bool IsPressed => _solver.IsInContact;
 
-        /// <summary>True while the Fencer's hand presses past this blade's line (<see cref="BladeBind.PressMeters"/>).</summary>
-        public bool IsPressed => _bind.PressMeters > 0.0f;
+        /// <summary>The Dummy's grip stiffness for the "Opponent's hand" Setting.</summary>
+        public static float GetGripStiffness(OpponentHand hand)
+        {
+            switch (hand)
+            {
+                case OpponentHand.Light: return LightGripStiffness;
+                case OpponentHand.Strong: return StrongGripStiffness;
+                default: return MediumGripStiffness;
+            }
+        }
+
+        /// <summary>How readily the Dummy's hand gives way to a press for the "Opponent's hand" Setting, N per meter at its point.</summary>
+        public static float GetYieldStiffness(OpponentHand hand)
+        {
+            switch (hand)
+            {
+                case OpponentHand.Light: return LightYieldStiffness;
+                case OpponentHand.Strong: return StrongYieldStiffness;
+                default: return MediumYieldStiffness;
+            }
+        }
+
+        /// <summary>
+        /// Where the Dummy's hand holds its point for a press of <paramref name="pressNewtons"/> pushing its blade along
+        /// <paramref name="push"/>: square to its blade <paramref name="bladeDirection"/>, the press over the yield
+        /// stiffness; zero with no press.
+        /// </summary>
+        public static Vector3 FindYieldTipOffset(float pressNewtons, Vector3 push, Vector3 bladeDirection, OpponentHand hand)
+        {
+            var square = push - (Vector3.Dot(push, bladeDirection) * bladeDirection);
+            if (!(pressNewtons > 0.0f) || square.LengthSquared() < 1e-8f)
+            {
+                return Vector3.Zero;
+            }
+
+            return Vector3.Normalize(square) * Math.Min(MaxYieldMeters, pressNewtons / GetYieldStiffness(hand));
+        }
 
         /// <summary>Straight in line again at once, no side known: the blade appeared or jumped.</summary>
         public void Reset()
         {
             _deflection.Reset();
-            _bind.Reset();
+            _solver.Reset();
             _drawn.Reset();
             _hasShape = false;
+            ArmTurn = Quaternion.Identity;
         }
 
-        /// <summary>Moves the blade for this frame, before the Fencer's drawn blade moves.</summary>
+        /// <summary>
+        /// One frame: the Dummy's hand reads last frame's press and moves, then the two blades' contact is solved and
+        /// the Dummy's blade drawn. Call before the Fencer's drawn blade steps with <see cref="FencerGive"/>.
+        /// </summary>
         /// <param name="forte">The guard to the undrooped point, where the Dummy's arm holds it in line (not deflected).</param>
         /// <param name="shoulder">The Dummy's sword shoulder: the knocked arm turns about it.</param>
         /// <param name="gripUp">The Dummy's grip's up.</param>
         /// <param name="down">Gravity's direction.</param>
+        /// <param name="blade">The blade Settings (set and flex), for both blades.</param>
+        /// <param name="hand">How strong the Dummy's hand is (the "Opponent's hand" Setting).</param>
         /// <param name="fencerHand">The Fencer's blade from the hand (its chord to the real point).</param>
-        /// <param name="fencerDrawn">The Fencer's drawn blade as drawn last frame; null or not yet drawn when there is none.</param>
-        public void Step(BladeSegment forte, Vector3 shoulder, Vector3 gripUp, Vector3 down, BladeSettings blade, BladeSegment fencerHand, DrawnBlade fencerDrawn, float deltaSeconds)
+        /// <param name="fencerDroop">The Fencer's blade's rest shape on that chord.</param>
+        public void Step(
+            BladeSegment forte,
+            Vector3 shoulder,
+            Vector3 gripUp,
+            Vector3 down,
+            BladeSettings blade,
+            OpponentHand hand,
+            BladeSegment fencerHand,
+            BladeDroop fencerDroop,
+            float deltaSeconds)
         {
             if (blade == null)
             {
                 throw new ArgumentNullException(nameof(blade));
             }
 
-            var lineDroop = BladeDroop.Create(forte.Direction, gripUp, down, blade);
-            FillRestShape(lineDroop.GetChord(forte), lineDroop, _line);
-            _deflection.HoldAt(_bind.FindYieldTipOffset(fencerHand, _line, blade.Feel.DummyBladeYieldScale));
+            // The Dummy's hand: it gives way to last frame's press as a fencer's hand would, and its knocks run on.
+            var yield = _solver.IsInContact
+                ? FindYieldTipOffset(_solver.PressNewtons, _solver.PushOnB, Chord.Direction, hand)
+                : Vector3.Zero;
+            _deflection.HoldAt(yield);
             _deflection.Step(deltaSeconds);
+            var droop = Deflect(forte, shoulder, gripUp, down, blade, out var handChord);
+            HandChord = handChord;
+            ArmTurn = _deflection.GetArmTurn(forte, shoulder);
 
-            var droop = Deflect(forte, shoulder, gripUp, down, blade, out var chord);
-            if (_bind.IsEngaged)
+            // The blades: the Fencer's is A, the Dummy's is B.
+            var bendStiffness = BladeContactSolver.GetBendStiffness(blade.Flex);
+            _solver.Solve(
+                new BladeHold(fencerHand, fencerDroop, BladeContactSolver.FencerGripStiffness, bendStiffness),
+                new BladeHold(handChord, droop, GetGripStiffness(hand), bendStiffness),
+                deltaSeconds);
+            FencerGive = _solver.GiveA;
+            var give = _solver.GiveB;
+            Chord = give.Chord;
+
+            if (_solver.IsNear)
             {
-                // Held against the Fencer's blade, it does not whip: drawn exactly where it is kept out of the Fencer's.
+                // Near the Fencer's blade it does not whip, so a whip never carries it through: drawn as the contact leaves it.
                 _drawn.Flex.Reset();
             }
 
-            if (fencerDrawn != null && fencerDrawn.HasShape)
-            {
-                CopySamples(fencerDrawn, _fencerDrawn);
-                for (var pass = 0; pass < ClearingPasses; pass++)
-                {
-                    FillFlexedShape(chord, droop);
-                    var clearing = _bind.FindClearingTipOffset(_shape, _fencerDrawn);
-                    if (clearing == Vector3.Zero)
-                    {
-                        break;
-                    }
-
-                    _deflection.Push(clearing);
-                    droop = Deflect(forte, shoulder, gripUp, down, blade, out chord);
-                }
-            }
-
-            Chord = chord;
-            ArmTurn = _deflection.GetArmTurn(forte, shoulder);
-            _drawn.Step(chord, FloorOnly, gripUp, deltaSeconds, droop);
-            for (var piece = 0; piece <= BladeBind.PieceCount; piece++)
-            {
-                _shape[piece] = _drawn.GetSample(piece * SamplesPerPiece);
-            }
-
+            _obstacles.Clear();
+            _obstacles.Add(BladeObstacle.Floor);
+            _obstacles.Add(BladeObstacle.FromBell(fencerHand.GuardPosition, fencerDroop.GetHiltDirection(fencerHand.Direction)));
+            _drawn.Step(give.Chord, _obstacles, gripUp, deltaSeconds, give.Droop);
             _hasShape = true;
         }
 
@@ -156,46 +234,27 @@ namespace VrFencing.Blade
         /// </summary>
         public Vector3 GetPointAt(float fraction)
         {
-            var along = Math.Clamp(fraction, 0.0f, 1.0f) * BladeBind.PieceCount;
-            var piece = Math.Min(BladeBind.PieceCount - 1, (int)along);
-            return Vector3.Lerp(_shape[piece], _shape[piece + 1], along - piece);
+            return _drawn.GetCenterlinePoint(fraction);
         }
 
         /// <summary>
-        /// Adds this blade, as drawn this frame, to the Fencer's obstacles (nothing before the first <see cref="Step"/>):
-        /// its blade, and its bell guard on the drawn hilt (PER-120), so a press near its guard meets the bell. The hand
-        /// behind the bell is the Dummy's body's.
+        /// Adds this blade's bell guard on the drawn hilt (PER-120) to the Fencer's obstacles (nothing before the first
+        /// <see cref="Step"/>): solid for the Fencer's point. The blade itself is the contact solver's.
         /// </summary>
-        /// <param name="friction">The Fencer's point on this steel (the "Blade-on-blade friction" Setting, PER-121).</param>
-        public void AddObstacles(ICollection<BladeObstacle> obstacles, float friction = BladeObstacle.BladeFriction)
+        public void AddObstacles(ICollection<BladeObstacle> obstacles)
         {
-            if (!_hasShape)
+            if (obstacles == null)
             {
-                return;
+                throw new ArgumentNullException(nameof(obstacles));
             }
 
-            _bind.AddObstacles(_shape, obstacles, friction);
-            obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection, friction));
+            if (_hasShape)
+            {
+                obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection));
+            }
         }
 
-        /// <summary>After the Fencer's drawn blade moved this frame: updates which side of this blade it is on.</summary>
-        public void UpdateSide(BladeSegment fencerHand, DrawnBlade fencerDrawn)
-        {
-            if (!_hasShape)
-            {
-                return;
-            }
-
-            var hasDrawn = fencerDrawn != null && fencerDrawn.HasShape;
-            if (hasDrawn)
-            {
-                CopySamples(fencerDrawn, _fencerDrawn);
-            }
-
-            _bind.UpdateSide(fencerHand, hasDrawn ? _fencerDrawn : null, _shape);
-        }
-
-        /// <summary>The blade turned by the deflection, and its droop; <paramref name="chord"/> is the guard to the real point.</summary>
+        /// <summary>The blade turned by the hand's deflection, and its droop; <paramref name="chord"/> is the guard to the real point.</summary>
         private BladeDroop Deflect(BladeSegment forte, Vector3 shoulder, Vector3 gripUp, Vector3 down, BladeSettings blade, out BladeSegment chord)
         {
             var swung = _deflection.Apply(forte, shoulder);
@@ -204,37 +263,10 @@ namespace VrFencing.Blade
             return droop;
         }
 
-        /// <summary>The shape the drawn blade will have: the chord with the flex it has now and the rest curve.</summary>
-        private void FillFlexedShape(BladeSegment chord, BladeDroop droop)
-        {
-            for (var piece = 0; piece <= BladeBind.PieceCount; piece++)
-            {
-                var fraction = (float)piece / BladeBind.PieceCount;
-                _shape[piece] = _drawn.Flex.GetCenterlinePoint(chord, fraction) + droop.GetChordOffset(fraction);
-            }
-        }
-
-        private static void FillRestShape(BladeSegment chord, BladeDroop droop, Vector3[] shape)
-        {
-            for (var piece = 0; piece <= BladeBind.PieceCount; piece++)
-            {
-                var fraction = (float)piece / BladeBind.PieceCount;
-                shape[piece] = Vector3.Lerp(chord.GuardPosition, chord.TipPosition, fraction) + droop.GetChordOffset(fraction);
-            }
-        }
-
         /// <summary>A turn in the Strip frame as seen in the Dummy frame (half a turn about the vertical from it).</summary>
         private static Quaternion ToDummyFrame(Quaternion turnOnStrip)
         {
             return new Quaternion(-turnOnStrip.X, turnOnStrip.Y, -turnOnStrip.Z, turnOnStrip.W);
-        }
-
-        private static void CopySamples(DrawnBlade drawn, Vector3[] samples)
-        {
-            for (var index = 0; index <= DrawnBlade.SampleCount; index++)
-            {
-                samples[index] = drawn.GetSample(index);
-            }
         }
     }
 }

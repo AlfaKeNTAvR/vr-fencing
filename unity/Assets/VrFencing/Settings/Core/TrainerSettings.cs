@@ -147,6 +147,12 @@ namespace VrFencing.Settings
         /// <summary>The Dummy lunges (PER-101) asks for a Riposte.</summary>
         public bool RiposteInLungeParries { get; set; } = true;
 
+        /// <summary>
+        /// How strong the Dummy's sword hand is against a press or bind (PER-122): how readily its blade turns in its grip
+        /// and how readily its hand gives way. Missing from an older file: Medium.
+        /// </summary>
+        public OpponentHand OpponentHand { get; set; } = OpponentHand.Medium;
+
         public ArmedDummySettings Clone()
         {
             return new ArmedDummySettings
@@ -156,8 +162,22 @@ namespace VrFencing.Settings
                 RiposteInFastParries = RiposteInFastParries,
                 RiposteInLowParries = RiposteInLowParries,
                 RiposteInLungeParries = RiposteInLungeParries,
+                OpponentHand = OpponentHand,
             };
         }
+    }
+
+    /// <summary>How strong the Armed Dummy's sword hand is against the Fencer's blade (PER-122).</summary>
+    public enum OpponentHand
+    {
+        /// <summary>Its blade turns in the hand readily and its hand gives way to a light press.</summary>
+        Light,
+
+        /// <summary>As firm as the Fencer's own grip.</summary>
+        Medium,
+
+        /// <summary>Its blade turns little and its hand holds against all but a hard press.</summary>
+        Strong,
     }
 
     /// <summary>How long the Fencer has to complete a Rep after its cue, per Drill type.</summary>

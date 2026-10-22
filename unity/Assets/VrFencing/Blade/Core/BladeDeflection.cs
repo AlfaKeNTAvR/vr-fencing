@@ -62,11 +62,10 @@ namespace VrFencing.Blade
     /// with the deflection. A new hit while out, open or recovering adds to the deflection and opens it again.</item>
     /// <item><b>Light touch.</b> A slower clash, or a knock under <see cref="LightTouchMeters"/>, is the old quick
     /// spring (<see cref="FrequencyHertz"/>), at most <see cref="LightTouchMeters"/> for a slow one.</item>
-    /// <item><b>Press.</b> The Fencer's blade held on the Dummy's pulls the spring to the press's yield
-    /// (<see cref="HoldAt"/>, <see cref="BladeBind.FindYieldTipOffset"/>); let go after it moved the point
-    /// <see cref="LightTouchMeters"/> or more, the point stays open and recovers as after a beat.</item>
-    /// <item><b>Solid blades.</b> <see cref="Push"/> moves the point at once out of the Fencer's blade (PER-104); while
-    /// open or recovering it opens the line again, so the point never recovers through the Fencer's blade.</item>
+    /// <item><b>Press.</b> The Fencer's blade held on the Dummy's pulls the spring to where the Dummy's hand gives way
+    /// to it (<see cref="HoldAt"/>, <see cref="ArmedDummyBlade.FindYieldTipOffset"/>, PER-122); let go after it moved
+    /// the point <see cref="LightTouchMeters"/> or more, the point stays open and recovers as after a beat. The blades
+    /// themselves never pass through each other (<see cref="BladeContactSolver"/>): this is only the hand.</item>
     /// <item><b>Wrist and arm.</b> The first <see cref="WristMaxMeters"/> of the offset is the blade turning in the hand;
     /// the rest, up to <see cref="ArmMaxMeters"/>, knocks the whole arm aside at the shoulder (<see cref="ArmOffset"/>,
     /// <see cref="GetArmTurn"/>), following at most <see cref="MaxArmPointSpeedMetersPerSecond"/> so the arm's Target
@@ -226,7 +225,7 @@ namespace VrFencing.Blade
 
         /// <summary>
         /// Knocks the point for a clash: a light touch on the spring, a beat out to its deflection (added to any under way).
-        /// A slow touch on a point already knocked out changes nothing: the solid push keeps the blades apart.
+        /// A slow touch on a point already knocked out changes nothing: the contact solver keeps the blades apart.
         /// </summary>
         public void Kick(BladeClash clash)
         {
@@ -250,51 +249,12 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// Where the Fencer's press holds the point (<see cref="BladeBind.FindYieldTipOffset"/>), zero when nothing
-        /// presses. A press past a knocked-out point takes it over on the spring; one within it keeps the line open.
+        /// Where the Dummy's hand gives way to the press (<see cref="ArmedDummyBlade.FindYieldTipOffset"/>), zero when
+        /// nothing presses. A press past a knocked-out point takes it over on the spring; one within it keeps the line open.
         /// </summary>
         public void HoldAt(Vector3 tipOffset)
         {
             _heldOffset = LimitToMax(tipOffset);
-        }
-
-        /// <summary>
-        /// Moves the point at once by <paramref name="tipOffset"/> (the Fencer's blade in the way, PER-104) and stops its
-        /// motion back the other way, as a blade knocked against another does not pass through it. A knocked-out point
-        /// pushed while open or recovering is held open from there. Only the wrist takes the push at once: the arm's share
-        /// follows on the next <see cref="Step"/> at its speed limit, so even a hard press near the guard (a short lever,
-        /// a big push at the point) keeps the arm's Target Zones within the Blade's 5 cm a frame (PER-119).
-        /// </summary>
-        public void Push(Vector3 tipOffset)
-        {
-            var length = tipOffset.Length();
-            if (length < 1e-7f)
-            {
-                return;
-            }
-
-            switch (Phase)
-            {
-                case DeflectionPhase.Out:
-                    _from += tipOffset;
-                    _target = LimitToMax(_target + tipOffset);
-                    TipOffset = LimitToMax(TipOffset + tipOffset);
-                    return;
-                case DeflectionPhase.Open:
-                case DeflectionPhase.Recover:
-                    StartOpen(LimitToMax(TipOffset + tipOffset), isNewPlan: false);
-                    return;
-                default:
-                    var direction = tipOffset / length;
-                    var back = Vector3.Dot(_velocity, direction);
-                    if (back < 0.0f)
-                    {
-                        _velocity -= back * direction;
-                    }
-
-                    TipOffset = LimitToMax(TipOffset + tipOffset);
-                    return;
-            }
         }
 
         /// <summary>In line at once: the blade appeared or jumped.</summary>

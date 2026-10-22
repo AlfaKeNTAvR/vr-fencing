@@ -19,6 +19,9 @@ namespace VrFencing.Blade
     /// drawn point is. The drawn blade is that chord plus <see cref="GetChordOffset"/>, so it leaves the guard along the
     /// forte. Pushed straight in, the blade bends to the side it already hangs to (<see cref="TipDeflection"/>, the set
     /// plus the sag), the PER-50 bend side. The default value is no droop: a straight blade.
+    ///
+    /// Against another blade (PER-122) the rest shape also carries that contact's give (<see cref="WithContact"/>): the
+    /// blade turned in the grip and bowed (<see cref="ContactBow"/>) on top of its droop.
     /// </summary>
     public readonly struct BladeDroop
     {
@@ -32,15 +35,28 @@ namespace VrFencing.Blade
         public const float SoftSagMeters = 0.045f;
 
         private BladeDroop(Vector3 setDeflection, Vector3 sagDeflection, Quaternion chordToForte)
+            : this(setDeflection, sagDeflection, chordToForte, true, default, false)
+        {
+        }
+
+        private BladeDroop(Vector3 setDeflection, Vector3 sagDeflection, Quaternion chordToForte, bool hasShape, ContactBow bow, bool hasContact)
         {
             SetDeflection = setDeflection;
             SagDeflection = sagDeflection;
             ChordToForte = chordToForte;
-            HasShape = true;
+            HasShape = hasShape;
+            Bow = bow;
+            HasContact = hasContact;
         }
 
         /// <summary>False for the default value: a straight blade.</summary>
         public bool HasShape { get; }
+
+        /// <summary>True when this rest shape carries a contact's give (<see cref="WithContact"/>).</summary>
+        public bool HasContact { get; }
+
+        /// <summary>The bow another blade's press puts on top of the droop (PER-122); none by default.</summary>
+        public ContactBow Bow { get; }
 
         /// <summary>The set's drop of the point, perpendicular to the forte.</summary>
         public Vector3 SetDeflection { get; }
@@ -113,25 +129,42 @@ namespace VrFencing.Blade
         /// <summary>
         /// The rest curve's offset from the chord at <paramref name="fraction"/> of the way from the guard (0) to the
         /// point (1): zero at both ends, at most about a quarter of the point's drop in between (the curve sits on the
-        /// thumb's side of the chord).
+        /// thumb's side of the chord). A contact's bow adds its own offset (<see cref="ContactBow.GetChordOffset"/>).
         /// </summary>
         public Vector3 GetChordOffset(float fraction)
         {
+            var bow = Bow.HasBow ? Bow.GetChordOffset(fraction) : Vector3.Zero;
             if (!HasShape)
             {
-                return Vector3.Zero;
+                return bow;
             }
 
             var u = Math.Max(0.0f, Math.Min(1.0f, fraction));
             var setShape = u * u;
             var sagShape = ((6.0f * u * u) - (4.0f * u * u * u) + (u * u * u * u)) / 3.0f;
-            return (SetDeflection * (setShape - u)) + (SagDeflection * (sagShape - u));
+            return (SetDeflection * (setShape - u)) + (SagDeflection * (sagShape - u)) + bow;
         }
 
         /// <summary>Which way the hilt points for a drawn blade whose guard leaves along <paramref name="chordDirection"/>.</summary>
         public Vector3 GetHiltDirection(Vector3 chordDirection)
         {
-            return HasShape ? Vector3.Transform(chordDirection, ChordToForte) : chordDirection;
+            return HasShape || HasContact ? Vector3.Transform(chordDirection, ChordToForte) : chordDirection;
+        }
+
+        /// <summary>
+        /// This rest shape with a contact's give on top (PER-122): the blade turned in the grip by <paramref name="turn"/>
+        /// (about the guard) and bowed by <paramref name="bow"/>, which moved its chord from
+        /// <paramref name="chordBefore"/> to <paramref name="chordAfter"/> (directions). The hilt turns with the grip, not
+        /// with the bow. The set and sag stay as they are (a turn of a few degrees moves them by under a millimeter).
+        /// </summary>
+        public BladeDroop WithContact(Quaternion turn, Vector3 chordBefore, Vector3 chordAfter, ContactBow bow)
+        {
+            var chordToForte = HasShape ? ChordToForte : Quaternion.Identity;
+
+            // The new chord onto the turned old chord, then the old chord's hilt turn as seen after the grip's turn.
+            var ontoTurned = SegmentMath.FindRotationBetween(Vector3.Normalize(chordAfter), Vector3.Transform(Vector3.Normalize(chordBefore), turn));
+            var turnedChordToForte = Quaternion.Concatenate(Quaternion.Concatenate(Quaternion.Inverse(turn), chordToForte), turn);
+            return new BladeDroop(SetDeflection, SagDeflection, Quaternion.Concatenate(ontoTurned, turnedChordToForte), HasShape, bow, true);
         }
     }
 }

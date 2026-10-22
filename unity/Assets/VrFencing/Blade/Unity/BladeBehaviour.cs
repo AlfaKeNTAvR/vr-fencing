@@ -28,10 +28,6 @@ namespace VrFencing.Blade
         // Rubbing the flat along a zone would buzz every few frames; one buzz per this long is enough.
         private const float FlatHapticCooldownSeconds = 0.15f;
 
-        // A hand-edited settings file cannot switch the leash off or make it throw (PER-121): the screen's lowest values.
-        private const float MinLeashMeters = 0.03f;
-        private const float MinLeashSeconds = 0.1f;
-
         [SerializeField]
         [Tooltip("The Practice object's Drill runner; Touches and flat contacts are reported to it.")]
         private DrillRunnerBehaviour _drillRunner;
@@ -96,9 +92,6 @@ namespace VrFencing.Blade
             _settings = settings.Clone();
             _rules = TouchRules.For(_settings.Blade.TouchRule, _settings.Blade.TouchPressure);
             _drawnBlade.Flex.SetSoftness(_settings.Blade.Flex);
-            var feel = _settings.Blade.Feel;
-            _drawnBlade.SetFeel(
-                Mathf.Max(MinLeashMeters, feel.LeashMeters), Mathf.Max(MinLeashSeconds, feel.LeashSeconds), Mathf.Max(0.0f, feel.GhostMeters));
             _armedDummy?.ApplySettings(_settings);
             _mountInController = BladePose.GetMountInController(_settings.Blade, _settings.Hand);
             AttachToSwordHand();
@@ -186,8 +179,9 @@ namespace VrFencing.Blade
 
             if (isDummyShown)
             {
-                // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones.
-                _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, stripInRoom, _drawnBlade);
+                // The Armed Dummy poses its arm first, so the Touch test sees this frame's arm zones; it also solves the
+                // two blades' contact (PER-122).
+                _armedDummy?.Step(now, Time.deltaTime, bladeInStrip, droop, stripInRoom);
                 DetectContacts(now, bladeInStrip);
             }
             else
@@ -196,14 +190,22 @@ namespace VrFencing.Blade
                 _armedDummy?.Disarm();
             }
 
-            var wasDecoupled = _drawnBlade.IsDecoupled;
-            var wasOnSide = _drawnBlade.IsOnSide;
-            var release = _drawnBlade.Step(bladeInStrip, GatherObstacles(isDummyShown), gripUp, Time.deltaTime, droop);
-            if (isDummyShown)
+            // Against the Dummy's blade the drawn blade turns in the grip and bows as the contact solver gives it; the
+            // hilt stays in the hand (PER-122).
+            var give = new BladeGive(bladeInStrip, droop, 0.0f, 0.0f);
+            if (isDummyShown && _armedDummy != null && _armedDummy.TryGetFencerGive(out var fencerGive))
             {
-                _armedDummy?.UpdateSide(bladeInStrip, _drawnBlade);
+                give = fencerGive;
+                if (_armedDummy.IsBladeNear)
+                {
+                    // Near the Dummy's blade it does not whip, so a whip never carries it through: drawn as the contact leaves it.
+                    _drawnBlade.Flex.Reset();
+                }
             }
 
+            var wasDecoupled = _drawnBlade.IsDecoupled;
+            var wasOnSide = _drawnBlade.IsOnSide;
+            var release = _drawnBlade.Step(give.Chord, GatherObstacles(isDummyShown), gripUp, Time.deltaTime, give.Droop);
             if (release != PinRelease.None)
             {
                 Debug.Log($"[Blade] Point released: {release}");
@@ -211,8 +213,8 @@ namespace VrFencing.Blade
 
             if (_drawnBlade.HasPopped)
             {
+                // Only a body, the floor or a bell holds the drawn blade now (PER-122): the leash brings it back, silently.
                 Debug.Log("[Blade] Leash: the drawn blade popped back to the hand");
-                _haptics.PlayLeashClick(_settings.Hand);
             }
 
             if (_drawnBlade.IsOnSide != wasOnSide)
@@ -225,7 +227,7 @@ namespace VrFencing.Blade
             if (_drawnBlade.IsDecoupled != wasDecoupled)
             {
                 Debug.Log(_drawnBlade.IsDecoupled
-                    ? $"[Blade] Bent as far as it goes (push {_drawnBlade.Contact.PushMeters * 100.0f:0} cm, pinned {_drawnBlade.Contact.IsPinned}): the drawn blade holds and lags the hand"
+                    ? $"[Blade] Bent as far as it goes on a body (push {_drawnBlade.Contact.PushMeters * 100.0f:0} cm, pinned {_drawnBlade.Contact.IsPinned}): the drawn blade holds and lags the hand"
                     : "[Blade] Hand back within reach: the drawn blade follows it again");
             }
 
@@ -243,18 +245,17 @@ namespace VrFencing.Blade
             _obstacles.Clear();
             if (hasDummy)
             {
-                // The jacket's friction is the Fencer's "Jacket friction" Setting (PER-121).
-                var jacketFriction = Mathf.Max(0.0f, _settings.Blade.Feel.JacketFriction);
                 foreach (var capsule in _dummy.GetBodyOnStrip())
                 {
-                    _obstacles.Add(BladeObstacle.FromCapsule(capsule, jacketFriction));
+                    _obstacles.Add(BladeObstacle.FromCapsule(capsule));
                 }
             }
 
             _obstacles.Add(BladeObstacle.Floor);
             if (hasDummy)
             {
-                // The Armed Dummy's blade while it holds one (PER-104): solid against the drawn blade too.
+                // The Armed Dummy's bell guard while it holds a blade (PER-120): solid for the point. Its blade is the
+                // contact solver's (PER-122).
                 _armedDummy?.AddBladeObstacles(_obstacles);
             }
 
@@ -268,21 +269,21 @@ namespace VrFencing.Blade
         }
 
         /// <summary>
-        /// While the point is pinned, a buzz that grows with the push; while the drawn blade lags the hand, the lag buzz
-        /// instead (PER-121), a steady hum that grows with the lag up to the leash.
+        /// While the blades press on each other, the bind buzz (PER-122), a steady low hum that grows with the press; else
+        /// while the point is pinned, a buzz that grows with the push (full while a body holds the drawn blade off the hand).
         /// </summary>
         private void PlayPressHaptic(float now)
         {
-            if (_drawnBlade.IsDecoupled)
+            var pressMeters = _armedDummy?.PressMeters ?? 0.0f;
+            if (pressMeters > 0.0f)
             {
-                if (now - _lastPressHapticAt < BladeHaptics.LagPulseIntervalSeconds)
+                if (now - _lastPressHapticAt < BladeHaptics.BindPulseIntervalSeconds)
                 {
                     return;
                 }
 
                 _lastPressHapticAt = now;
-                var feel = _settings.Blade.Feel;
-                _haptics.PlayLag(BladeHaptics.GetLagStrength(_drawnBlade.LagMeters, feel.LeashMeters, feel.LagBuzzStrength), _settings.Hand);
+                _haptics.PlayBind(BladeHaptics.GetBindStrength(pressMeters), _settings.Hand);
                 return;
             }
 
@@ -292,7 +293,7 @@ namespace VrFencing.Blade
             }
 
             _lastPressHapticAt = now;
-            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, false), _settings.Hand);
+            _haptics.PlayPress(BladeHaptics.GetPressStrength(_drawnBlade.Contact.PushMeters, _drawnBlade.IsDecoupled), _settings.Hand);
         }
 
         /// <summary>A Strip re-placed or the Dummy stood at another distance moves every zone at once: a jump, not motion.</summary>

@@ -40,6 +40,12 @@ namespace VrFencing.Blade
         /// </summary>
         public const float BladeRadiusMeters = 0.004f;
 
+        /// <summary>
+        /// How far to either side of a blade piece the strip behind it reaches (<see cref="FromBladePiece"/>): touching
+        /// plus 2 cm, so a fast move that also slips a little sideways is still caught.
+        /// </summary>
+        public const float StripHalfWidthMeters = DrawnBlade.BladeRadiusMeters + BladeRadiusMeters + 0.02f;
+
         // The bell's bounding sphere about its center: the rim's edge.
         private static readonly float BellBoundingRadiusMeters = (float)Math.Sqrt((BellGuard.RadiusMeters * BellGuard.RadiusMeters) + (BellGuard.DepthMeters * BellGuard.DepthMeters * 0.25f));
 
@@ -135,10 +141,10 @@ namespace VrFencing.Blade
         /// <summary>
         /// A straight piece of another blade (the Armed Dummy's, PER-104), <see cref="BladeRadiusMeters"/> thick, from
         /// <paramref name="start"/> (toward its guard) to <paramref name="end"/>. The drawn blade must stay on
-        /// <paramref name="side"/> of it, the side it was on before the two met (see <see cref="BladeBind"/>): any of it
-        /// found behind this blade (alongside it, past its axis, within <see cref="BladeBind.StripHalfWidthMeters"/>)
-        /// got there through it, so a fast move between frames cannot carry it through. With no side (zero), it only
-        /// keeps its distance.
+        /// <paramref name="side"/> of it, the side it was on before the two met: any of it found behind this blade
+        /// (alongside it, past its axis, within <see cref="StripHalfWidthMeters"/>) got there through it, so a fast move
+        /// between frames cannot carry it through. With no side (zero), it only keeps its distance. Since PER-122 the
+        /// Armed Dummy's blade is met through <see cref="BladeContactSolver"/> instead; nothing in the app adds these now.
         /// </summary>
         /// <param name="side">Which way from this blade the drawn blade is; made square to the piece.</param>
         /// <param name="startIsJoint">The start joins the blade's previous piece (it is not the blade's guard).</param>
@@ -215,7 +221,7 @@ namespace VrFencing.Blade
             BladeCrossing.FindClosest(start, end, joints, _capsule.Start, _capsule.End, _joints, out closest, out var onThis, out fraction, out _);
             var separation = Vector3.Distance(closest, onThis) - _capsule.RadiusMeters;
             if (_side != Vector3.Zero
-                && BladeCrossing.TryFindSideAtCrossing(start, end, joints, _capsule.Start, _capsule.End, _joints, _side, BladeBind.StripHalfWidthMeters, out var sideAtCrossing, out var behind, out var behindFraction)
+                && BladeCrossing.TryFindSideAtCrossing(start, end, joints, _capsule.Start, _capsule.End, _joints, _side, StripHalfWidthMeters, out var sideAtCrossing, out var behind, out var behindFraction)
                 && sideAtCrossing < 0.0f)
             {
                 // Behind this blade (past its axis, in the strip behind it): passed through it, by this much.
