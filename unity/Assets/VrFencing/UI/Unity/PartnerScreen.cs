@@ -7,8 +7,8 @@ namespace VrFencing.UI
 {
     /// <summary>
     /// The Partner page (PER-80, decided in PER-58), next to Drills: Host shows the session's code in large letters to
-    /// read out, Join opens a large keypad to type the Host's code, the Host switches Bout / Paired Practice, Leave
-    /// ends the session. What it says comes from <see cref="PartnerPageText"/>; what is offered from
+    /// read out, Join opens a large keypad to type the Host's code, the Host switches Bout / Paired Practice, Mirror me
+    /// shows this Fencer as their own opponent with a delay button (PER-140), Leave ends the session. What it says comes from <see cref="PartnerPageText"/>; what is offered from
     /// <see cref="PartnerSession"/>.
     /// </summary>
     internal sealed class PartnerScreen
@@ -31,6 +31,8 @@ namespace VrFencing.UI
         private readonly TextMeshPro _version;
         private readonly UiButton _host;
         private readonly UiButton _join;
+        private readonly UiButton _mirror;
+        private readonly UiButton _mirrorDelay;
         private readonly UiButton _leave;
         private readonly UiButton _back;
         private readonly UiButton _mode;
@@ -52,6 +54,8 @@ namespace VrFencing.UI
             Action cancelKeypad,
             Action switchMode,
             Action resetTally,
+            Action mirror,
+            Action cycleMirrorDelay,
             Action leave,
             Action back)
         {
@@ -76,12 +80,17 @@ namespace VrFencing.UI
             _resetTally = UiButton.Create(page, "Reset Tally", new Vector2(0.255f, -0.035f), new Vector2(0.2f, 0.065f), UiKit.SmallFontSize, resetTally);
             _resetTally.SetLabel("Reset tally");
 
-            var buttonSize = new Vector2(0.21f, 0.07f);
-            _host = UiButton.Create(page, "Host", new Vector2(-0.25f, -0.135f), buttonSize, UiKit.BodyFontSize, host);
+            // Mirroring only (PER-140), where the mode button stands in a session: cycles the pretend link's delay.
+            _mirrorDelay = UiButton.Create(page, "Mirror Delay", new Vector2(0.0f, -0.035f), new Vector2(0.3f, 0.065f), UiKit.BodyFontSize, cycleMirrorDelay);
+
+            var buttonSize = new Vector2(0.165f, 0.07f);
+            _host = UiButton.Create(page, "Host", new Vector2(-0.27f, -0.135f), buttonSize, UiKit.BodyFontSize, host);
             _host.SetLabel("Host");
-            _join = UiButton.Create(page, "Join", new Vector2(0.0f, -0.135f), buttonSize, UiKit.BodyFontSize, openKeypad);
+            _join = UiButton.Create(page, "Join", new Vector2(-0.09f, -0.135f), buttonSize, UiKit.BodyFontSize, openKeypad);
             _join.SetLabel("Join");
-            _leave = UiButton.Create(page, "Leave", new Vector2(0.25f, -0.135f), buttonSize, UiKit.BodyFontSize, leave);
+            _mirror = UiButton.Create(page, "Mirror Me", new Vector2(0.09f, -0.135f), buttonSize, UiKit.SmallFontSize, mirror);
+            _mirror.SetLabel("Mirror me");
+            _leave = UiButton.Create(page, "Leave", new Vector2(0.27f, -0.135f), buttonSize, UiKit.BodyFontSize, leave);
             _leave.SetLabel("Leave");
 
             _message = UiKit.CreateText(page, "Message", new Vector2(0.0f, -0.2f), new Vector2(0.72f, 0.045f), 1, UiKit.SmallFontSize,
@@ -178,7 +187,10 @@ namespace VrFencing.UI
             UiKit.SetText(_version, $"App version {appVersion}. {BoutCall.Credits}");
             _host.SetInteractable(session.CanHost);
             _join.SetInteractable(session.CanJoin);
+            _mirror.SetInteractable(session.CanMirror);
             _leave.SetInteractable(session.CanLeave);
+            _mirrorDelay.SetVisible(session.IsMirroring);
+            _mirrorDelay.SetLabel(MirrorDelay.FormatLabel(session.MirrorDelaySeconds));
             _back.SetInteractable(!session.IsBusy);
             var isModeShown = session.Phase == PartnerPhase.WaitingForPartner || session.Phase == PartnerPhase.Connected;
             _mode.SetVisible(isModeShown);

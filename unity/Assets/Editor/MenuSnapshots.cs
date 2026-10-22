@@ -45,12 +45,15 @@ namespace VrFencing.EditorTools
                 "Partner", areSoloDrillsAllowed: true, FreePracticeBehavior.KeepDistance);
 
             // The Partner page (PER-80): the waiting Host's code, then the Partner's keypad.
-            var partner = new PartnerScreen(mainPanel, () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+            var partner = new PartnerScreen(mainPanel, () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var hosting = new PartnerSession();
             hosting.BeginHost();
             hosting.OnHostReady("FGR78N");
             var typing = new PartnerSession();
             typing.BeginEnteringCode();
+            var idle = new PartnerSession();
+            var mirroring = new PartnerSession();
+            mirroring.BeginMirror();
 
             var settingsScreen = new SettingsScreen(mainPanel, (_, _) => { }, _ => { }, () => { }, () => { });
 
@@ -102,6 +105,10 @@ namespace VrFencing.EditorTools
                     Render(camera, "partner-host");
                     partner.Refresh(typing, "1.0");
                     Render(camera, "partner-keypad");
+                    partner.Refresh(idle, "1.0");
+                    Render(camera, "partner-idle");
+                    partner.Refresh(mirroring, "1.0");
+                    Render(camera, "partner-mirror");
                     continue;
                 }
 

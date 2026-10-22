@@ -85,6 +85,23 @@ namespace VrFencing.EditorTools
                 }
             }
 
+            // PER-140: this app's own frame (or the Fencer replay) through the partner streams, back as the opponent.
+            using (new EditorGUI.DisabledScope(!session.CanMirror))
+            {
+                if (GUILayout.Button("Mirror me"))
+                {
+                    partner.Mirror();
+                }
+            }
+
+            using (new EditorGUI.DisabledScope(!session.IsMirroring))
+            {
+                if (GUILayout.Button($"Mirror {MirrorDelay.FormatLabel(session.MirrorDelaySeconds)} (cycle)"))
+                {
+                    partner.CycleMirrorDelay();
+                }
+            }
+
             using (new EditorGUI.DisabledScope(!session.CanSwitchMode))
             {
                 if (GUILayout.Button("Switch Bout / Paired Practice"))

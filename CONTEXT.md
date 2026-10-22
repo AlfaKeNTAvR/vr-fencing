@@ -124,6 +124,10 @@ _Avoid_: Room code, invite, password
 
 **Partner page**:
 The menu page next to Drills that connects two Fencers: Host, Join (the keypad), the Bout / Paired Practice switch (Host only) and Leave. While connected, solo Drills are off and the Dummy is hidden.
+
+**Mirror me**:
+A Partner page mode with no partner and no network: the Fencer's own live frame goes through the partner streams on a pretend link with a chosen delay (0, 0.1, 0.2 or 0.5 s) and comes back as the Opponent, placed exactly as a partner's headset would place them. Nothing is judged; Leave ends it. Used to check how body tracking and the blade carry over before a real Partner joins.
+_Avoid_: Mirror mode (it is a half turn, never a left-right reflection), loopback, self-view
 _Avoid_: Lobby, multiplayer menu
 
 **Opponent**:
