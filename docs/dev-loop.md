@@ -462,7 +462,7 @@ While connected, the Partner object's `OpponentLinkBehaviour` streams this Fence
 |---|---|---|---|
 | Info | on change and every 1 s | reliable | this Fencer's placed Strip (whole length, rear end), height, sword hand |
 | Hand | 72 per second | unreliable | the sword-hand controller pose with velocity and angular velocity (over the last 40 ms), and the grip, its angles in use, set and flex |
-| Body | 30 per second | unreliable | the rig's 19 joints (the Dummy's skeleton joints plus the back hand's end) in millimeters, the headset's turn, the body fidelity, and the footwork state (14 bytes, PER-112, below) |
+| Body | 30 per second | unreliable | the rig's 19 joints (the Dummy's skeleton joints plus the back hand's end) in millimeters, the headset's turn, the body fidelity, the footwork state (14 bytes, PER-112, below) and the back wrist's turn (PER-142) |
 
 All poses go true and unmirrored in the sender's own Strip frame (the room origin without a Strip). They travel as Netcode named messages (`VrFencing.Opponent`), with no network objects; each message starts with its kind and a format version, and unreadable ones are dropped and counted (`[Opponent] Dropped ...`). This sends the rig's joints (about 4 KB/s) instead of Movement SDK's `NetworkCharacterRetargeter` stream, since the rig is posed on joints (PER-78).
 
@@ -490,6 +490,19 @@ Quest legs are Meta's Generative Legs: a guess from the upper body, with no fron
 - **Low confidence:** under 0.5 the receiver stops following the sent feet. Each foot stays planted where it last was sure, and steps to its en garde place under the hips only once they are 12% of height away from it. A body that never came with sure feet stands in en garde under its hips. Whenever a foot's target jumps more than 12 cm in a frame (sure feet coming back, a rejoin, a tracking jump), or the feet switch between sure and held, the foot steps there over 0.25 s, lifting, instead of teleporting.
 
 **Version:** Player Settings > Version is 1.4 from this slice (partner format 2); 1.3 builds are refused.
+
+### The Opponent's body mapping (PER-142)
+
+Found with "Mirror me" (PER-140): wrists flipping, a short neck, elbows and shoulders off, a mangled front foot, late and sliding steps. The causes were in the rig posing, not the network. Rules are plain C# (`Assets/VrFencing/Dummy/Core/BodyRigPoser.cs`, numbers in `BodyRigTuning`; the opponent's inputs in `Partner/Core/OpponentRigTargets.cs`); `DummyBodyRig` only reads the model's rest pose into the Core and copies the result onto the bones. The Dummy uses the same posing.
+
+- **Chained aim** (Dummy and Opponent): each limb bone's rest pose is carried by its posed parent (torso, upper limb, lower limb) and then turned the least to its next joint, so a body facing -z (the Opponent) twists its limbs exactly as one facing +z (the Dummy). The upper arm and thigh then turn about their own length so the elbow and knee hinge in the plane of the three joints (blended in between 10 and 25 degrees of bend; a straight leg turns its knee over the toes). A foot only turns about the vertical toward its heel-to-toe line, so it is never upside down (pointing straight back flipped it before).
+- **Hands:** the sword hand is turned rigidly with the drawn controller (the tracker holds its hand rigid to it), the back hand with the tracker's back wrist joint, now sent with the body; the forearm takes half of the hand's roll, kept continuous through full turns.
+- **Head and neck:** the head is placed so the rig's eyes sit on the tracked eyes (the headset; the tracker's head joint sits 9.4 cm under and 5.7 cm behind them at 1.65 m), and the neck rises from its rest place over the tracked shoulders to reach it (not scaled).
+- **Length fit** (Opponent only): the upper arms, forearms, thighs, shins and chest are scaled to the median tracked length of their segment over the last 3 s, each scale undone on the bones below; limbs come out a little thinner or thicker with it.
+- **Steps** (`FootworkLookAhead`): the receiver draws the body 100 ms late anyway, so the sender reads its feet 60 ms behind its newest frame, with those hips as a preview for the steps (onset at 1% of height of travel instead of 1.5%), and sends that state with the newest body; the receiver pairs it with the body 60 ms back. The lead foot now lifts as the hips start (60 to 75 ms earlier than before); lunges and recoveries are still read from the frame's own hips, so they come out as before. A balance rule steps the foot on that side when the hips get within 5% of height of leaving the area between the feet, along or across the Strip; the trailing foot flies to the spot the stride foretells; a correcting step lands on a fixed spot; a landing foot still more than 2 cm short keeps its lift and flies on, so a foot on the floor never slides.
+- **Wire:** the body message carries the back wrist's turn (16 bytes), and its footwork state is the one for 60 ms before it (partner format 3).
+
+**Version:** Player Settings > Version is 1.5 from this slice (partner format 3); 1.4 builds are refused.
 
 ### The judge and the scoring box (PER-82)
 

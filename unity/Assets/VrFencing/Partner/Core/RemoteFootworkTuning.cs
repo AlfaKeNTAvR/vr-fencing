@@ -30,6 +30,12 @@ namespace VrFencing.Partner
         /// </summary>
         public const float StepMinTravelPerHeight = 0.015f;
 
+        /// <summary>
+        /// The same, read on the hips <see cref="FootworkLookAhead.Seconds"/> ahead (PER-142): about 1.7 cm at 1.65 m, so
+        /// the lead foot lifts by the time the hips reach the onset speed rather than a frame or two after.
+        /// </summary>
+        public const float LookAheadStepMinTravelPerHeight = 0.01f;
+
         /// <summary>A step ends once the hips stay slower than this along the Strip for <see cref="StepEndSeconds"/>.</summary>
         public const float StepEndMetersPerSecond = 0.15f;
 
@@ -71,6 +77,19 @@ namespace VrFencing.Partner
 
         /// <summary>Such a correcting step takes this long (the Dummy's short step).</summary>
         public const double AdjustStepSeconds = 0.25;
+
+        /// <summary>
+        /// Balance (PER-142): the hips' spot on the floor must stay this far inside the area between the feet (about 8 cm
+        /// at 1.65 m), along the Strip and across it; past it, the foot on that side steps under the hips. En garde sway
+        /// (5 cm at most, measured) stays inside.
+        /// </summary>
+        public const float BalanceMarginPerHeight = 0.05f;
+
+        /// <summary>
+        /// A landing foot further than this from its spot (it lagged at <see cref="MaxFootSpeedMetersPerSecond"/>) keeps its
+        /// lift and flies on before it comes down (PER-142), so it never slides the rest of the way along the floor.
+        /// </summary>
+        public const float LandingReachMeters = 0.02f;
 
         // ---- Lunge and recovery (sender) ----
 

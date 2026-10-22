@@ -128,9 +128,10 @@ namespace VrFencing.Partner
     {
         /// <summary>
         /// Bumped whenever a layout below changes; the app's Version must be bumped with it. 2: the body carries the
-        /// footwork state (PER-112, Version 1.4).
+        /// footwork state (PER-112, Version 1.4). 3: the body carries the back wrist's turn, and its footwork state is
+        /// the one <see cref="FootworkLookAhead.Seconds"/> before the body (PER-142, Version 1.5).
         /// </summary>
-        public const byte FormatVersion = 2;
+        public const byte FormatVersion = 3;
 
         public const byte InfoKind = 1;
         public const byte HandKind = 2;
@@ -199,6 +200,11 @@ namespace VrFencing.Partner
                     present |= 1u << (FencerBody.JointCount + 1);
                 }
 
+                if (body.BackWristRotation.HasValue)
+                {
+                    present |= 1u << (FencerBody.JointCount + 2);
+                }
+
                 writer.Write(present);
                 for (var index = 0; index < FencerBody.JointCount; index++)
                 {
@@ -219,6 +225,11 @@ namespace VrFencing.Partner
                 if (body.Footwork.HasValue)
                 {
                     WriteFootwork(writer, body.Footwork.Value);
+                }
+
+                if (body.BackWristRotation.HasValue)
+                {
+                    WriteRotation(writer, body.BackWristRotation.Value);
                 }
             });
         }
@@ -288,7 +299,8 @@ namespace VrFencing.Partner
 
                 var head = (present & (1u << FencerBody.JointCount)) != 0 ? ReadRotation(reader) : (Quaternion?)null;
                 var footwork = (present & (1u << (FencerBody.JointCount + 1))) != 0 ? ReadFootwork(reader) : (FootworkState?)null;
-                return new BodySample(time, new FencerBody(joints, head, fidelity, footwork));
+                var backWrist = (present & (1u << (FencerBody.JointCount + 2))) != 0 ? ReadRotation(reader) : (Quaternion?)null;
+                return new BodySample(time, new FencerBody(joints, head, fidelity, footwork, backWrist));
             });
         }
 

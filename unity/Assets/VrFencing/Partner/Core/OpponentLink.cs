@@ -209,7 +209,7 @@ namespace VrFencing.Partner
 
             joints[(int)SkeletonJoint.SwordWrist] = Carry(wrist.Value);
             joints[(int)SkeletonJoint.SwordHandEnd] = Carry(handEnd.Value);
-            return new FencerBody(joints, body.HeadRotation, body.Fidelity, body.Footwork);
+            return body.WithJoints(joints);
         }
     }
 }
