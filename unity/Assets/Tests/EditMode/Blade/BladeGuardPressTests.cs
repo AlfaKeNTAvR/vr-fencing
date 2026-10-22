@@ -185,7 +185,9 @@ namespace VrFencing.Tests.Blade
 
             TestContext.WriteLine($"Drawn blade step pressed near the Dummy's guard: {fencerMilliseconds:0.000} ms per frame; the Dummy's blade step: {dummyMilliseconds:0.000} ms.");
             Assert.That(scene.Dummy.Contact.IsNear, Is.True, "Setup: at the Dummy's blade and bell (pressed, or sliding off past every limit).");
-            Assert.That(fencerMilliseconds + dummyMilliseconds, Is.LessThan(0.40), "Both blades and their contact (PER-122) within the old budgets together: the drawn blade's 0.25 ms and the Dummy's blade's 0.15 ms.");
+            // 0.40 ms until the hilts became solid in the contact solver (PER-122 fix); pressed by the guard both bells are
+            // looked at too. Still about 3% of a 72 Hz frame.
+            Assert.That(fencerMilliseconds + dummyMilliseconds, Is.LessThan(0.45), "Both blades, their contact and the hilts together, near the Dummy's guard.");
         }
 
         /// <summary>The Armed Dummy en garde and the Fencer's blade, stepped as the app steps them each frame.</summary>

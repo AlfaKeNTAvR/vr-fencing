@@ -19,7 +19,7 @@ namespace VrFencing.Blade
     /// </summary>
     public sealed class BladeContactLog
     {
-        public const int FormatVersion = 1;
+        public const int FormatVersion = 2;
 
         public const string FilePrefix = "blade-";
 
@@ -91,7 +91,8 @@ namespace VrFencing.Blade
                 ", started " + startedUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) + "\n");
             writer.Write("# Strip frame: +x the Fencer's right, +y up, +z toward the Dummy. Units in the column names. " +
                 "side: unit vector from the Dummy's blade to the Fencer's. bell_gap: the other drawn blade's clearance from this " +
-                "blade's bell guard (negative: through it). drawn_gap: the drawn blades' clearance (negative: through each other).\n");
+                "blade's bell guard (negative: through it), handle_gap the same for its grip behind the bell. drawn_gap: the drawn " +
+                "blades' clearance (negative: through each other).\n");
             writer.Write(ColumnLine);
             writer.Write("\n");
             RowCount = 0;
@@ -189,6 +190,7 @@ namespace VrFencing.Blade
             _row.Append(blade.SlideOff != SlideOffPhase.None);
             _row.Append(GetName(SlideOffNames, (int)blade.SlideOff));
             _row.Append(blade.BellGapMeters, MeterDecimals);
+            _row.Append(blade.HandleGapMeters, MeterDecimals);
         }
 
         private void AppendVector(Vector3 vector, int decimals, bool hasValue)
@@ -228,6 +230,7 @@ namespace VrFencing.Blade
                 columns.Add(blade + "_slide_off");
                 columns.Add(blade + "_slide_phase");
                 columns.Add(blade + "_bell_gap_m");
+                columns.Add(blade + "_handle_gap_m");
             }
 
             columns.Add("dummy_armed");

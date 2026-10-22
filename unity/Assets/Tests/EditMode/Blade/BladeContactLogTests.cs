@@ -68,6 +68,7 @@ namespace VrFencing.Tests.Blade
             Assert.That(cells["dummy_action"], Is.EqualTo("thrust"));
             Assert.That(cells["sword_hand_speed_mps"], Is.EqualTo("5.000"));
             Assert.That(cells["fencer_bell_gap_m"], Is.EqualTo("-0.0030"));
+            Assert.That(cells["fencer_handle_gap_m"], Is.EqualTo("0.0310"));
         }
 
         [Test]
@@ -211,6 +212,7 @@ namespace VrFencing.Tests.Blade
                     GripTurnDegrees = 5.0f,
                     BowMeters = 0.012f,
                     BellGapMeters = -0.003f,
+                    HandleGapMeters = 0.031f,
                 },
                 Dummy = new BladeTrace
                 {

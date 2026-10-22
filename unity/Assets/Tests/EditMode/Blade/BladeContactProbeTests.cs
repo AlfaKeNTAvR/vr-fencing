@@ -97,6 +97,26 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void ABladeDrawnThroughAGripHasANegativeHandleGap()
+        {
+            // The grip is solid for the other blade in the contact solver (PER-122 fix): the log shows how far out of it.
+            var owner = new DrawnBlade();
+            var other = new DrawnBlade();
+            var none = new List<BladeObstacle>();
+            owner.Step(new BladeSegment(Vector3.Zero, new Vector3(0.0f, 0.0f, 0.9f)), none, Vector3.UnitY, 0.0f);
+
+            // Across the grip 10 cm behind the guard, through its axis; then 10 cm above it.
+            other.Step(new BladeSegment(new Vector3(-0.45f, 0.0f, -0.10f), new Vector3(0.45f, 0.0f, -0.10f)), none, Vector3.UnitY, 0.0f);
+            var through = BladeContactProbe.FindHandleGap(owner, other);
+            other.Reset();
+            other.Step(new BladeSegment(new Vector3(-0.45f, 0.10f, -0.10f), new Vector3(0.45f, 0.10f, -0.10f)), none, Vector3.UnitY, 0.0f);
+            var clear = BladeContactProbe.FindHandleGap(owner, other);
+
+            Assert.That(through, Is.LessThan(0.0f));
+            Assert.That(clear, Is.EqualTo(0.10f - BladeContactSolver.GripRadiusMeters - DrawnBlade.BladeRadiusMeters).Within(0.002f));
+        }
+
+        [Test]
         public void ProbeAndRowCostASmallPartOfAFrame()
         {
             var scene = new BladePairScene();

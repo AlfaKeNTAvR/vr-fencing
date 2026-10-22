@@ -31,6 +31,7 @@ namespace VrFencing.Blade
             sample.Fencer.BowMeters = 0.0f;
             sample.Fencer.SlideOff = SlideOffPhase.None;
             sample.Fencer.BellGapMeters = float.NaN;
+            sample.Fencer.HandleGapMeters = float.NaN;
         }
 
         /// <summary>
@@ -66,6 +67,8 @@ namespace VrFencing.Blade
             var hasBoth = fencerDrawn.HasShape && dummy.Drawn.HasShape;
             sample.Fencer.BellGapMeters = hasBoth ? FindBellGap(fencerDrawn, dummy.Drawn) : float.NaN;
             sample.Dummy.BellGapMeters = hasBoth ? FindBellGap(dummy.Drawn, fencerDrawn) : float.NaN;
+            sample.Fencer.HandleGapMeters = hasBoth ? FindHandleGap(fencerDrawn, dummy.Drawn) : float.NaN;
+            sample.Dummy.HandleGapMeters = hasBoth ? FindHandleGap(dummy.Drawn, fencerDrawn) : float.NaN;
             sample.DrawnGapMeters = hasBoth ? FindDrawnGap(fencerDrawn, dummy.Drawn) : float.NaN;
 
             sample.IsInContact = contact.IsInContact;
@@ -88,14 +91,14 @@ namespace VrFencing.Blade
         public static void ClearFencer(ref BladeContactSample sample)
         {
             var none = new Vector3(float.NaN);
-            sample.Fencer = new BladeTrace { Guard = none, RealPoint = none, DrawnPoint = none, BellGapMeters = float.NaN };
+            sample.Fencer = new BladeTrace { Guard = none, RealPoint = none, DrawnPoint = none, BellGapMeters = float.NaN, HandleGapMeters = float.NaN };
         }
 
         /// <summary>Empties the contact and the Dummy's fields: the Dummy holds no blade this frame.</summary>
         public static void ClearArmed(ref BladeContactSample sample)
         {
             sample.IsDummyArmed = false;
-            sample.Dummy = new BladeTrace { BellGapMeters = float.NaN };
+            sample.Dummy = new BladeTrace { BellGapMeters = float.NaN, HandleGapMeters = float.NaN };
             sample.IsInContact = false;
             sample.IsEngaged = false;
             sample.ContactPoint = Vector3.Zero;
@@ -135,6 +138,37 @@ namespace VrFencing.Blade
             for (var step = 1; step <= steps; step++)
             {
                 var distance = bell.FindDistance(other.GetCenterlinePoint((float)step / steps));
+                closest = Math.Min(closest, distance);
+            }
+
+            return closest - DrawnBlade.BladeRadiusMeters;
+        }
+
+        /// <summary>
+        /// How far <paramref name="other"/>, drawn, keeps out of <paramref name="owner"/>'s grip behind its bell at its
+        /// closest, surface to surface (negative: through the grip): the cylinder the contact solver keeps the other blade
+        /// out of (<see cref="BladeContactSolver.GripRadiusMeters"/>, <see cref="BladeContactSolver.GripLengthMeters"/>).
+        /// </summary>
+        public static float FindHandleGap(DrawnBlade owner, DrawnBlade other)
+        {
+            if (owner == null)
+            {
+                throw new ArgumentNullException(nameof(owner));
+            }
+
+            if (other == null)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
+
+            const float HalfLength = BladeContactSolver.GripLengthMeters * 0.5f;
+            var axis = owner.HiltDirection;
+            var center = owner.GuardPosition - (axis * (BladePose.GuardDepthMeters + HalfLength));
+            var steps = DrawnBlade.SampleCount * BellChecksPerSample;
+            var closest = float.MaxValue;
+            for (var step = 1; step <= steps; step++)
+            {
+                var distance = BellGuard.FindCylinderDistance(other.GetCenterlinePoint((float)step / steps), center, axis, BladeContactSolver.GripRadiusMeters, HalfLength, out _);
                 closest = Math.Min(closest, distance);
             }
 
