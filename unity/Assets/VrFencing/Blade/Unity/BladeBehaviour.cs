@@ -19,7 +19,7 @@ namespace VrFencing.Blade
     ///
     /// The blade uses no buttons, so it never competes with the off-hand menu laser or the Strip buttons.
     /// </summary>
-    public sealed class BladeBehaviour : MonoBehaviour
+    public sealed partial class BladeBehaviour : MonoBehaviour
     {
         // A Strip re-placed or the zones moved by more than this in one frame is a jump, not motion: the sweep restarts.
         private const float JumpMeters = 0.05f;
@@ -169,6 +169,7 @@ namespace VrFencing.Blade
             var down = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitY, stripFromRoom);
             var droop = BladeDroop.Create(forteInStrip.Direction, gripUp, down, _settings.Blade);
             var bladeInStrip = droop.GetChord(forteInStrip);
+            _handBladeOnStrip = bladeInStrip;
 
             // The Dummy is hidden while in a Partner session (PER-80): nothing to touch or bend on then.
             var isDummyShown = hasDummy && _dummy.gameObject.activeInHierarchy;

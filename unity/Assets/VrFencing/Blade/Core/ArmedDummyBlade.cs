@@ -110,6 +110,9 @@ namespace VrFencing.Blade
         /// </summary>
         public Quaternion ArmTurn { get; private set; } = Quaternion.Identity;
 
+        /// <summary>For the blade-contact log (PER-136): where the Dummy's hand gives way to this frame's press, at its point (zero with none).</summary>
+        public Vector3 YieldTipOffset { get; private set; }
+
         /// <summary>True while the Fencer's blade presses on this one (<see cref="BladeContactSolver.IsInContact"/>).</summary>
         public bool IsPressed => _solver.IsInContact;
 
@@ -203,6 +206,7 @@ namespace VrFencing.Blade
             if (IsHandFixed)
             {
                 // A hand that never moves or gives: no knock, no give to a press, only the blades react.
+                YieldTipOffset = Vector3.Zero;
                 _deflection.Reset();
             }
             else
@@ -211,6 +215,7 @@ namespace VrFencing.Blade
                 var yield = _solver.IsInContact
                     ? FindYieldTipOffset(_solver.PressNewtons, _solver.PushOnB, Chord.Direction, hand)
                     : Vector3.Zero;
+                YieldTipOffset = yield;
                 _deflection.HoldAt(yield);
                 _deflection.Step(deltaSeconds);
             }

@@ -302,6 +302,20 @@ namespace VrFencing.Blade
         /// <summary>True while the weaker blade slides off or swings back after sliding off.</summary>
         public bool IsReleasing => _slidingWeaker >= 0 || _returningBlade >= 0;
 
+        /// <summary>For the blade-contact log (PER-136): the blade sliding off now, 0 for A, 1 for B, -1 for none.</summary>
+        public int SlidingBlade => _slidingWeaker;
+
+        /// <summary>For the blade-contact log (PER-136): the blade swinging back after sliding off, 0 for A, 1 for B, -1 for none.</summary>
+        public int ReturningBlade => _returningBlade;
+
+        /// <summary>
+        /// For the blade-contact log (PER-136): the give stages at their limit in this frame's first split, bit 0 A's
+        /// grip turn, bit 1 A's bow, bit 2 B's grip turn, bit 3 B's bow; 0 when apart.
+        /// </summary>
+        public int SaturatedStages { get; private set; }
+
+        private int _splitSaturated;
+
         /// <summary>The Blade flex Setting's bending stiffness: a stiffer blade sags less (<see cref="BladeDroop.GetSagMeters"/>).</summary>
         public static float GetBendStiffness(BladeFlexSoftness flex)
         {
@@ -347,6 +361,7 @@ namespace VrFencing.Blade
             IsInContact = false;
             PressMeters = 0.0f;
             PressNewtons = 0.0f;
+            SaturatedStages = 0;
             var first = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, side, _engagedMeters);
             _lastHit = first;
             IsEngaged = first.IsFound;
@@ -369,7 +384,7 @@ namespace VrFencing.Blade
             // Then each blade against the other's hilt, slid off the side it is on of the other blade.
             SolveHilt(_b, _shapeB, _a, new Hilt(_a.ToGive()), _onHiltA, -side, IsEngaged);
             SolveHilt(_a, _shapeA, _b, new Hilt(_b.ToGive()), _onHiltB, side, IsEngaged);
-            if (IsNearHilt && IsEngaged)
+            if (HiltPressMeters > 0.0f && IsEngaged)
             {
                 // A blade pressed between the other's blade and its bell (the wedge): the hilt's push must not have
                 // carried it into or through that blade. One more look at the blades, which come first.
@@ -412,6 +427,7 @@ namespace VrFencing.Blade
         {
             var excess = Split(first, out var newtons);
             PressNewtons = newtons;
+            SaturatedStages = _splitSaturated;
             var isReleased = false;
             var weaker = -1;
             if (excess > 0.0f)
@@ -481,7 +497,7 @@ namespace VrFencing.Blade
             stages[2] = _b.FindTurnStage(hit.OnB, hit.FractionB, -hit.Normal);
             stages[3] = _b.FindBowStage(hit.FractionB, -hit.Normal);
             Span<float> taken = stackalloc float[4];
-            var remaining = ShareOut(stages, hit.Overlap, taken, out newtons);
+            var remaining = ShareOut(stages, hit.Overlap, taken, out newtons, out _splitSaturated);
 
             _a.Turn(hit.OnA, hit.Normal, taken[0]);
             _a.AddBow(hit.FractionA, hit.Normal, taken[1]);
@@ -494,7 +510,7 @@ namespace VrFencing.Blade
         /// Water-filling: the load rises until each stage takes compliance times load or its limit, together
         /// <paramref name="overlap"/>. Fills <paramref name="taken"/>; returns what no stage could take.
         /// </summary>
-        private static float ShareOut(Span<Stage> stages, float overlap, Span<float> taken, out float newtons)
+        private static float ShareOut(Span<Stage> stages, float overlap, Span<float> taken, out float newtons, out int fullStages)
         {
             var remaining = overlap;
             Span<bool> isFull = stackalloc bool[stages.Length];
@@ -539,6 +555,12 @@ namespace VrFencing.Blade
                 newtons = Math.Max(newtons, load);
                 remaining = 0.0f;
                 break;
+            }
+
+            fullStages = 0;
+            for (var index = 0; index < stages.Length; index++)
+            {
+                fullStages |= isFull[index] ? 1 << index : 0;
             }
 
             return Math.Max(0.0f, remaining);
@@ -999,7 +1021,7 @@ namespace VrFencing.Blade
                 // Each look shares what is left out again (the bowed blade's curve moves the deepest spot a little).
                 stages[0] = blade.FindTurnStage(hit.Point, hit.Fraction, side);
                 stages[1] = blade.FindBowStage(hit.Fraction, side);
-                var excess = ShareOut(stages, hit.Overlap, taken, out _);
+                var excess = ShareOut(stages, hit.Overlap, taken, out _, out _);
                 blade.Turn(hit.Point, side, taken[0]);
                 blade.AddBow(hit.Fraction, side, taken[1]);
                 if (excess > 0.0f)
@@ -1093,8 +1115,18 @@ namespace VrFencing.Blade
 
             for (var piece = 0; piece < PieceCount; piece++)
             {
+                var middle = (_turned[piece] + _turned[piece + 1]) * 0.5f;
+                var halfLength = Vector3.Distance(_turned[piece], _turned[piece + 1]) * 0.5f;
                 for (var otherPiece = 0; otherPiece < PieceCount; otherPiece++)
                 {
+                    // Too far apart, seen along the side, to touch or lie over each other: no need to look closer.
+                    var otherMiddle = (_otherPoints[otherPiece] + _otherPoints[otherPiece + 1]) * 0.5f;
+                    var reach = halfLength + (Vector3.Distance(_otherPoints[otherPiece], _otherPoints[otherPiece + 1]) * 0.5f) + ContactMeters;
+                    if (Flatten(middle - otherMiddle, _otherBladeSide).LengthSquared() > reach * reach)
+                    {
+                        continue;
+                    }
+
                     FindClosest(_turned[piece], _turned[piece + 1], _otherPoints[otherPiece], _otherPoints[otherPiece + 1], out var onThis, out var onOther, out _, out _);
                     var apart = onThis - onOther;
                     if (apart.LengthSquared() < ContactMeters * ContactMeters * 0.25f)
@@ -1207,8 +1239,17 @@ namespace VrFencing.Blade
         private static HiltHit FindHiltDeepest(Vector3[] shape, Hilt hilt, HiltPart part, Vector3 side)
         {
             var best = new HiltHit { Overlap = -float.MaxValue };
+            hilt.GetBounds(part, out var partMiddle, out var partReach);
+            var flatMiddle = Flatten(partMiddle, side);
             for (var piece = 0; piece < PieceCount; piece++)
             {
+                // A piece that, seen along the side, is nowhere over the part's bounding sphere has no spot over the part.
+                var reach = partReach + (Vector3.Distance(shape[piece], shape[piece + 1]) * 0.5f);
+                if (Vector3.DistanceSquared(Flatten((shape[piece] + shape[piece + 1]) * 0.5f, side), flatMiddle) > reach * reach)
+                {
+                    continue;
+                }
+
                 for (var step = piece == 0 ? 0 : 1; step <= HiltStepsPerPiece; step++)
                 {
                     var along = (float)step / HiltStepsPerPiece;
@@ -1287,6 +1328,15 @@ namespace VrFencing.Blade
                 }
 
                 return false;
+            }
+
+            /// <summary>The middle of the grown part and the radius of a sphere about it that holds all of it.</summary>
+            public void GetBounds(HiltPart part, out Vector3 middle, out float reach)
+            {
+                GetRange(part, out var back, out var front, out var radius);
+                var half = (front - back) * 0.5f;
+                middle = Guard + (Axis * (back + half));
+                reach = (float)Math.Sqrt((half * half) + (radius * radius));
             }
 
             /// <summary>The point on the part's axis nearest <paramref name="point"/>.</summary>
