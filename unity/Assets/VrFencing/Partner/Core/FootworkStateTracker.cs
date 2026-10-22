@@ -25,7 +25,14 @@ namespace VrFencing.Partner
     /// <item>Recovery: the head comes back up (or the hips move back). The foot that is out of place, the front one in a
     /// backward recovery, the back one in a forward one, steps back into en garde under the hips.</item>
     /// <item>A planted foot left far from its place by a slow drift steps there on its own.</item>
+    /// <item>Balance (PER-142): the hips' spot on the floor stays between the feet, a margin inside each
+    /// (<see cref="RemoteFootworkTuning.BalanceMarginPerHeight"/>), along the Strip and across it; when the hips are
+    /// about to leave that area the foot on that side steps, so both feet are never on one side of the body.</item>
     /// </list>
+    /// With a <see cref="HipsPreview"/> (PER-142, <see cref="FootworkLookAhead"/>) the steps (onset, the lead foot's
+    /// swing, the trailing foot, balance and drift) are read from where the hips are about to be, so a foot lifts as the
+    /// hips start, not after; the lunge and the recovery stay on the hips of the frame itself. A foot that lands still
+    /// short of its spot keeps flying there before it comes down, so a foot on the floor never slides.
     /// The hips, not the head, decide where the feet go: leaning the torso to dodge moves the head, not the feet. The head
     /// gives the lunge's drop and stands in for the hips when no body is tracked (<see cref="RemoteFootworkTuning.HeadOnlyConfidence"/>).
     /// Positions in this Fencer's own Strip frame (+x their right, +y up, +z toward the opponent). Nothing is allocated
@@ -53,6 +60,8 @@ namespace VrFencing.Partner
         private bool _hasFeet;
         private double _nowSeconds;
         private Vector3 _hips;
+        private Vector3 _leadHips;
+        private bool _hasPreview;
         private Vector3? _headToHips;
         private float _standingHeadY;
         private Mode _mode;
@@ -66,12 +75,14 @@ namespace VrFencing.Partner
         private float _peakTravel;
         private float _leadLandTravel;
         private bool _isLeadLanded;
+        private Vector3 _trailSpot;
         private double _quietSeconds;
         private float _maxDrop;
         private float _recoveryStartDrop;
         private Foot _lead;
         private Foot _trail;
         private Foot _adjusting;
+        private Vector3 _adjustSpot;
 
         public FootworkStateTracker()
         {
@@ -93,10 +104,12 @@ namespace VrFencing.Partner
         /// <summary>
         /// One rendered frame. <paramref name="head"/> is the headset's position (null when it is not tracked: nothing
         /// is read then, and the feet hold with no confidence); <paramref name="hips"/> the tracked hip center, null when
-        /// body tracking gives none. Times must increase; a frame at the same or an earlier time changes nothing.
+        /// body tracking gives none. <paramref name="preview"/>: where the hips are a moment later, which the steps are
+        /// read from (null: from this frame's hips). Times must increase; a frame at the same or an earlier time changes
+        /// nothing.
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">The height is not a positive number.</exception>
-        public void Update(double timeSeconds, Vector3? head, Vector3? hips, float heightMeters, Hand hand)
+        public void Update(double timeSeconds, Vector3? head, Vector3? hips, float heightMeters, Hand hand, HipsPreview? preview = null)
         {
             if (!(heightMeters > 0.0f) || float.IsInfinity(heightMeters))
             {
@@ -134,11 +147,14 @@ namespace VrFencing.Partner
             _hips = hipsNow;
             Remember(timeSeconds, hipsNow);
             var velocity = MeasureVelocity();
+            _hasPreview = preview.HasValue && Vector3.Distance(OnFloor(preview.Value.Hips), hipsNow) <= RemoteFootworkTuning.TrackingJumpMeters;
+            _leadHips = _hasPreview ? OnFloor(preview.Value.Hips) : hipsNow;
+            var leadVelocity = _hasPreview ? OnFloor(preview.Value.Velocity) : velocity;
             var drop = _standingHeadY - head.Value.Y;
             var maxFootMove = (float)(RemoteFootworkTuning.MaxFootSpeedMetersPerSecond * deltaSeconds);
             _front.StartFrame(maxFootMove);
             _back.StartFrame(maxFootMove);
-            Advance(velocity, drop, deltaSeconds);
+            Advance(velocity, leadVelocity, drop, deltaSeconds);
             if (_mode == Mode.Standing && Math.Abs(velocity.Z) < RemoteFootworkTuning.StepOnsetMetersPerSecond)
             {
                 var follow = (float)Math.Min(1.0, deltaSeconds / RemoteFootworkTuning.StandingHeadFollowSeconds);
@@ -212,6 +228,7 @@ namespace VrFencing.Partner
         private void StandAt(Vector3 hips, float headY)
         {
             _hips = hips;
+            _leadHips = hips;
             _historyCount = 0;
             Remember(_nowSeconds, hips);
             _front.PlantAt(hips + _frontRest);
@@ -221,19 +238,22 @@ namespace VrFencing.Partner
             _mode = Mode.Standing;
         }
 
-        /// <summary>One frame of the footwork, from the hips' velocity on the floor and the head's drop.</summary>
-        private void Advance(Vector3 velocity, float drop, double deltaSeconds)
+        /// <summary>
+        /// One frame of the footwork: the lunge and recovery from this frame's hips (<paramref name="velocity"/>) and the
+        /// head's drop, the steps from where the hips are about to be (<paramref name="leadVelocity"/>).
+        /// </summary>
+        private void Advance(Vector3 velocity, Vector3 leadVelocity, float drop, double deltaSeconds)
         {
             switch (_mode)
             {
                 case Mode.Standing:
-                    ContinueStanding(velocity, drop);
+                    ContinueStanding(velocity, leadVelocity, drop);
                     break;
                 case Mode.Step:
-                    ContinueStep(velocity, drop, deltaSeconds);
+                    ContinueStep(velocity, leadVelocity, drop, deltaSeconds);
                     break;
                 case Mode.Adjust:
-                    ContinueAdjust(velocity, drop);
+                    ContinueAdjust(velocity, leadVelocity, drop);
                     break;
                 case Mode.Lunge:
                     ContinueLunge(velocity.Z, drop);
@@ -244,9 +264,10 @@ namespace VrFencing.Partner
             }
         }
 
-        private Vector3 GetPlace(Foot foot)
+        /// <summary>The foot's en garde place under <paramref name="hips"/>.</summary>
+        private Vector3 GetPlace(Foot foot, Vector3 hips)
         {
-            return _hips + (foot == _front ? _frontRest : _backRest);
+            return hips + (foot == _front ? _frontRest : _backRest);
         }
 
         /// <summary>Where the feet's spots put the hips: between their en garde places.</summary>
@@ -274,13 +295,44 @@ namespace VrFencing.Partner
                 return false;
             }
 
-            var travel = Vector3.Dot(_hips - GetCarriedHips(), floorVelocity / speed);
-            return travel >= RemoteFootworkTuning.StepMinTravelPerHeight * _heightMeters;
+            var travel = Vector3.Dot(_leadHips - GetCarriedHips(), floorVelocity / speed);
+            var minTravel = _hasPreview ? RemoteFootworkTuning.LookAheadStepMinTravelPerHeight : RemoteFootworkTuning.StepMinTravelPerHeight;
+            return travel >= minTravel * _heightMeters;
+        }
+
+        /// <summary>
+        /// The foot that must step to keep the hips (where they are about to be) inside the area between the feet, a
+        /// margin inside it; null when they are inside. Along the Strip the foot the hips pass; across it the foot further
+        /// from its en garde place.
+        /// </summary>
+        private Foot FindFootToRebalance()
+        {
+            var margin = RemoteFootworkTuning.BalanceMarginPerHeight * _heightMeters;
+            if (_leadHips.Z > _front.Anchor.Z - margin)
+            {
+                return _front;
+            }
+
+            if (_leadHips.Z < _back.Anchor.Z + margin)
+            {
+                return _back;
+            }
+
+            var left = Math.Min(_front.Anchor.X, _back.Anchor.X) - margin;
+            var right = Math.Max(_front.Anchor.X, _back.Anchor.X) + margin;
+            if (_leadHips.X >= left && _leadHips.X <= right)
+            {
+                return null;
+            }
+
+            var frontDrift = GetFloorDistance(_front.Anchor, GetPlace(_front, _leadHips));
+            var backDrift = GetFloorDistance(_back.Anchor, GetPlace(_back, _leadHips));
+            return frontDrift >= backDrift ? _front : _back;
         }
 
         // ---- Standing and correcting steps ----
 
-        private void ContinueStanding(Vector3 velocity, float drop)
+        private void ContinueStanding(Vector3 velocity, Vector3 leadVelocity, float drop)
         {
             if (IsLungeStart(velocity.Z, drop))
             {
@@ -288,14 +340,21 @@ namespace VrFencing.Partner
                 return;
             }
 
-            if (IsStepStart(velocity))
+            if (IsStepStart(leadVelocity))
             {
-                StartStep(Vector3.Normalize(OnFloor(velocity)));
+                StartStep(Vector3.Normalize(OnFloor(leadVelocity)));
                 return;
             }
 
             if (_front.IsMoving || _back.IsMoving)
             {
+                return;
+            }
+
+            var unbalanced = FindFootToRebalance();
+            if (unbalanced != null)
+            {
+                StartAdjust(unbalanced);
                 return;
             }
 
@@ -308,19 +367,26 @@ namespace VrFencing.Partner
         /// <summary>Starts a correcting step for a planted foot that drifted from its place; false if it has not.</summary>
         private bool TryStartAdjust(Foot foot)
         {
-            if (GetFloorDistance(foot.Anchor, GetPlace(foot)) <= RemoteFootworkTuning.FootDriftPerHeight * _heightMeters)
+            if (GetFloorDistance(foot.Anchor, GetPlace(foot, _leadHips)) <= RemoteFootworkTuning.FootDriftPerHeight * _heightMeters)
             {
                 return false;
             }
 
-            _adjusting = foot;
-            _moveStartSeconds = _nowSeconds;
-            foot.StartMoving(_nowSeconds);
-            _mode = Mode.Adjust;
+            StartAdjust(foot);
             return true;
         }
 
-        private void ContinueAdjust(Vector3 velocity, float drop)
+        /// <summary>A correcting step of <paramref name="foot"/> to its place under the hips as they are about to be, a fixed spot.</summary>
+        private void StartAdjust(Foot foot)
+        {
+            _adjusting = foot;
+            _adjustSpot = GetPlace(foot, _leadHips);
+            _moveStartSeconds = _nowSeconds;
+            foot.StartMoving(_nowSeconds);
+            _mode = Mode.Adjust;
+        }
+
+        private void ContinueAdjust(Vector3 velocity, Vector3 leadVelocity, float drop)
         {
             if (IsLungeStart(velocity.Z, drop))
             {
@@ -328,22 +394,21 @@ namespace VrFencing.Partner
                 return;
             }
 
-            if (IsStepStart(velocity))
+            if (IsStepStart(leadVelocity))
             {
-                StartStep(Vector3.Normalize(OnFloor(velocity)));
+                StartStep(Vector3.Normalize(OnFloor(leadVelocity)));
                 return;
             }
 
             var fraction = (float)((_nowSeconds - _moveStartSeconds) / RemoteFootworkTuning.AdjustStepSeconds);
             var shape = DummyFootwork.SwingBump(fraction);
-            var place = GetPlace(_adjusting);
             _adjusting.Fly(
-                Vector3.Lerp(_adjusting.From, place, DummyFootwork.MinimumJerk(fraction)),
+                Vector3.Lerp(_adjusting.From, _adjustSpot, DummyFootwork.MinimumJerk(fraction)),
                 FootworkTuning.FootLiftPerHeight * _heightMeters * shape,
                 GetStepPitch(_adjusting) * shape);
             if (fraction >= 1.0f)
             {
-                _adjusting.PlantAt(place);
+                _adjusting.StartLanding(_nowSeconds, _adjustSpot);
                 _mode = Mode.Standing;
             }
         }
@@ -380,7 +445,11 @@ namespace VrFencing.Partner
             _lead.StartMoving(_nowSeconds);
         }
 
-        private void ContinueStep(Vector3 velocity, float drop, double deltaSeconds)
+        /// <summary>
+        /// One frame of a step, read from where the hips are about to be (<paramref name="leadVelocity"/>): the lead foot
+        /// swings ahead and lands about mid-step, the trailing foot then flies to the spot the stride foretells for it.
+        /// </summary>
+        private void ContinueStep(Vector3 velocity, Vector3 leadVelocity, float drop, double deltaSeconds)
         {
             if (IsLungeStart(velocity.Z, drop))
             {
@@ -388,8 +457,8 @@ namespace VrFencing.Partner
                 return;
             }
 
-            var speedAlong = Vector3.Dot(OnFloor(velocity), _stepDirection);
-            var travel = Math.Max(0.0f, Vector3.Dot(_hips - _stepStart, _stepDirection));
+            var speedAlong = Vector3.Dot(OnFloor(leadVelocity), _stepDirection);
+            var travel = Math.Max(0.0f, Vector3.Dot(_leadHips - _stepStart, _stepDirection));
             if (speedAlong > _peakSpeed)
             {
                 // The speed is the mean over the last window: it belongs to the middle of that window.
@@ -403,7 +472,7 @@ namespace VrFencing.Partner
             {
                 // Ahead of where it started in the step's direction; square to it, the foot keeps to its place under the hips.
                 var leadTravel = Math.Min(RemoteFootworkTuning.LeadFootTravelPerBodyTravel * travel, stride);
-                var place = GetPlace(_lead);
+                var place = GetPlace(_lead, _leadHips);
                 var leadAlong = Vector3.Dot(_lead.From, _stepDirection) + leadTravel;
                 var leadSpot = place + (_stepDirection * (leadAlong - Vector3.Dot(place, _stepDirection)));
                 _lead.Fly(leadSpot, GetRisingLift(_lead, FootworkTuning.FootLiftPerHeight), GetRisingPitch(_lead, GetStepPitch(_lead)));
@@ -413,22 +482,28 @@ namespace VrFencing.Partner
                     _isLeadLanded = true;
                     _leadLandTravel = travel;
                     _trail.StartMoving(_nowSeconds);
+
+                    // The trailing foot's landing spot: its place under the hips at the end of the stride the step foretells.
+                    var endHips = _stepStart + (_stepDirection * stride);
+                    var across = _leadHips - (_stepDirection * Vector3.Dot(_leadHips - _stepStart, _stepDirection)) - _stepStart;
+                    _trailSpot = GetPlace(_trail, endHips + across);
                 }
             }
             else if (_trail.IsMoving)
             {
                 // The trailing foot covers the rest of the step as the hips cover the rest of the stride.
                 var fraction = (travel - _leadLandTravel) / Math.Max(stride - _leadLandTravel, 0.01f);
-                var place = GetPlace(_trail);
                 _trail.Fly(
-                    Vector3.Lerp(_trail.From, place, DummyFootwork.MinimumJerk(fraction)),
+                    Vector3.Lerp(_trail.From, _trailSpot, DummyFootwork.MinimumJerk(fraction)),
                     GetRisingLift(_trail, FootworkTuning.FootLiftPerHeight),
                     GetRisingPitch(_trail, GetStepPitch(_trail)));
             }
 
             _quietSeconds = speedAlong < RemoteFootworkTuning.StepEndMetersPerSecond ? _quietSeconds + deltaSeconds : 0.0;
-            if (_quietSeconds >= RemoteFootworkTuning.StepEndSeconds || speedAlong <= -RemoteFootworkTuning.StepOnsetMetersPerSecond)
+            var isOverrun = _isLeadLanded && FindFootToRebalance() == _lead;
+            if (_quietSeconds >= RemoteFootworkTuning.StepEndSeconds || speedAlong <= -RemoteFootworkTuning.StepOnsetMetersPerSecond || isOverrun)
             {
+                // Done, turned back, or the hips ran past the landed lead foot (the standing balance steps it on).
                 if (_lead.IsMoving)
                 {
                     _lead.StartLanding(_nowSeconds, _lead.Aim);
@@ -436,7 +511,7 @@ namespace VrFencing.Partner
 
                 if (_trail.IsMoving || _isLeadLanded)
                 {
-                    _trail.StartLanding(_nowSeconds, GetPlace(_trail));
+                    _trail.StartLanding(_nowSeconds, GetPlace(_trail, _leadHips));
                 }
 
                 _mode = Mode.Standing;
@@ -487,7 +562,7 @@ namespace VrFencing.Partner
                 var travel = Math.Max(0.0f, _hips.Z - _moveStartZ);
                 var frontZ = _front.From.Z + (RemoteFootworkTuning.LungeFrontFootTravelPerBodyTravel * travel);
                 _front.Fly(
-                    new Vector3(GetPlace(_front).X, 0.0f, Math.Max(frontZ, _front.Anchor.Z)),
+                    new Vector3(GetPlace(_front, _hips).X, 0.0f, Math.Max(frontZ, _front.Anchor.Z)),
                     GetRisingLift(_front, FootworkTuning.LungeFootLiftPerHeight),
                     GetRisingPitch(_front, FootworkTuning.LungeFrontFootToeUpDegrees * DegreesToRadians));
                 if (speed < _peakSpeed * RemoteFootworkTuning.LungeFootLandsAtSpeedFraction)
@@ -515,7 +590,7 @@ namespace VrFencing.Partner
         /// <summary>A foot out of its en garde place steps back into it; one in place lands where it is.</summary>
         private void StartRecoveringFoot(Foot foot)
         {
-            if (GetFloorDistance(foot.Anchor, GetPlace(foot)) > RemoteFootworkTuning.RecoveryMovesFootPerHeight * _heightMeters)
+            if (GetFloorDistance(foot.Anchor, GetPlace(foot, _hips)) > RemoteFootworkTuning.RecoveryMovesFootPerHeight * _heightMeters)
             {
                 foot.StartMoving(_nowSeconds);
             }
@@ -561,7 +636,7 @@ namespace VrFencing.Partner
             var eased = DummyFootwork.MinimumJerk(fraction);
             var pitch = foot == _front ? FootworkTuning.RecoveryFrontFootToeUpDegrees * DegreesToRadians : GetStepPitch(foot);
             foot.Fly(
-                Vector3.Lerp(foot.From, GetPlace(foot), eased),
+                Vector3.Lerp(foot.From, GetPlace(foot, _hips), eased),
                 (foot.FromLift * (1.0f - eased)) + (FootworkTuning.FootLiftPerHeight * _heightMeters * shape),
                 (foot.FromPitch * (1.0f - eased)) + (pitch * shape));
         }
@@ -570,7 +645,7 @@ namespace VrFencing.Partner
         {
             if (foot.IsMoving)
             {
-                foot.StartLanding(_nowSeconds, GetPlace(foot));
+                foot.StartLanding(_nowSeconds, GetPlace(foot, _hips));
             }
         }
 
@@ -614,7 +689,7 @@ namespace VrFencing.Partner
                 case Mode.Step:
                     return _lead == _back ? FootworkPhase.Retreating : FootworkPhase.Advancing;
                 case Mode.Adjust:
-                    return GetPlace(_adjusting).Z >= _adjusting.From.Z ? FootworkPhase.Advancing : FootworkPhase.Retreating;
+                    return _adjustSpot.Z >= _adjusting.From.Z ? FootworkPhase.Advancing : FootworkPhase.Retreating;
                 case Mode.Lunge:
                     return FootworkPhase.Lunging;
                 case Mode.Recovery:
@@ -627,7 +702,9 @@ namespace VrFencing.Partner
         /// <summary>
         /// One foot: its spot on the floor, lift and pitch, and the swing or landing it is in. A swinging or landing foot
         /// moves at most <see cref="RemoteFootworkTuning.MaxFootSpeedMetersPerSecond"/> over the floor (PER-118): when
-        /// the footwork asks for more in a frame, it lags and catches up.
+        /// the footwork asks for more in a frame, it lags and catches up. A landing foot more than
+        /// <see cref="RemoteFootworkTuning.LandingReachMeters"/> from its spot keeps its lift and flies there first
+        /// (PER-142), so it never slides along the floor.
         /// </summary>
         private sealed class Foot
         {
@@ -720,6 +797,15 @@ namespace VrFencing.Partner
                     return;
                 }
 
+                if (Vector3.Distance(Anchor, _landTo) > RemoteFootworkTuning.LandingReachMeters)
+                {
+                    // Still short of its spot (it lagged at top speed): it flies on, as high as it was, and comes down there.
+                    Anchor = MoveToward(_landTo);
+                    _landStartSeconds = nowSeconds;
+                    _landFrom = Anchor;
+                    return;
+                }
+
                 var fraction = (float)((nowSeconds - _landStartSeconds) / RemoteFootworkTuning.LandingSeconds);
                 var eased = DummyFootwork.MinimumJerk(fraction);
                 Anchor = MoveToward(Vector3.Lerp(_landFrom, _landTo, eased));
@@ -752,5 +838,22 @@ namespace VrFencing.Partner
                 return new FootPlacement(Anchor.X, Anchor.Z, Lift, Pitch);
             }
         }
+    }
+
+    /// <summary>
+    /// Where the hips will be a moment after the frame being read (PER-142, see <see cref="FootworkLookAhead"/>): their
+    /// spot and their velocity there.
+    /// </summary>
+    public readonly struct HipsPreview
+    {
+        public HipsPreview(Vector3 hips, Vector3 velocity)
+        {
+            Hips = hips;
+            Velocity = velocity;
+        }
+
+        public Vector3 Hips { get; }
+
+        public Vector3 Velocity { get; }
     }
 }

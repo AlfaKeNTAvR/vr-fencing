@@ -270,7 +270,11 @@ namespace VrFencing.Partner
             return _samples.Count == 0 || senderNowSeconds - _samples[_samples.Count - 1].SenderTimeSeconds > StaleSeconds;
         }
 
-        /// <summary>The body to draw when the partner's clock reads <paramref name="senderNowSeconds"/>; null before the first sample.</summary>
+        /// <summary>
+        /// The body to draw when the partner's clock reads <paramref name="senderNowSeconds"/>; null before the first
+        /// sample. Its footwork comes from the samples <see cref="FootworkLookAhead.Seconds"/> later, which carry the feet
+        /// for this moment (PER-142); past the newest sample, the newest one's.
+        /// </summary>
         public FencerBody Sample(double senderNowSeconds)
         {
             if (_samples.Count == 0)
@@ -279,6 +283,13 @@ namespace VrFencing.Partner
             }
 
             var time = senderNowSeconds - BufferSeconds;
+            var body = Interpolate(time);
+            var footwork = Interpolate(time + FootworkLookAhead.Seconds).Footwork;
+            return body.WithFootwork(footwork ?? body.Footwork);
+        }
+
+        private FencerBody Interpolate(double time)
+        {
             var first = _samples[0];
             var last = _samples[_samples.Count - 1];
             if (time <= first.SenderTimeSeconds)

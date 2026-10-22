@@ -52,7 +52,7 @@ namespace VrFencing.Partner
         private readonly SendSchedule _bodySchedule = new SendSchedule(BodyRatePerSecond);
         private readonly SendSchedule _handSchedule = new SendSchedule(HandRatePerSecond);
         private readonly HandMotion _handMotion = new HandMotion();
-        private readonly FootworkStateTracker _footwork = new FootworkStateTracker();
+        private readonly FootworkLookAhead _footwork = new FootworkLookAhead();
         private readonly MirrorLoopback _loopback = new MirrorLoopback(MirrorDelay.DefaultSeconds);
 
         private PartnerSessionBehaviour _partner;
@@ -80,7 +80,10 @@ namespace VrFencing.Partner
         /// <summary>The streams run (to a partner or mirrored): <see cref="Link"/> has an opponent to draw.</summary>
         public bool IsStreaming => _route != StreamRoute.None;
 
-        /// <summary>This Fencer's footwork as read this frame (PER-112), sent with each body.</summary>
+        /// <summary>
+        /// This Fencer's footwork (PER-112), sent with each body: the feet <see cref="FootworkLookAhead.Seconds"/> before
+        /// this frame, read with the hips since (PER-142).
+        /// </summary>
         public FootworkState SentFootwork => _footwork.State;
 
         /// <summary>True when a Fencer replay in the scene is what goes out (the PC Editor as the partner).</summary>
