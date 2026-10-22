@@ -184,6 +184,52 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void ACarriedKnockGoesOnFromWhereTheBladeTookItAndNeverBack()
+        {
+            // PER-138: a beat knocks the point out, and the blade that hit it carries it on faster than the knock's own
+            // path, past the 60 cm a knock reaches. From there the knock runs on and the point never comes back toward
+            // the blade until the line recovers; it is never carried past MaxCarriedMeters.
+            var deflection = new BladeDeflection();
+            deflection.Kick(Clash(3.0f, 0.8f, Vector3.UnitX));
+            deflection.Step(FrameSeconds);
+            Assert.That(deflection.IsKnockedOut, Is.True, "Setup: knocked out.");
+            Assert.That(deflection.KnockDirection, Is.EqualTo(Vector3.UnitX));
+
+            deflection.CarryBy(new Vector3(0.75f, 0.0f, 0.0f));
+            var carried = deflection.TipOffset.X;
+            Assert.That(carried, Is.GreaterThan(BladeDeflection.MaxDeflectionMeters), "Carried past a knock's reach.");
+            var last = carried;
+            for (var frame = 0; frame < 36 && deflection.Phase != DeflectionPhase.Recover; frame++)
+            {
+                deflection.Step(FrameSeconds);
+                Assert.That(deflection.TipOffset.X, Is.GreaterThanOrEqualTo(last - 1e-5f), $"Frame {frame}: back toward the blade.");
+                last = deflection.TipOffset.X;
+            }
+
+            deflection.CarryBy(new Vector3(2.0f, 0.0f, 0.0f));
+            Assert.That(deflection.TipOffset.Length(), Is.LessThanOrEqualTo(BladeDeflection.MaxCarriedMeters + 1e-4f), "Only while knocked out, and never past the most.");
+            Run(deflection, 3.0f);
+            Assert.That(deflection.TipOffset.Length(), Is.LessThan(0.001f), "Then back in line as from any knock.");
+        }
+
+        [Test]
+        public void AClashThatPullsAwayFromTheDummysBladeKnocksNothing()
+        {
+            // PER-138: the Fencer's blade above the Dummy's; a clash pushing down knocks it, one pulling up (a pull-back
+            // grazing it) does not, so a knock never moves the Dummy's blade toward or through the Fencer's.
+            var blade = new ArmedDummyBlade();
+            var above = new BladeSegment(new Vector3(-0.3f, 1.15f, 1.0f), new Vector3(0.6f, 1.15f, 1.0f));
+            blade.Step(DummyForte, DummyForte.GuardPosition + new Vector3(0.0f, 0.3f, 0.6f), Vector3.UnitY, -Vector3.UnitY, new BladeSettings(), OpponentHand.Medium, above, default, FrameSeconds);
+            Assert.That(blade.Contact.Side.Value.Y, Is.GreaterThan(0.9f), "Setup: the Fencer's blade is above.");
+
+            blade.Knock(Clash(3.0f, 0.8f, Vector3.UnitY));
+            Assert.That(blade.Deflection.Phase, Is.EqualTo(DeflectionPhase.Spring), "Pulling away knocks nothing.");
+
+            blade.Knock(Clash(3.0f, 0.8f, -Vector3.UnitY));
+            Assert.That(blade.Deflection.IsKnockedOut, Is.True, "Pushing it away knocks it out.");
+        }
+
+        [Test]
         public void AHitWhileTheLineIsOpenAddsToTheDeflectionAndOpensItAgain()
         {
             var deflection = new BladeDeflection();

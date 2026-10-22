@@ -111,6 +111,14 @@ namespace VrFencing.Blade
         /// <summary>The point's largest offset from its line, wrist and arm together.</summary>
         public const float MaxDeflectionMeters = WristMaxMeters + ArmMaxMeters;
 
+        /// <summary>
+        /// The farthest a beat that carries the point on (<see cref="CarryBy"/>, PER-138) takes it, past
+        /// <see cref="MaxDeflectionMeters"/>: a follow-through that sweeps on past the knock's reach takes the Dummy's blade
+        /// with it (its wrist turned about 40 degrees past its arm's), so the blade that hit it never passes it and never
+        /// meets it from the far side on the way back. It comes back from there as from any knock.
+        /// </summary>
+        public const float MaxCarriedMeters = 1.0f;
+
         /// <summary>The part of the offset the blade turns in the hand (about 13 degrees) before the arm goes with it.</summary>
         public const float WristMaxMeters = 0.20f;
 
@@ -159,6 +167,9 @@ namespace VrFencing.Blade
         private float _openSeconds;
         private float _recoverSeconds;
         private bool _wasHeld;
+
+        // The largest offset now: MaxDeflectionMeters, or more after a carry (back to it as the point comes back).
+        private float _limitMeters = MaxDeflectionMeters;
 
         /// <summary>The point's offset from its line now, square to the blade, wrist and arm together.</summary>
         public Vector3 TipOffset { get; private set; }
@@ -259,8 +270,55 @@ namespace VrFencing.Blade
 
             if (isBeat)
             {
+                KnockDirection = clash.PushDirection;
                 StartOut(LimitToMax(TipOffset + (clash.PushDirection * meters)));
             }
+        }
+
+        /// <summary>True while a beat knocks the point out (<see cref="DeflectionPhase.Out"/>): the beating blade carries it.</summary>
+        public bool IsKnockedOut => Phase == DeflectionPhase.Out;
+
+        /// <summary>The way the last beat knocked the point (unit, square to the blade when it hit): the way it is carried.</summary>
+        public Vector3 KnockDirection { get; private set; }
+
+        /// <summary>
+        /// The beating blade carries the knocked point on by <paramref name="tipOffsetChange"/> (PER-138): a fast hit
+        /// moves faster than the knock's own path, and the point goes with the blade that hit it, on the side it was hit,
+        /// never left behind for the blade to pass through. The rest of the knock runs on from there (its whole path moved
+        /// by as much, in a straight line from here, so it never comes back toward the blade that hit it), and the open
+        /// line and recovery are timed for the farther deflection. Only while knocked out.
+        /// </summary>
+        public void CarryBy(Vector3 tipOffsetChange)
+        {
+            if (Phase != DeflectionPhase.Out || tipOffsetChange.LengthSquared() < 1e-12f)
+            {
+                return;
+            }
+
+            _limitMeters = Math.Min(MaxCarriedMeters, Math.Max(_limitMeters, (TipOffset + tipOffsetChange).Length()));
+            var carried = LimitToMax(TipOffset + tipOffsetChange);
+            var left = _target - TipOffset;
+            _from = carried;
+            _target = carried + (left * FindShareWithinMax(carried, left));
+            TipOffset = carried;
+            _phaseSeconds = 0.0f;
+            SetTimes(_target.Length(), isNewPlan: false);
+        }
+
+        /// <summary>The share (0 to 1) of <paramref name="move"/> from <paramref name="from"/> (within the largest offset) that stays within it.</summary>
+        private float FindShareWithinMax(Vector3 from, Vector3 move)
+        {
+            var a = move.LengthSquared();
+            if (a < 1e-12f || (from + move).Length() <= _limitMeters)
+            {
+                return 1.0f;
+            }
+
+            // |from + t move| = max, the root in [0, 1].
+            var b = Vector3.Dot(from, move);
+            var c = from.LengthSquared() - (_limitMeters * _limitMeters);
+            var root = (float)Math.Sqrt(Math.Max(0.0f, (b * b) - (a * c)));
+            return Math.Clamp((-b + root) / a, 0.0f, 1.0f);
         }
 
         /// <summary>
@@ -280,6 +338,7 @@ namespace VrFencing.Blade
             _velocity = Vector3.Zero;
             _heldOffset = Vector3.Zero;
             _wasHeld = false;
+            _limitMeters = MaxDeflectionMeters;
             Phase = DeflectionPhase.Spring;
         }
 
@@ -312,6 +371,9 @@ namespace VrFencing.Blade
             }
 
             _wasHeld = isHeld;
+
+            // A carried point's largest offset comes back with it.
+            _limitMeters = Math.Max(MaxDeflectionMeters, Math.Min(_limitMeters, TipOffset.Length()));
             StepArm(deltaSeconds);
         }
 
@@ -347,6 +409,15 @@ namespace VrFencing.Blade
         /// </summary>
         public BladeSegment Apply(BladeSegment forte, Vector3 shoulder)
         {
+            return Apply(forte, shoulder, Vector3.Zero);
+        }
+
+        /// <summary>
+        /// <see cref="Apply(BladeSegment, Vector3)"/> with the point off its line by <paramref name="extraTipOffset"/> more
+        /// (the arm as it is): where a carry would take the blade, to try it before it is made.
+        /// </summary>
+        public BladeSegment Apply(BladeSegment forte, Vector3 shoulder, Vector3 extraTipOffset)
+        {
             var turn = GetArmTurn(forte, shoulder);
             var guard = shoulder + Vector3.Transform(forte.GuardPosition - shoulder, turn);
             var tip = shoulder + Vector3.Transform(forte.TipPosition - shoulder, turn);
@@ -358,7 +429,7 @@ namespace VrFencing.Blade
             }
 
             var axis = along / length;
-            var rest = forte.TipPosition + TipOffset - tip;
+            var rest = forte.TipPosition + TipOffset + extraTipOffset - tip;
             var square = rest - (Vector3.Dot(rest, axis) * axis);
             var squareLength = square.Length();
             if (squareLength < 1e-7f)
@@ -382,10 +453,10 @@ namespace VrFencing.Blade
             return relativeSpeedMetersPerSecond >= BeatMinSpeedMetersPerSecond;
         }
 
-        private static Vector3 LimitToMax(Vector3 tipOffset)
+        private Vector3 LimitToMax(Vector3 tipOffset)
         {
             var length = tipOffset.Length();
-            return length > MaxDeflectionMeters ? tipOffset * (MaxDeflectionMeters / length) : tipOffset;
+            return length > _limitMeters ? tipOffset * (_limitMeters / length) : tipOffset;
         }
 
         /// <summary>
