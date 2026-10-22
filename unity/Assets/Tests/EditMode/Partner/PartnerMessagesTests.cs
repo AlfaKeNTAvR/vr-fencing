@@ -108,6 +108,25 @@ namespace VrFencing.Tests.Partner
         }
 
         [Test]
+        public void TheBackWristsTurnComesBackWithTheFootworkAndFitsAPacket()
+        {
+            // PER-142, format 3: the back wrist's turn rides after the footwork.
+            var wrist = Quaternion.Normalize(new Quaternion(0.2f, -0.5f, 0.1f, 0.8f));
+            var footwork = new FootworkState(FootworkPhase.Advancing, new FootPlacement(0.1f, 0.5f, 0.02f, 0.1f), default, 1.0f);
+            var joints = Enumerable.Range(0, FencerBody.JointCount).Select(index => PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero).Get(index)).ToArray();
+            var body = new FencerBody(joints, Quaternion.Identity, BodyTrackingFidelity.High, footwork, wrist);
+
+            var encoded = PartnerMessages.EncodeBody(new BodySample(1.0, body));
+            var decoded = PartnerMessages.DecodeBody(encoded).Body;
+
+            Assert.That(PartnerMessages.FormatVersion, Is.EqualTo(3));
+            Assert.That(encoded.Length, Is.LessThanOrEqualTo(MaxBodyBytes));
+            Assert.That(Quaternion.Dot(decoded.BackWristRotation.Value, wrist), Is.EqualTo(1.0f).Within(Tolerance));
+            Assert.That(decoded.Footwork.Value.Phase, Is.EqualTo(FootworkPhase.Advancing));
+            Assert.That(PartnerMessages.DecodeBody(PartnerMessages.EncodeBody(new BodySample(1.0, PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero)))).Body.BackWristRotation, Is.Null);
+        }
+
+        [Test]
         public void ABodyWithoutFootworkComesBackWithout()
         {
             var body = PartnerTestData.Body(BodyTrackingFidelity.High, Vector3.Zero);

@@ -117,7 +117,7 @@ namespace VrFencing.Partner
             joints[(int)SkeletonJoint.BackKnee] = backLeg.Knee;
             joints[(int)SkeletonJoint.BackAnkle] = backLeg.Ankle;
             joints[(int)SkeletonJoint.BackToe] = backLeg.Toe;
-            return new FencerBody(joints, body.HeadRotation, body.Fidelity, footwork);
+            return body.WithJoints(joints);
         }
 
         /// <summary>Forgets the feet (the partner left or rejoined): the next body stands in en garde under its hips.</summary>

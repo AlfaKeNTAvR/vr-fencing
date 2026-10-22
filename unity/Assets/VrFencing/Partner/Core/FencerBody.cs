@@ -26,7 +26,13 @@ namespace VrFencing.Partner
 
         /// <param name="joints">One entry per <see cref="JointCount"/>; copied.</param>
         /// <param name="footwork">What the feet are doing, as the sender read it (PER-112); null when unknown.</param>
-        public FencerBody(IReadOnlyList<Vector3?> joints, Quaternion? headRotation, BodyTrackingFidelity? fidelity, FootworkState? footwork = null)
+        /// <param name="backWristRotation">The tracker's back-hand wrist joint turn (PER-142); null when not tracked.</param>
+        public FencerBody(
+            IReadOnlyList<Vector3?> joints,
+            Quaternion? headRotation,
+            BodyTrackingFidelity? fidelity,
+            FootworkState? footwork = null,
+            Quaternion? backWristRotation = null)
         {
             if (joints == null)
             {
@@ -47,10 +53,18 @@ namespace VrFencing.Partner
             HeadRotation = headRotation;
             Fidelity = fidelity;
             Footwork = footwork;
+            BackWristRotation = backWristRotation;
         }
 
         /// <summary>The headset's turn (its +z where the Fencer looks, +y up), or null when not tracked.</summary>
         public Quaternion? HeadRotation { get; }
+
+        /// <summary>
+        /// The body tracker's back-hand wrist joint turn (PER-142), which gives the back hand its roll (the sword hand
+        /// takes its roll from the controller); null when not tracked. In the tracker's own wrist convention
+        /// (<see cref="HandRoll"/>).
+        /// </summary>
+        public Quaternion? BackWristRotation { get; }
 
         /// <summary>The body tracker's fidelity when this body was read; null when it gave no body (only the head then).</summary>
         public BodyTrackingFidelity? Fidelity { get; }
@@ -77,12 +91,18 @@ namespace VrFencing.Partner
         /// <summary>The same body carrying <paramref name="footwork"/> (the sender's state, to send with it).</summary>
         public FencerBody WithFootwork(FootworkState? footwork)
         {
-            return new FencerBody(_joints, HeadRotation, Fidelity, footwork);
+            return new FencerBody(_joints, HeadRotation, Fidelity, footwork, BackWristRotation);
+        }
+
+        /// <summary>The same body with <paramref name="joints"/> (one per <see cref="JointCount"/>) instead of its own.</summary>
+        public FencerBody WithJoints(IReadOnlyList<Vector3?> joints)
+        {
+            return new FencerBody(joints, HeadRotation, Fidelity, Footwork, BackWristRotation);
         }
 
         /// <summary>
         /// The same body with every position (the footwork's feet too) moved by <paramref name="movePoint"/> and the head
-        /// turned by <paramref name="turn"/> (applied first), e.g. into the other Fencer's Strip frame.
+        /// and the back wrist turned by <paramref name="turn"/> (applied first), e.g. into the other Fencer's Strip frame.
         /// </summary>
         public FencerBody Transform(Func<Vector3, Vector3> movePoint, Quaternion turn)
         {
@@ -98,7 +118,8 @@ namespace VrFencing.Partner
             }
 
             var head = HeadRotation.HasValue ? Quaternion.Normalize(turn * HeadRotation.Value) : (Quaternion?)null;
-            return new FencerBody(moved, head, Fidelity, Footwork?.Transform(movePoint));
+            var backWrist = BackWristRotation.HasValue ? Quaternion.Normalize(turn * BackWristRotation.Value) : (Quaternion?)null;
+            return new FencerBody(moved, head, Fidelity, Footwork?.Transform(movePoint), backWrist);
         }
 
         /// <summary>
@@ -120,16 +141,8 @@ namespace VrFencing.Partner
                 joints[index] = a.HasValue && b.HasValue ? Vector3.Lerp(a.Value, b.Value, fraction) : b ?? a;
             }
 
-            Quaternion? head;
-            if (from.HeadRotation.HasValue && to.HeadRotation.HasValue)
-            {
-                head = Quaternion.Slerp(from.HeadRotation.Value, to.HeadRotation.Value, fraction);
-            }
-            else
-            {
-                head = to.HeadRotation ?? from.HeadRotation;
-            }
-
+            var head = Slerp(from.HeadRotation, to.HeadRotation, fraction);
+            var backWrist = Slerp(from.BackWristRotation, to.BackWristRotation, fraction);
             FootworkState? footwork;
             if (from.Footwork.HasValue && to.Footwork.HasValue)
             {
@@ -140,7 +153,13 @@ namespace VrFencing.Partner
                 footwork = to.Footwork ?? from.Footwork;
             }
 
-            return new FencerBody(joints, head, fraction < 0.5f ? from.Fidelity ?? to.Fidelity : to.Fidelity ?? from.Fidelity, footwork);
+            return new FencerBody(joints, head, fraction < 0.5f ? from.Fidelity ?? to.Fidelity : to.Fidelity ?? from.Fidelity, footwork, backWrist);
+        }
+
+        /// <summary>Between two turns the short way round; a turn only one of them has is taken from it.</summary>
+        private static Quaternion? Slerp(Quaternion? from, Quaternion? to, float fraction)
+        {
+            return from.HasValue && to.HasValue ? Quaternion.Slerp(from.Value, to.Value, fraction) : to ?? from;
         }
     }
 
@@ -228,7 +247,10 @@ namespace VrFencing.Partner
             joints[(int)SkeletonJoint.BackKnee] = At(isRight ? LeftLowerLeg : RightLowerLeg);
             joints[(int)SkeletonJoint.BackAnkle] = At(isRight ? LeftFootAnkle : RightFootAnkle);
             joints[(int)SkeletonJoint.BackToe] = At(isRight ? LeftFootBall : RightFootBall);
-            return new FencerBody(joints, headRotation, fidelity);
+            // A recording with no turns kept (zeros) gives no back wrist turn rather than an unreadable one.
+            var backWrist = fullBody[isRight ? LeftHandWrist : RightHandWrist]?.Rotation;
+            var hasBackWrist = backWrist.HasValue && backWrist.Value.LengthSquared() > 1e-6f;
+            return new FencerBody(joints, headRotation, fidelity, null, hasBackWrist ? Quaternion.Normalize(backWrist.Value) : (Quaternion?)null);
         }
 
         private static Vector3? Midpoint(Vector3? a, Vector3? b)

@@ -74,12 +74,13 @@ namespace VrFencing.Tests.Partner
                 var moved = new Vector3(0.0f, 0.0f, 0.3f);
 
                 // Every joint 30 cm further along +z, but the back leg's knee missing: that leg is skipped, not thrown on.
-                rig.PoseTracked(
-                    Hand.Right,
-                    1.7f,
-                    joint => joint == SkeletonJoint.BackKnee ? (Vector3?)null : DummySkeleton.GetJointPosition(layout, joint).ToUnity() + moved,
-                    null,
-                    Quaternion.identity);
+                var targets = new BodyRigTargets { Hand = Hand.Right, HeadRotation = System.Numerics.Quaternion.Identity };
+                foreach (SkeletonJoint joint in Enum.GetValues(typeof(SkeletonJoint)))
+                {
+                    targets.Set(joint, joint == SkeletonJoint.BackKnee ? (System.Numerics.Vector3?)null : DummySkeleton.GetJointPosition(layout, joint) + moved.ToNumerics());
+                }
+
+                rig.PoseTracked(targets);
 
                 var rightHand = rig.GetBone(HumanBodyBones.RightHand).position;
                 var expectedWrist = DummySkeleton.GetJointPosition(layout, SkeletonJoint.SwordWrist).ToUnity() + moved;

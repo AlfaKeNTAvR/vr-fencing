@@ -56,6 +56,7 @@ namespace VrFencing.Partner
         private readonly List<BladeObstacle> _opponentBodyObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount);
         private readonly List<BladeObstacle> _opponentBladeObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount + 2);
         private readonly DrawnBlade _drawnBlade = new DrawnBlade();
+        private readonly BodyRigTargets _rigTargets = new BodyRigTargets();
 
         private Transform _root;
         private Transform _bladeMount;
@@ -291,13 +292,10 @@ namespace VrFencing.Partner
                 return;
             }
 
+            // The hands turn with the drawn controller and the sent back wrist, the head sits on the eyes (PER-142).
             var body = view.Body;
-            _rig.PoseTracked(
-                view.Info.Hand,
-                view.Info.HeightMeters,
-                joint => body.Get(joint) is System.Numerics.Vector3 position ? position.ToUnity() : (Vector3?)null,
-                body.BackHandEnd is System.Numerics.Vector3 backHandEnd ? backHandEnd.ToUnity() : (Vector3?)null,
-                body.HeadRotation is System.Numerics.Quaternion head ? head.ToUnity() : (Quaternion?)null);
+            OpponentRigTargets.Fill(_rigTargets, body, view.Info.HeightMeters, view.Info.Hand, view.Controller, Time.realtimeSinceStartupAsDouble);
+            _rig.PoseTracked(_rigTargets);
 
             var target = OpponentFade.GetTargetFactor(body.Fidelity, view.IsBodyStale)
                          * (IsFadedForCorpsACorps ? OpponentFade.CorpsACorpsFactor : 1.0f);
@@ -332,7 +330,7 @@ namespace VrFencing.Partner
                 return false;
             }
 
-            _rig = DummyBodyRig.TryCreate(_bodyModel, _root, material, DummyLayout.Create(info.HeightMeters, info.Hand));
+            _rig = DummyBodyRig.TryCreate(_bodyModel, _root, material, DummyLayout.Create(info.HeightMeters, info.Hand), fitsLengths: true);
             if (_rig != null)
             {
                 _rig.Instance.name = "Opponent Body";

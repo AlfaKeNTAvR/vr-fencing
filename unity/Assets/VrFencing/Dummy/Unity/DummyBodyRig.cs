@@ -7,56 +7,72 @@ namespace VrFencing.Dummy
 {
     /// <summary>
     /// The Dummy's rigged Humanoid body (PER-78): one instance of a Humanoid model (Movement SDK's
-    /// <c>Armature.fbx</c>) posed in the Dummy's en garde, so its mesh wraps the Target Zones. The same rig is what a
-    /// partner's tracked body will later drive.
+    /// <c>Armature.fbx</c>) posed in the Dummy's en garde, so its mesh wraps the Target Zones. The same rig draws the
+    /// opponent on a partner's tracked body (PER-81).
     ///
-    /// Posing: every mapped bone is put on its <see cref="DummySkeleton"/> joint and turned the least amount from its
-    /// rest pose so it points at the next joint; the bones in between follow their parents, and the skinned mesh
-    /// stretches to fit. The hips, chest and head take their whole frame (side and up) from the stance; the feet only
-    /// turn about the vertical, so their soles stay flat on the floor as in the rest pose. All poses are in the parts
-    /// root's frame, the Dummy frame.
+    /// Posing is the Core's <see cref="BodyRigPoser"/> (PER-142): every mapped bone is put on its joint, each limb bone
+    /// aimed through its parent so the elbows and knees hinge in the joints' plane whichever way the body faces; the
+    /// bones in between follow their parents, and the skinned mesh stretches to fit. This class reads the model's rest
+    /// pose into the Core and copies each frame's result onto the bones. A rig built to fit lengths (the opponent) also
+    /// scales the fitted bones, undoing each scale on the bones below. All poses are in the parts root's frame.
     ///
     /// Side: the sword arm and the front leg are the anatomical right for a right-handed Dummy and the left for a
     /// left-handed one, so a mirrored Dummy is a real left-hander, not a right-hander turned inside out.
     /// </summary>
     internal sealed class DummyBodyRig
     {
-        /// <summary>
-        /// How far below the head's center the rig's head joint sits, as a fraction of height. On the Armature rig
-        /// the head joint is about 3.4 cm below the eyes at 1.8 m, at the base of the skull.
-        /// </summary>
-        private const float HeadJointBelowHeadCenterPerHeight = 0.02f;
-
-        private static readonly HumanBodyBones[] RequiredBones =
+        private static readonly Dictionary<RigBone, HumanBodyBones> PosedBones = new Dictionary<RigBone, HumanBodyBones>
         {
-            HumanBodyBones.Hips,
-            HumanBodyBones.Chest,
-            HumanBodyBones.Head,
-            HumanBodyBones.LeftUpperArm,
-            HumanBodyBones.LeftLowerArm,
-            HumanBodyBones.LeftHand,
-            HumanBodyBones.RightUpperArm,
-            HumanBodyBones.RightLowerArm,
-            HumanBodyBones.RightHand,
-            HumanBodyBones.LeftUpperLeg,
-            HumanBodyBones.LeftLowerLeg,
-            HumanBodyBones.LeftFoot,
-            HumanBodyBones.RightUpperLeg,
-            HumanBodyBones.RightLowerLeg,
-            HumanBodyBones.RightFoot,
+            { RigBone.Hips, HumanBodyBones.Hips },
+            { RigBone.Chest, HumanBodyBones.Chest },
+            { RigBone.UpperChest, HumanBodyBones.UpperChest },
+            { RigBone.Neck, HumanBodyBones.Neck },
+            { RigBone.Head, HumanBodyBones.Head },
+            { RigBone.LeftUpperArm, HumanBodyBones.LeftUpperArm },
+            { RigBone.LeftLowerArm, HumanBodyBones.LeftLowerArm },
+            { RigBone.LeftHand, HumanBodyBones.LeftHand },
+            { RigBone.RightUpperArm, HumanBodyBones.RightUpperArm },
+            { RigBone.RightLowerArm, HumanBodyBones.RightLowerArm },
+            { RigBone.RightHand, HumanBodyBones.RightHand },
+            { RigBone.LeftUpperLeg, HumanBodyBones.LeftUpperLeg },
+            { RigBone.LeftLowerLeg, HumanBodyBones.LeftLowerLeg },
+            { RigBone.LeftFoot, HumanBodyBones.LeftFoot },
+            { RigBone.RightUpperLeg, HumanBodyBones.RightUpperLeg },
+            { RigBone.RightLowerLeg, HumanBodyBones.RightLowerLeg },
+            { RigBone.RightFoot, HumanBodyBones.RightFoot },
         };
+
+        /// <summary>
+        /// The Armature model's eye transforms: its Humanoid avatar maps no eyes, and the opponent's head is placed by them
+        /// (PER-142).
+        /// </summary>
+        public const string LeftEyeName = "Left_Eye";
+
+        /// <inheritdoc cref="LeftEyeName"/>
+        public const string RightEyeName = "Right_Eye";
 
         // Optional in a Humanoid avatar; used when the model has them.
         private static readonly HumanBodyBones[] OptionalBones =
         {
             HumanBodyBones.UpperChest,
+            HumanBodyBones.Neck,
             HumanBodyBones.LeftMiddleProximal,
             HumanBodyBones.RightMiddleProximal,
+            HumanBodyBones.LeftIndexProximal,
+            HumanBodyBones.RightIndexProximal,
+            HumanBodyBones.LeftLittleProximal,
+            HumanBodyBones.RightLittleProximal,
+            HumanBodyBones.LeftEye,
+            HumanBodyBones.RightEye,
         };
 
         private readonly Transform _partsRoot;
         private readonly Dictionary<HumanBodyBones, Transform> _bones;
-        private readonly Dictionary<HumanBodyBones, Pose> _restPoses = new Dictionary<HumanBodyBones, Pose>();
+        private readonly BodyRigTargets _targets = new BodyRigTargets();
+        private readonly Transform[] _rigTransforms = new Transform[BodyRigRest.BoneCount];
+        private readonly Vector3[] _restLocalScales = new Vector3[BodyRigRest.BoneCount];
+        private readonly int[] _scaleParents = new int[BodyRigRest.BoneCount];
+        private BodyRigPoser _poser;
 
         private DummyBodyRig(GameObject instance, Transform partsRoot, Dictionary<HumanBodyBones, Transform> bones, Renderer[] renderers)
         {
@@ -77,11 +93,12 @@ namespace VrFencing.Dummy
 
         /// <summary>
         /// Instantiates <paramref name="model"/> under <paramref name="partsRoot"/>, draws it with
-        /// <paramref name="material"/> and poses it on <paramref name="layout"/>. Returns null, after logging why, if
-        /// the model is not a valid Humanoid with every bone the pose needs or has no skinned mesh; the caller then
-        /// draws the capsule silhouette instead.
+        /// <paramref name="material"/> and poses it on <paramref name="layout"/>. <paramref name="fitsLengths"/>: a rig for a
+        /// tracked body, whose bones are fitted to its lengths (the opponent). Returns null, after logging why, if the model
+        /// is not a valid Humanoid with every bone the pose needs or has no skinned mesh; the caller then draws the capsule
+        /// silhouette instead.
         /// </summary>
-        public static DummyBodyRig TryCreate(GameObject model, Transform partsRoot, Material material, DummyLayout layout)
+        public static DummyBodyRig TryCreate(GameObject model, Transform partsRoot, Material material, DummyLayout layout, bool fitsLengths = false)
         {
             var instance = Object.Instantiate(model, partsRoot, false);
             instance.name = "Body";
@@ -102,8 +119,7 @@ namespace VrFencing.Dummy
                 return null;
             }
 
-            // Bones are posed directly; an Animator without a controller has nothing to play. A later slice that
-            // drives the body from tracking enables it again.
+            // Bones are posed directly; an Animator without a controller has nothing to play.
             var animator = instance.GetComponent<Animator>();
             animator.enabled = false;
 
@@ -118,7 +134,7 @@ namespace VrFencing.Dummy
                     meshSlots.Add(new RigMeshSlot(skinnedRenderer, slot, RigMeshSlot.GetPart(modelMaterials[slot] != null ? modelMaterials[slot].name : skinnedRenderer.name)));
                 }
 
-                skinnedRenderer.sharedMaterials =Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
+                skinnedRenderer.sharedMaterials = Enumerable.Repeat(material, skinnedRenderer.sharedMaterials.Length).ToArray();
                 skinnedRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 skinnedRenderer.receiveShadows = false;
 
@@ -127,7 +143,7 @@ namespace VrFencing.Dummy
             }
 
             var rig = new DummyBodyRig(instance, partsRoot, bones, renderers.Cast<Renderer>().ToArray()) { MeshSlots = meshSlots };
-            rig.ScaleToHeight(layout.HeightMeters);
+            rig.ScaleToHeight(layout.HeightMeters, fitsLengths);
             rig.Pose(layout);
             return rig;
         }
@@ -135,65 +151,41 @@ namespace VrFencing.Dummy
         /// <summary>Puts every mapped bone on its joint for <paramref name="layout"/>, e.g. after the sword arm moved.</summary>
         public void Pose(DummyLayout layout)
         {
-            Vector3? Joint(SkeletonJoint joint) => DummySkeleton.GetJointPosition(layout, joint).ToUnity();
-
-            // The back hand carries on the forearm's line.
-            var backElbow = Joint(SkeletonJoint.BackElbow).Value;
-            var backHand = Joint(SkeletonJoint.BackHand).Value;
-            // The head tilts with the leaning torso, a little less than the chest (PER-115).
-            PoseJoints(layout.Hand, layout.HeightMeters, Joint, backHand + (backHand - backElbow), layout.Torso.HeadRotation.ToUnity());
+            DummyRigTargets.Fill(_targets, layout);
+            PoseTracked(_targets);
         }
 
         /// <summary>
-        /// Puts every mapped bone on a tracked body's joints (PER-81, the opponent): <paramref name="getJoint"/> gives
-        /// each <see cref="SkeletonJoint"/> in the parts root's frame, named by fencing side for a Fencer holding the
-        /// blade in <paramref name="hand"/>, or null when not tracked. <paramref name="backHandEnd"/> is the back hand's
-        /// end (the Dummy has none), <paramref name="headRotation"/> the headset's turn in the parts frame (+z where the
-        /// Fencer looks). A part with a joint missing keeps its last pose.
+        /// Puts every mapped bone on <paramref name="targets"/> (PER-81, the opponent; positions in the parts root's
+        /// frame). A part with a joint missing keeps its last pose.
         /// </summary>
-        public void PoseTracked(Hand hand, float heightMeters, System.Func<SkeletonJoint, Vector3?> getJoint, Vector3? backHandEnd, Quaternion? headRotation)
+        public void PoseTracked(BodyRigTargets targets)
         {
-            if (getJoint == null)
+            if (targets == null)
             {
-                throw new System.ArgumentNullException(nameof(getJoint));
+                throw new System.ArgumentNullException(nameof(targets));
             }
 
-            PoseJoints(hand, heightMeters, getJoint, backHandEnd, headRotation);
-        }
-
-        private void PoseJoints(Hand hand, float heightMeters, System.Func<SkeletonJoint, Vector3?> getJoint, Vector3? backHandEnd, Quaternion? headRotation)
-        {
-            var swordSide = hand == Hand.Left ? BodySide.Left : BodySide.Right;
-            var backSide = swordSide == BodySide.Right ? BodySide.Left : BodySide.Right;
-
-            var swordHip = getJoint(SkeletonJoint.FrontHip);
-            var backHip = getJoint(SkeletonJoint.BackHip);
-            var swordShoulder = getJoint(SkeletonJoint.SwordShoulder);
-            var backShoulder = getJoint(SkeletonJoint.BackShoulder);
-            var hipCenter = getJoint(SkeletonJoint.HipCenter);
-            var shoulderCenter = getJoint(SkeletonJoint.ShoulderCenter);
-            if (swordHip.HasValue && backHip.HasValue && swordShoulder.HasValue && backShoulder.HasValue && hipCenter.HasValue && shoulderCenter.HasValue)
+            _poser.Pose(targets);
+            for (var index = 0; index < BodyRigRest.BoneCount; index++)
             {
-                // Anatomical right minus left: the sword side is the right for a right-handed Dummy.
-                var hipsRight = swordSide == BodySide.Right ? swordHip.Value - backHip.Value : backHip.Value - swordHip.Value;
-                var shouldersRight = swordSide == BodySide.Right ? swordShoulder.Value - backShoulder.Value : backShoulder.Value - swordShoulder.Value;
-                PoseTorso(hipCenter.Value, shoulderCenter.Value, hipsRight, shouldersRight, shoulderCenter.Value - hipCenter.Value);
+                var bone = (RigBone)index;
+                var boneTransform = _rigTransforms[index];
+                if (boneTransform == null || !_poser.IsPosed(bone))
+                {
+                    continue;
+                }
+
+                var pose = _poser.GetPose(bone);
+                boneTransform.SetPositionAndRotation(_partsRoot.TransformPoint(pose.Position.ToUnity()), _partsRoot.rotation * pose.Rotation.ToUnity());
+                if (_poser.FitsLengths)
+                {
+                    // Each scale is the bone's own: the nearest posed bone above it is undone.
+                    var parent = _scaleParents[index];
+                    var parentScale = parent >= 0 ? _poser.GetPose((RigBone)parent).Scale : 1.0f;
+                    boneTransform.localScale = _restLocalScales[index] * (pose.Scale / parentScale);
+                }
             }
-
-            var headCenter = getJoint(SkeletonJoint.HeadCenter);
-            if (headCenter.HasValue)
-            {
-                var headJoint = headCenter.Value + (Vector3.down * (HeadJointBelowHeadCenterPerHeight * heightMeters));
-
-                // The head looks where the headset looks; the Dummy's looks at the Fencer: upright, facing the Dummy frame's +z.
-                var turn = headRotation ?? Quaternion.identity;
-                SetBone(HumanBodyBones.Head, headJoint, RotateFrame(HumanBodyBones.Head, RestShouldersRight(), RestSpineUp(), turn * Vector3.right, turn * Vector3.up));
-            }
-
-            PoseArm(swordSide, swordShoulder, getJoint(SkeletonJoint.SwordElbow), getJoint(SkeletonJoint.SwordWrist), getJoint(SkeletonJoint.SwordHandEnd));
-            PoseArm(backSide, backShoulder, getJoint(SkeletonJoint.BackElbow), getJoint(SkeletonJoint.BackHand), backHandEnd);
-            PoseLeg(swordSide, swordHip, getJoint(SkeletonJoint.FrontKnee), getJoint(SkeletonJoint.FrontAnkle), getJoint(SkeletonJoint.FrontToe));
-            PoseLeg(backSide, backHip, getJoint(SkeletonJoint.BackKnee), getJoint(SkeletonJoint.BackAnkle), getJoint(SkeletonJoint.BackToe));
         }
 
         /// <summary>The bone's transform, or null if the model has no such bone.</summary>
@@ -202,17 +194,11 @@ namespace VrFencing.Dummy
             return _bones.TryGetValue(bone, out var boneTransform) ? boneTransform : null;
         }
 
-        private enum BodySide
-        {
-            Left,
-            Right,
-        }
-
         /// <summary>
         /// Scales the model so its rest-pose shoulders stand at a real shoulder height for the Dummy's height, then
-        /// keeps every bone's rest pose in the Dummy frame for posing.
+        /// hands every bone's rest pose in the Dummy frame to the poser.
         /// </summary>
-        private void ScaleToHeight(float heightMeters)
+        private void ScaleToHeight(float heightMeters, bool fitsLengths)
         {
             var restShoulderHeight = (ToPartsFrame(GetBone(HumanBodyBones.LeftUpperArm).position).y + ToPartsFrame(GetBone(HumanBodyBones.RightUpperArm).position).y) * 0.5f;
             if (restShoulderHeight > 0.0f)
@@ -224,145 +210,77 @@ namespace VrFencing.Dummy
                 Debug.LogWarning($"[Dummy] The body model's shoulders are not above its origin ({restShoulderHeight} m); drawing it unscaled.");
             }
 
-            foreach (var bone in _bones)
+            var rest = new BodyRigRest();
+            foreach (var pair in PosedBones)
             {
-                _restPoses[bone.Key] = new Pose(ToPartsFrame(bone.Value.position), Quaternion.Inverse(_partsRoot.rotation) * bone.Value.rotation);
-            }
-        }
-
-        private void PoseTorso(Vector3 hipCenter, Vector3 shoulderCenter, Vector3 hipsRight, Vector3 shouldersRight, Vector3 spineUp)
-        {
-            // The hips bone sits a little above the line between the hip joints; it keeps that offset, turned with the hips.
-            var hipsTurn = Frame(hipsRight, spineUp) * Quaternion.Inverse(Frame(RestHipsRight(), RestSpineUp()));
-            var restHipJointCenter = (_restPoses[HumanBodyBones.LeftUpperLeg].position + _restPoses[HumanBodyBones.RightUpperLeg].position) * 0.5f;
-            var hips = hipCenter + (hipsTurn * (_restPoses[HumanBodyBones.Hips].position - restHipJointCenter));
-            SetBone(HumanBodyBones.Hips, hips, hipsTurn * _restPoses[HumanBodyBones.Hips].rotation);
-
-            // The chest bones keep their rest place along the spine, between the hips bone and the shoulders.
-            var restHipsHeight = _restPoses[HumanBodyBones.Hips].position.y;
-            foreach (var chestBone in new[] { HumanBodyBones.Chest, HumanBodyBones.UpperChest })
-            {
-                if (GetBone(chestBone) == null)
+                var boneTransform = GetBone(pair.Value);
+                _rigTransforms[(int)pair.Key] = boneTransform;
+                if (boneTransform != null)
                 {
-                    continue;
+                    rest.Set(pair.Key, ToPartsFrame(boneTransform.position).ToNumerics(), (Quaternion.Inverse(_partsRoot.rotation) * boneTransform.rotation).ToNumerics());
+                    _restLocalScales[(int)pair.Key] = boneTransform.localScale;
                 }
-
-                var fraction = (_restPoses[chestBone].position.y - restHipsHeight) / (RestShoulderCenter().y - restHipsHeight);
-                SetBone(chestBone, Vector3.Lerp(hips, shoulderCenter, fraction), RotateFrame(chestBone, RestShouldersRight(), RestSpineUp(), shouldersRight, spineUp));
             }
-        }
 
-        private void PoseArm(BodySide side, Vector3? shoulderJoint, Vector3? elbowJoint, Vector3? wristJoint, Vector3? handEndJoint)
-        {
-            if (!shoulderJoint.HasValue || !elbowJoint.HasValue || !wristJoint.HasValue || !handEndJoint.HasValue)
+            rest.LeftMiddleFinger = GetRestPoint(HumanBodyBones.LeftMiddleProximal);
+            rest.RightMiddleFinger = GetRestPoint(HumanBodyBones.RightMiddleProximal);
+            rest.LeftPalm = GetRestPalm(true, rest.LeftMiddleFinger);
+            rest.RightPalm = GetRestPalm(false, rest.RightMiddleFinger);
+            var leftEye = GetRestPoint(HumanBodyBones.LeftEye) ?? GetNamedRestPoint(LeftEyeName);
+            var rightEye = GetRestPoint(HumanBodyBones.RightEye) ?? GetNamedRestPoint(RightEyeName);
+            if (!leftEye.HasValue || !rightEye.HasValue)
             {
-                return;
+                Debug.LogWarning("[Dummy] The body model has no eyes: a tracked head is placed by its head joint instead.");
             }
-
-            var shoulder = shoulderJoint.Value;
-            var elbow = elbowJoint.Value;
-            var wrist = wristJoint.Value;
-            var handEnd = handEndJoint.Value;
-            var upperArm = side == BodySide.Right ? HumanBodyBones.RightUpperArm : HumanBodyBones.LeftUpperArm;
-            var lowerArm = side == BodySide.Right ? HumanBodyBones.RightLowerArm : HumanBodyBones.LeftLowerArm;
-            var hand = side == BodySide.Right ? HumanBodyBones.RightHand : HumanBodyBones.LeftHand;
-            var middleFinger = side == BodySide.Right ? HumanBodyBones.RightMiddleProximal : HumanBodyBones.LeftMiddleProximal;
-
-            AimBone(upperArm, shoulder, elbow, RestDirection(upperArm, lowerArm));
-            AimBone(lowerArm, elbow, wrist, RestDirection(lowerArm, hand));
-
-            // Without finger bones the hand carries on the rest forearm's line.
-            var restHandDirection = GetBone(middleFinger) != null ? RestDirection(hand, middleFinger) : RestDirection(lowerArm, hand);
-            AimBone(hand, wrist, handEnd, restHandDirection);
+            rest.Eyes = leftEye.HasValue && rightEye.HasValue ? (leftEye.Value + rightEye.Value) * 0.5f : (System.Numerics.Vector3?)null;
+            FindScaleParents();
+            _poser = new BodyRigPoser(rest, fitsLengths);
         }
 
-        private void PoseLeg(BodySide side, Vector3? hipJoint, Vector3? kneeJoint, Vector3? ankleJoint, Vector3? toeJoint)
+        /// <summary>The hand's rest palm from its knuckles, or null without the finger bones.</summary>
+        private System.Numerics.Vector3? GetRestPalm(bool isLeft, System.Numerics.Vector3? middle)
         {
-            if (!hipJoint.HasValue || !kneeJoint.HasValue || !ankleJoint.HasValue || !toeJoint.HasValue)
+            var wrist = GetRestPoint(isLeft ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            var index = GetRestPoint(isLeft ? HumanBodyBones.LeftIndexProximal : HumanBodyBones.RightIndexProximal);
+            var little = GetRestPoint(isLeft ? HumanBodyBones.LeftLittleProximal : HumanBodyBones.RightLittleProximal);
+            if (!wrist.HasValue || !middle.HasValue || !index.HasValue || !little.HasValue)
             {
-                return;
+                return null;
             }
 
-            var hip = hipJoint.Value;
-            var knee = kneeJoint.Value;
-            var ankle = ankleJoint.Value;
-            var toe = toeJoint.Value;
-            var upperLeg = side == BodySide.Right ? HumanBodyBones.RightUpperLeg : HumanBodyBones.LeftUpperLeg;
-            var lowerLeg = side == BodySide.Right ? HumanBodyBones.RightLowerLeg : HumanBodyBones.LeftLowerLeg;
-            var foot = side == BodySide.Right ? HumanBodyBones.RightFoot : HumanBodyBones.LeftFoot;
-
-            // The rig's ankle stands at its own height over the sole, so the foot rests on the floor rather than in it.
-            var footJoint = new Vector3(ankle.x, Mathf.Max(ankle.y, _restPoses[foot].position.y), ankle.z);
-
-            AimBone(upperLeg, hip, knee, RestDirection(upperLeg, lowerLeg));
-            AimBone(lowerLeg, knee, footJoint, RestDirection(lowerLeg, foot));
-
-            // Turn the foot about the vertical only, from the body's rest forward to the heel-to-toe line.
-            var turn = Quaternion.FromToRotation(Flatten(RestForward()), Flatten(toe - ankle));
-            SetBone(foot, footJoint, turn * _restPoses[foot].rotation);
+            return BodyRigRest.GetPalm(middle.Value - wrist.Value, index.Value - little.Value, isLeft);
         }
 
-        /// <summary>Puts the bone at <paramref name="position"/>, turned the least from rest to point at <paramref name="target"/>.</summary>
-        private void AimBone(HumanBodyBones bone, Vector3 position, Vector3 target, Vector3 restDirection)
+        /// <summary>A rest point by its transform's name, for bones the Humanoid avatar does not map; null when absent.</summary>
+        private System.Numerics.Vector3? GetNamedRestPoint(string transformName)
         {
-            SetBone(bone, position, Quaternion.FromToRotation(restDirection, target - position) * _restPoses[bone].rotation);
+            var found = Instance.GetComponentsInChildren<Transform>(true).FirstOrDefault(child => child.name == transformName);
+            return found != null ? ToPartsFrame(found.position).ToNumerics() : (System.Numerics.Vector3?)null;
         }
 
-        /// <summary>The bone's rest rotation carried from the rest frame (side, up) to the target frame (side, up).</summary>
-        private Quaternion RotateFrame(HumanBodyBones bone, Vector3 restRight, Vector3 restUp, Vector3 right, Vector3 up)
+        private System.Numerics.Vector3? GetRestPoint(HumanBodyBones bone)
         {
-            return Frame(right, up) * Quaternion.Inverse(Frame(restRight, restUp)) * _restPoses[bone].rotation;
+            var boneTransform = GetBone(bone);
+            return boneTransform != null ? ToPartsFrame(boneTransform.position).ToNumerics() : (System.Numerics.Vector3?)null;
         }
 
-        private void SetBone(HumanBodyBones bone, Vector3 positionInPartsFrame, Quaternion rotationInPartsFrame)
+        /// <summary>For each posed bone, the nearest posed bone above it in the hierarchy (-1 for none), whose scale it inherits.</summary>
+        private void FindScaleParents()
         {
-            _bones[bone].SetPositionAndRotation(_partsRoot.TransformPoint(positionInPartsFrame), _partsRoot.rotation * rotationInPartsFrame);
-        }
-
-        private Vector3 RestDirection(HumanBodyBones from, HumanBodyBones to)
-        {
-            return _restPoses[to].position - _restPoses[from].position;
-        }
-
-        private Vector3 RestHipsRight()
-        {
-            return RestDirection(HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg);
-        }
-
-        private Vector3 RestShouldersRight()
-        {
-            return RestDirection(HumanBodyBones.LeftUpperArm, HumanBodyBones.RightUpperArm);
-        }
-
-        private Vector3 RestShoulderCenter()
-        {
-            return (_restPoses[HumanBodyBones.LeftUpperArm].position + _restPoses[HumanBodyBones.RightUpperArm].position) * 0.5f;
-        }
-
-        private Vector3 RestSpineUp()
-        {
-            return RestShoulderCenter() - _restPoses[HumanBodyBones.Hips].position;
-        }
-
-        private Vector3 RestForward()
-        {
-            return Vector3.Cross(RestHipsRight(), RestSpineUp());
+            for (var index = 0; index < BodyRigRest.BoneCount; index++)
+            {
+                _scaleParents[index] = -1;
+                var boneTransform = _rigTransforms[index];
+                for (var above = boneTransform != null ? boneTransform.parent : null; above != null && _scaleParents[index] < 0; above = above.parent)
+                {
+                    _scaleParents[index] = System.Array.IndexOf(_rigTransforms, above);
+                }
+            }
         }
 
         private Vector3 ToPartsFrame(Vector3 worldPosition)
         {
             return _partsRoot.InverseTransformPoint(worldPosition);
-        }
-
-        /// <summary>The rotation whose +x is <paramref name="right"/> and whose +y is as near <paramref name="up"/> as it can be.</summary>
-        private static Quaternion Frame(Vector3 right, Vector3 up)
-        {
-            return Quaternion.LookRotation(Vector3.Cross(right, up), up);
-        }
-
-        private static Vector3 Flatten(Vector3 direction)
-        {
-            return new Vector3(direction.x, 0.0f, direction.z);
         }
 
         /// <summary>Finds every bone the pose needs through the model's Humanoid avatar; returns why not, or null.</summary>
@@ -380,14 +298,14 @@ namespace VrFencing.Dummy
                 return "its avatar is not a valid Humanoid (import it with Animation Type Humanoid)";
             }
 
-            foreach (var bone in RequiredBones.Concat(OptionalBones))
+            foreach (var bone in PosedBones.Values.Concat(OptionalBones).Distinct())
             {
                 var boneTransform = FindBone(animator, bone);
                 if (boneTransform != null)
                 {
                     bones[bone] = boneTransform;
                 }
-                else if (RequiredBones.Contains(bone))
+                else if (!OptionalBones.Contains(bone))
                 {
                     return $"its avatar maps no {bone} bone";
                 }
