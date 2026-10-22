@@ -255,6 +255,20 @@ namespace VrFencing.Blade
         /// <summary>True while the weaker blade slides off or swings back after sliding off.</summary>
         public bool IsReleasing => _slidingWeaker >= 0 || _returningBlade >= 0;
 
+        /// <summary>For the blade-contact log (PER-136): the blade sliding off now, 0 for A, 1 for B, -1 for none.</summary>
+        public int SlidingBlade => _slidingWeaker;
+
+        /// <summary>For the blade-contact log (PER-136): the blade swinging back after sliding off, 0 for A, 1 for B, -1 for none.</summary>
+        public int ReturningBlade => _returningBlade;
+
+        /// <summary>
+        /// For the blade-contact log (PER-136): the give stages at their limit in this frame's first split, bit 0 A's
+        /// grip turn, bit 1 A's bow, bit 2 B's grip turn, bit 3 B's bow; 0 when apart.
+        /// </summary>
+        public int SaturatedStages { get; private set; }
+
+        private int _splitSaturated;
+
         /// <summary>The Blade flex Setting's bending stiffness: a stiffer blade sags less (<see cref="BladeDroop.GetSagMeters"/>).</summary>
         public static float GetBendStiffness(BladeFlexSoftness flex)
         {
@@ -298,6 +312,7 @@ namespace VrFencing.Blade
             IsInContact = false;
             PressMeters = 0.0f;
             PressNewtons = 0.0f;
+            SaturatedStages = 0;
             var first = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, side, _engagedMeters);
             _lastHit = first;
             IsEngaged = first.IsFound;
@@ -353,6 +368,7 @@ namespace VrFencing.Blade
         {
             var excess = Split(first, out var newtons);
             PressNewtons = newtons;
+            SaturatedStages = _splitSaturated;
             var isReleased = false;
             var weaker = -1;
             if (excess > 0.0f)
@@ -448,6 +464,7 @@ namespace VrFencing.Blade
                 break;
             }
 
+            _splitSaturated = (isFull[0] ? 1 : 0) | (isFull[1] ? 2 : 0) | (isFull[2] ? 4 : 0) | (isFull[3] ? 8 : 0);
             _a.Turn(hit.OnA, hit.Normal, taken[0]);
             _a.AddBow(hit.FractionA, hit.Normal, taken[1]);
             _b.Turn(hit.OnB, -hit.Normal, taken[2]);

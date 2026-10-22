@@ -160,6 +160,31 @@ What is in a recording (`FencerRecordingFile` in `Assets/VrFencing/Tracking/Core
 
 The replay (`FencerReplayProvider`) is a Movement SDK `ISourceDataProvider`: a `CharacterRetargeter` on the same GameObject retargets it onto a rigged body exactly as it would a headset's `MetaSourceDataProvider`, and its `Sword Controller` child follows the recorded controller for the blade. Until the rigged body exists (MP1) nothing is attached, so only the gizmos show. The Core round-trip tests use a synthetic clip, `Assets/Tests/EditMode/Tracking/Fixtures/synthetic-lunge.fencer`, written by `FencerRecordingTestData`; regenerate it with `scripts/run-core-tests.sh --filter "FullyQualifiedName~WriteTheFixtureClip"` after an intended change to that synthetic lunge.
 
+## The blade-contact log and the "felt wrong" mark (PER-136)
+
+While REC is on (above), the app also writes `blade-<UTC>.csv` next to the `fencer-<UTC>.fencer` file, same stem, one row per rendered frame (about 350 bytes, 1.5 MB a minute, 15 MB for the 10-minute limit). Columns, in the Strip frame, units in the names (`_m`, `_deg`, `_n`, `_s`, `_mps`, `_frac`):
+
+- time and frame step;
+- each blade (Fencer, Dummy): guard, real point (the hand's chord tip), drawn point, grip turn, bow, slide-off flag and phase (`none`, `sliding`, `returning`), and the other drawn blade's clearance from its bell guard (`_bell_gap_m`, negative: through the bell);
+- the contact (`BladeContactSolver`): in contact, engaged, contact point, where on each blade (0 guard, 1 point), overlap, press force, side (unit, from the Dummy's blade to the Fencer's), saturated give stages (`fencer_turn|dummy_bow`...), closest approach, and the drawn blades' clearance (`drawn_gap_m`, negative: drawn into each other);
+- the Dummy: armed for what (`drill`, `free_guard`, `free_attacks`, `unarmed`), its arm's action (`en_garde`, `blade_in_line` or the attack phase), the Opponent's hand Setting, the hand's give to the press, the deflection phase and tip offset;
+- the sword-hand controller's velocity and speed;
+- `events`: `clash`, `beat`, `parry`, `touch`, `glance`, `flat`, `slide_off_start`, `slide_off_end`, `hit_on_fencer`, `mark`, joined by `|`.
+
+**Mark a moment that felt wrong:** squeeze the **off-hand grip** (left grip for a right-handed Fencer; no other feature uses either grip). It writes `mark` into that frame's row, ticks the off-hand controller and shows a yellow `MARK n` under REC for a second. With REC off it only shows "REC is off: press the left thumbstick". The `[Recorder] Blade log stopped` log line gives the rows, marks, size and the logger's cost per frame (average and worst).
+
+On the PC, with the headset on USB:
+
+```bash
+uv run scripts/blade-log.py            # pull the newest blade log into Recordings/ and summarize it
+uv run scripts/blade-log.py --plot     # ... and draw Recordings/blade-<UTC>.png (red lines: marks)
+uv run scripts/blade-log.py list       # what is on the headset
+uv run scripts/blade-log.py pull blade-20261022-101500.csv --with-fencer
+uv run scripts/blade-log.py show Recordings/blade-20261022-101500.csv
+```
+
+The summary gives the duration, contact time, slide-offs, the most press force, bow, grip turn and hand give, the closest the drawn blades and bells came (and frames through them), the events, and for each mark its time and the 1 s around it (also saved whole as `Recordings/blade-<UTC>-mark<n>.csv`). Code: `BladeContactLog`, `BladeContactProbe` and `CsvRowBuilder` in the Blade Core, `BladeContactRecorderBehaviour` in the Blade's Unity layer (it adds itself to the Blade at start).
+
 ## Sleep/wake and the `[Life]` log
 
 The Android entry point is the plain Activity (`UnityPlayerActivity`), not GameActivity (PER-71): Unity issue UUM-139694 is an intermittent ANR in GameActivity's pause/resume on Quest OpenXR, fixed only in Unity 6000.6. `QuestProjectSetup` sets it, rewrites the manifest's activity to match, and keeps Meta's Project Setup Tool from switching it back (its "Always specify single GameActivity application entry" task is excluded from Fix All, and the setup script fails if the entry point changed anyway). The build log and the OpenXR validation still warn about GameActivity; that is expected. Revisit when the project moves to a Unity with the fix.
