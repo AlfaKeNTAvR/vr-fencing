@@ -56,6 +56,29 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
+        public void TheFloorBuzzSettingSilencesOnlyThePressOnTheFloor()
+        {
+            // "Floor buzz" (off by default): a point pressed on the floor gives no haptics; the blade still pins and bows.
+            var bend = new BladeContactBend();
+            bend.Step(BladeWithTipAt(new Vector3(0.0f, 0.05f, 1.0f)), FloorOnly, Vector3.UnitY);
+            bend.Step(BladeWithTipAt(new Vector3(0.0f, 0.05f, 1.0f) + (DownForward * ((0.05f / 0.643f) + 0.08f))), FloorOnly, Vector3.UnitY);
+
+            Assert.That(bend.IsPinned, Is.True, "Setup: pressed on the floor.");
+            Assert.That(bend.BowMeters, Is.GreaterThan(0.01f), "It still bows on the floor.");
+            Assert.That(bend.IsPinnedOnPlane, Is.True, "Pinned on the floor, not a body.");
+            Assert.That(BladeHaptics.GetPressStrength(bend.PushMeters, bend.IsDecoupled, bend.IsPinnedOnPlane, isFloorBuzzOn: false), Is.EqualTo(0.0f), "Off: no buzz on the floor.");
+            Assert.That(BladeHaptics.GetPressStrength(bend.PushMeters, bend.IsDecoupled, bend.IsPinnedOnPlane, isFloorBuzzOn: true), Is.GreaterThan(BladeHaptics.PressFloor), "On: the buzz as before.");
+            Assert.That(BladeHaptics.GetPressStrength(bend.PushMeters, bend.IsDecoupled, isOnFloor: false, isFloorBuzzOn: false), Is.GreaterThan(BladeHaptics.PressFloor), "A body still buzzes with it off.");
+
+            var onBody = new BladeContactBend();
+            var body = new[] { BladeObstacle.FromCapsule(new Capsule(new Vector3(-0.5f, 0.0f, 1.2f), new Vector3(0.5f, 0.0f, 1.2f), 0.1f)) };
+            onBody.Step(new BladeSegment(new Vector3(0.0f, 0.0f, 0.2f), new Vector3(0.0f, 0.0f, 1.05f)), body, Vector3.UnitY);
+            onBody.Step(new BladeSegment(new Vector3(0.0f, 0.0f, 0.3f), new Vector3(0.0f, 0.0f, 1.15f)), body, Vector3.UnitY);
+            Assert.That(onBody.IsPinned, Is.True, "Setup: pressed on a body.");
+            Assert.That(onBody.IsPinnedOnPlane, Is.False, "A body is not the floor.");
+        }
+
+        [Test]
         public void ADeepPushIntoTheFloorNeverPutsTheDrawnBladeBelowIt([Values(1.0f, -1.0f)] float bowUp, [Values(40.0f, 80.0f)] float degreesDown)
         {
             // The hand drives on until its guard is 60 cm past where the point met the floor, then comes back up;

@@ -36,18 +36,28 @@ namespace VrFencing.Blade
         /// <param name="axis">The blade's direction through it, unit: the front face is on that side.</param>
         public static float FindDistance(Vector3 point, Vector3 center, Vector3 axis, out Vector3 outward)
         {
+            return FindCylinderDistance(point, center, axis, RadiusMeters, HalfDepthMeters, out outward);
+        }
+
+        /// <summary>
+        /// <see cref="FindDistance"/> for any flat round cylinder: <paramref name="radiusMeters"/> across its middle and
+        /// twice <paramref name="halfDepthMeters"/> deep along <paramref name="axis"/> (unit), about <paramref name="center"/>.
+        /// The bell and the grip behind it (the hilt in <see cref="BladeContactSolver"/>) are both such cylinders.
+        /// </summary>
+        public static float FindCylinderDistance(Vector3 point, Vector3 center, Vector3 axis, float radiusMeters, float halfDepthMeters, out Vector3 outward)
+        {
             var offset = point - center;
             var along = Vector3.Dot(offset, axis);
             var radial = offset - (along * axis);
             var radius = radial.Length();
             var radialDirection = radius * radius > DegenerateLengthSquared ? radial / radius : FindAnySquare(axis);
             var faceNormal = along >= 0.0f ? axis : -axis;
-            var outOfRim = radius - RadiusMeters;
-            var outOfFace = Math.Abs(along) - HalfDepthMeters;
+            var outOfRim = radius - radiusMeters;
+            var outOfFace = Math.Abs(along) - halfDepthMeters;
             if (outOfRim > 0.0f && outOfFace > 0.0f)
             {
                 // Past the edge: straight from it.
-                var edge = center + (radialDirection * RadiusMeters) + (faceNormal * HalfDepthMeters);
+                var edge = center + (radialDirection * radiusMeters) + (faceNormal * halfDepthMeters);
                 var fromEdge = point - edge;
                 var distance = fromEdge.Length();
                 outward = fromEdge / distance;

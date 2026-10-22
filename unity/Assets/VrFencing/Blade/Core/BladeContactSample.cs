@@ -79,6 +79,12 @@ namespace VrFencing.Blade
         /// no other blade.
         /// </summary>
         public float BellGapMeters;
+
+        /// <summary>
+        /// How far the other drawn blade keeps out of this blade's grip behind the bell (negative: through it); NaN when
+        /// there is no other blade. Solid in the contact solver since the PER-122 fix, as the bell is.
+        /// </summary>
+        public float HandleGapMeters;
     }
 
     /// <summary>

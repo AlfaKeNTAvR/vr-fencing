@@ -167,6 +167,12 @@ namespace VrFencing.Blade
         /// <summary>True while the drawn point is held at <see cref="PinnedPoint"/>.</summary>
         public bool IsPinned { get; private set; }
 
+        /// <summary>
+        /// True when the point was last pinned on a plane (the floor) rather than a body: while <see cref="IsPinned"/>,
+        /// the point is on the floor. The "Floor buzz" Setting silences the press buzz then.
+        /// </summary>
+        public bool IsPinnedOnPlane { get; private set; }
+
         /// <summary>Where the drawn point is held, while <see cref="IsPinned"/>.</summary>
         public Vector3 PinnedPoint => _pinnedPoint;
 
@@ -255,6 +261,7 @@ namespace VrFencing.Blade
                 IsPinned = true;
                 _pinnedPoint = entryPoint;
                 _pinnedBody = body;
+                IsPinnedOnPlane = bodies[body].IsPlane;
                 _hasShape = false;
                 _fallbackDirection = straightBlade.Direction;
                 var normal = bodies[body].FindOutwardNormal(entryPoint);

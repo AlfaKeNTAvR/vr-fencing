@@ -18,9 +18,9 @@ namespace VrFencing.Blade
     /// each blade turns in its grip and bows, neither hand moves, they never pass through each other and never wedge.
     /// The Dummy's blade bends from contact too. The Fencer's drawn blade takes <see cref="FencerGive"/>.</item>
     /// </list>
-    /// The Dummy's drawn blade (<see cref="Drawn"/>) keeps out of the floor and of the Fencer's bell guard (solid for its
-    /// point, PER-120); the Fencer's drawn blade keeps out of this blade's bell (<see cref="AddObstacles"/>). Positions in
-    /// the Strip frame, meters, seconds.
+    /// The Dummy's drawn blade (<see cref="Drawn"/>) keeps out of the floor. Each blade's hilt (bell guard and grip) is
+    /// solid for the other blade inside the contact solver, so neither hilt ever leaves its hand for it. Positions in the
+    /// Strip frame, meters, seconds.
     /// </summary>
     public sealed class ArmedDummyBlade
     {
@@ -46,6 +46,20 @@ namespace VrFencing.Blade
         public const float StrongYieldStiffness = 80.0f;
 
         /// <summary>
+        /// A Medium hand holds firm against a press up to this force and gives way only to the rest (PER-122 fix): a press
+        /// first bows the Dummy's blade, as against a fencer's set hand. About what bows its foible to the most a blade bows
+        /// at a contact (<see cref="BladeContactSolver.MaxBowMeters"/>): its blade's bend, not its hand, takes a firm press.
+        /// Without it the hand gave as readily as the foible, so a press only turned the blade.
+        /// </summary>
+        public const float MediumHoldNewtons = 2.0f;
+
+        /// <summary>A Light hand holds half as hard as a Medium one.</summary>
+        public const float LightHoldNewtons = 0.5f * MediumHoldNewtons;
+
+        /// <summary>A Strong hand holds twice as hard as a Medium one.</summary>
+        public const float StrongHoldNewtons = 2.0f * MediumHoldNewtons;
+
+        /// <summary>
         /// The most the Dummy's hand gives way to a press, at its point: a hard press opens its line this far (past the
         /// Beat's 15 cm), its blade then slides off the Fencer's. A beat can still knock it to 60 cm.
         /// </summary>
@@ -55,7 +69,13 @@ namespace VrFencing.Blade
         private readonly BladeContactSolver _solver = new BladeContactSolver();
         private readonly DrawnBlade _drawn = new DrawnBlade();
         private readonly List<BladeObstacle> _obstacles = new List<BladeObstacle>();
-        private bool _hasShape;
+
+        /// <summary>
+        /// True for a hand that never moves or gives (Free Practice's "hand fixed", a test stand for blade on blade
+        /// contact): the Dummy holds its line exactly, clashes knock nothing and presses move nothing; only the two blades
+        /// react, through the contact solver. As a fencer with an infinitely stiff hand: no hand is moved by the contact.
+        /// </summary>
+        public bool IsHandFixed { get; set; }
 
         /// <summary>The Dummy's hand: its point off its line, knocked by clashes and giving way to presses.</summary>
         public BladeDeflection Deflection => _deflection;
@@ -118,20 +138,32 @@ namespace VrFencing.Blade
             }
         }
 
+        /// <summary>How hard a press the Dummy's hand holds against without giving way, for the "Opponent's hand" Setting, N.</summary>
+        public static float GetHoldNewtons(OpponentHand hand)
+        {
+            switch (hand)
+            {
+                case OpponentHand.Light: return LightHoldNewtons;
+                case OpponentHand.Strong: return StrongHoldNewtons;
+                default: return MediumHoldNewtons;
+            }
+        }
+
         /// <summary>
         /// Where the Dummy's hand holds its point for a press of <paramref name="pressNewtons"/> pushing its blade along
-        /// <paramref name="push"/>: square to its blade <paramref name="bladeDirection"/>, the press over the yield
-        /// stiffness; zero with no press.
+        /// <paramref name="push"/>: square to its blade <paramref name="bladeDirection"/>, the press past what the hand
+        /// holds (<see cref="GetHoldNewtons"/>) over the yield stiffness; zero with no press or a press it holds.
         /// </summary>
         public static Vector3 FindYieldTipOffset(float pressNewtons, Vector3 push, Vector3 bladeDirection, OpponentHand hand)
         {
             var square = push - (Vector3.Dot(push, bladeDirection) * bladeDirection);
-            if (!(pressNewtons > 0.0f) || square.LengthSquared() < 1e-8f)
+            var pastHold = pressNewtons - GetHoldNewtons(hand);
+            if (!(pastHold > 0.0f) || square.LengthSquared() < 1e-8f)
             {
                 return Vector3.Zero;
             }
 
-            return Vector3.Normalize(square) * Math.Min(MaxYieldMeters, pressNewtons / GetYieldStiffness(hand));
+            return Vector3.Normalize(square) * Math.Min(MaxYieldMeters, pastHold / GetYieldStiffness(hand));
         }
 
         /// <summary>Straight in line again at once, no side known: the blade appeared or jumped.</summary>
@@ -140,7 +172,6 @@ namespace VrFencing.Blade
             _deflection.Reset();
             _solver.Reset();
             _drawn.Reset();
-            _hasShape = false;
             ArmTurn = Quaternion.Identity;
         }
 
@@ -172,13 +203,23 @@ namespace VrFencing.Blade
                 throw new ArgumentNullException(nameof(blade));
             }
 
-            // The Dummy's hand: it gives way to last frame's press as a fencer's hand would, and its knocks run on.
-            var yield = _solver.IsInContact
-                ? FindYieldTipOffset(_solver.PressNewtons, _solver.PushOnB, Chord.Direction, hand)
-                : Vector3.Zero;
-            YieldTipOffset = yield;
-            _deflection.HoldAt(yield);
-            _deflection.Step(deltaSeconds);
+            if (IsHandFixed)
+            {
+                // A hand that never moves or gives: no knock, no give to a press, only the blades react.
+                YieldTipOffset = Vector3.Zero;
+                _deflection.Reset();
+            }
+            else
+            {
+                // The Dummy's hand: it gives way to last frame's press as a fencer's hand would, and its knocks run on.
+                var yield = _solver.IsInContact
+                    ? FindYieldTipOffset(_solver.PressNewtons, _solver.PushOnB, Chord.Direction, hand)
+                    : Vector3.Zero;
+                YieldTipOffset = yield;
+                _deflection.HoldAt(yield);
+                _deflection.Step(deltaSeconds);
+            }
+
             var droop = Deflect(forte, shoulder, gripUp, down, blade, out var handChord);
             HandChord = handChord;
             ArmTurn = _deflection.GetArmTurn(forte, shoulder);
@@ -201,9 +242,7 @@ namespace VrFencing.Blade
 
             _obstacles.Clear();
             _obstacles.Add(BladeObstacle.Floor);
-            _obstacles.Add(BladeObstacle.FromBell(fencerHand.GuardPosition, fencerDroop.GetHiltDirection(fencerHand.Direction)));
             _drawn.Step(give.Chord, _obstacles, gripUp, deltaSeconds, give.Droop);
-            _hasShape = true;
         }
 
         /// <summary>
@@ -239,23 +278,6 @@ namespace VrFencing.Blade
         public Vector3 GetPointAt(float fraction)
         {
             return _drawn.GetCenterlinePoint(fraction);
-        }
-
-        /// <summary>
-        /// Adds this blade's bell guard on the drawn hilt (PER-120) to the Fencer's obstacles (nothing before the first
-        /// <see cref="Step"/>): solid for the Fencer's point. The blade itself is the contact solver's.
-        /// </summary>
-        public void AddObstacles(ICollection<BladeObstacle> obstacles)
-        {
-            if (obstacles == null)
-            {
-                throw new ArgumentNullException(nameof(obstacles));
-            }
-
-            if (_hasShape)
-            {
-                obstacles.Add(BladeObstacle.FromBell(_drawn.GuardPosition, _drawn.HiltDirection));
-            }
         }
 
         /// <summary>The blade turned by the hand's deflection, and its droop; <paramref name="chord"/> is the guard to the real point.</summary>

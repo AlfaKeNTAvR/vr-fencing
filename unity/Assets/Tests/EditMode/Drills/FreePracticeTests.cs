@@ -43,11 +43,11 @@ namespace VrFencing.Tests.Drills
         }
 
         [Test]
-        public void TheRowCyclesThroughAllFourBehaviorsAndBack()
+        public void TheRowCyclesThroughAllFiveBehaviorsAndBack()
         {
             var seen = new[] { FreePracticeBehavior.Guard };
             var behavior = FreePracticeBehavior.Guard;
-            for (var press = 0; press < 3; press++)
+            for (var press = 0; press < 4; press++)
             {
                 behavior = FreePractice.GetNext(behavior);
                 seen = seen.Append(behavior).ToArray();
@@ -55,7 +55,8 @@ namespace VrFencing.Tests.Drills
 
             Assert.That(seen, Is.EqualTo(new[]
             {
-                FreePracticeBehavior.Guard, FreePracticeBehavior.KeepDistance, FreePracticeBehavior.Footwork, FreePracticeBehavior.Attacks,
+                FreePracticeBehavior.Guard, FreePracticeBehavior.HandFixed, FreePracticeBehavior.KeepDistance, FreePracticeBehavior.Footwork,
+                FreePracticeBehavior.Attacks,
             }));
             Assert.That(FreePractice.GetNext(FreePracticeBehavior.Attacks), Is.EqualTo(FreePracticeBehavior.Guard));
             Assert.Throws<ArgumentOutOfRangeException>(() => FreePractice.GetNext((FreePracticeBehavior)99));
@@ -65,6 +66,7 @@ namespace VrFencing.Tests.Drills
         public void TheRowNamesWhatTheDummyDoes()
         {
             Assert.That(FreePracticeText.FormatButton(FreePracticeBehavior.Guard), Is.EqualTo("Dummy: guard"));
+            Assert.That(FreePracticeText.FormatButton(FreePracticeBehavior.HandFixed), Is.EqualTo("Dummy: hand fixed"));
             Assert.That(FreePracticeText.FormatButton(FreePracticeBehavior.KeepDistance), Is.EqualTo("Dummy: keep distance"));
             Assert.That(FreePracticeText.FormatButton(FreePracticeBehavior.Footwork), Is.EqualTo("Dummy: footwork"));
             Assert.That(FreePracticeText.FormatButton(FreePracticeBehavior.Attacks), Is.EqualTo("Dummy: attacks"));
@@ -83,6 +85,7 @@ namespace VrFencing.Tests.Drills
         public void EachBehaviorStandsTheDummyWhereItsDrillDoes()
         {
             Assert.That(FreePractice.GetDummyDistance(FreePracticeBehavior.Guard), Is.EqualTo(DummyDistance.Lunge));
+            Assert.That(FreePractice.GetDummyDistance(FreePracticeBehavior.HandFixed), Is.EqualTo(DummyDistance.Lunge));
             Assert.That(FreePractice.GetDummyDistance(FreePracticeBehavior.KeepDistance), Is.EqualTo(DummyDistance.Lunge));
             Assert.That(FreePractice.GetDummyDistance(FreePracticeBehavior.Footwork), Is.EqualTo(DummyDistance.StepLunge));
             Assert.That(FreePractice.GetDummyDistance(FreePracticeBehavior.Attacks), Is.EqualTo(DummyDistance.Extension));

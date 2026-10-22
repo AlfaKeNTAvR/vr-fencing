@@ -41,7 +41,7 @@ MARK_HALF_WINDOW_S = 0.5
 MARK_PRINT_EVERY = 4
 # A frame longer than this is a hitch (72 Hz is 13.9 ms).
 HITCH_S = 0.020
-# A drawn blade this far into a bell or the other blade counts as through it.
+# A drawn blade this far into a bell, a grip or the other blade counts as through it.
 THROUGH_M = -0.002
 
 MARK_COLUMNS = [
@@ -61,6 +61,8 @@ MARK_COLUMNS = [
     "drawn_gap_m",
     "fencer_bell_gap_m",
     "dummy_bell_gap_m",
+    "fencer_handle_gap_m",
+    "dummy_handle_gap_m",
     "dummy_deflection_phase",
     "dummy_action",
     "sword_hand_speed_mps",
@@ -269,6 +271,8 @@ def print_summary(log: BladeLog) -> None:
         ("drawn_gap_m", "Drawn blades"),
         ("fencer_bell_gap_m", "Fencer's bell"),
         ("dummy_bell_gap_m", "Dummy's bell"),
+        ("fencer_handle_gap_m", "Fencer's grip"),
+        ("dummy_handle_gap_m", "Dummy's grip"),
     ):
         lowest, at = find_most(log, column, lowest=True)
         through = sum(1 for row in rows if (number(row, column) or 0.0) < THROUGH_M)
@@ -391,6 +395,8 @@ def plot(log: BladeLog) -> None:
                 ("drawn_gap_m", "drawn blades", 100.0),
                 ("fencer_bell_gap_m", "Fencer's bell", 100.0),
                 ("dummy_bell_gap_m", "Dummy's bell", 100.0),
+                ("fencer_handle_gap_m", "Fencer's grip", 100.0),
+                ("dummy_handle_gap_m", "Dummy's grip", 100.0),
             ],
         ),
         ("Sword hand", "m/s", [("sword_hand_speed_mps", "speed", 1.0)]),

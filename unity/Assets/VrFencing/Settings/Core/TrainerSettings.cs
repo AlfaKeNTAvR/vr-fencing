@@ -10,7 +10,8 @@ namespace VrFencing.Settings
     /// <summary>
     /// What the Dummy does in Free Practice (PER-123), outside any Drill: the Armed Dummy holds its blade and, with no
     /// Reps or scoring, stands in guard, keeps its distance from the Fencer, runs through its footwork, or attacks now and
-    /// then. Picked on the home screen.
+    /// then. Picked on the home screen. <see cref="HandFixed"/> is a test stand for blade on blade contact alone: en garde
+    /// with a hand that never moves or gives, so only the two blades react.
     /// </summary>
     public enum FreePracticeBehavior
     {
@@ -18,6 +19,7 @@ namespace VrFencing.Settings
         KeepDistance,
         Footwork,
         Attacks,
+        HandFixed,
     }
 
     /// <summary>

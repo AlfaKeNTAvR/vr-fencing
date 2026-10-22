@@ -35,7 +35,9 @@ namespace VrFencing.Blade
     /// Outside any Drill it is armed for Free Practice (PER-123, <see cref="FreePractice"/>), whatever the "Dummy blade
     /// in every Drill" Setting says: it holds its en garde line, or, with <see cref="FreePracticeBehavior.Attacks"/>, thrusts
     /// now and then from the test Drill's script (<see cref="FreeAttackSchedule"/>), judged the same way (the clash, the
-    /// Parry, the red flash and hit buzz) but never reported to the runner: no Reps, no score.
+    /// Parry, the red flash and hit buzz) but never reported to the runner: no Reps, no score. With
+    /// <see cref="FreePracticeBehavior.HandFixed"/> it holds the line with a hand that never moves
+    /// (<see cref="ArmedDummyBlade.IsHandFixed"/>): only the blades react.
     /// All rules are in the Core; this only poses, draws, plays and forwards.
     /// </summary>
     internal sealed partial class ArmedDummyPrototype : IDisposable
@@ -176,6 +178,7 @@ namespace VrFencing.Blade
             var wasPressed = _blade.IsPressed;
             var wasReleasing = _blade.Contact.IsReleasing;
             var fractionsBefore = (_blade.Contact.FractionA, _blade.Contact.FractionB);
+            _blade.IsHandFixed = mode == ArmedMode.FreeGuard && FreePractice.IsHandFixed(_getFreePractice());
             _blade.Step(forte, shoulder, gripUp, -System.Numerics.Vector3.UnitY, _settings.Blade, _settings.ArmedDummy.OpponentHand, fencerBlade, fencerDroop, deltaSeconds);
             _dummy.SetArmPose(_blade.GetKnockedArmPose(scriptPose, _dummy.Layout.Hand));
             LogContact(wasPressed, wasReleasing);
@@ -204,15 +207,6 @@ namespace VrFencing.Blade
             if (_mode != ArmedMode.Unarmed)
             {
                 SetMode(ArmedMode.Unarmed);
-            }
-        }
-
-        /// <summary>Adds the Dummy's bell guard, as drawn this frame, to the Fencer's drawn blade's obstacles while armed (PER-120).</summary>
-        public void AddBladeObstacles(System.Collections.Generic.ICollection<BladeObstacle> obstacles)
-        {
-            if (_isActive)
-            {
-                _blade.AddObstacles(obstacles);
             }
         }
 

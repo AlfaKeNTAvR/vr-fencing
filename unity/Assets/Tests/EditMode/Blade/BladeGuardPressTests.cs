@@ -72,38 +72,60 @@ namespace VrFencing.Tests.Blade
         }
 
         [Test]
-        public void APressAcrossTheGuardRestsOnTheBell([Values(1.5f, 2.1f)] float height, [Values(Hand.Right, Hand.Left)] Hand hand)
+        public void APressAcrossTheGuardRestsOnTheBellOrSlidesRoundIt(
+            [Values(1.5f, 2.1f)] float height,
+            [Values(Hand.Right, Hand.Left)] Hand hand,
+            [Values(0.05f, -0.20f)] float depth)
         {
             // The Fencer's blade comes down at 3 m/s across the Dummy's bell (2 cm behind its front face, in front of
-            // the hand) to 20 cm below the Dummy's blade line: the bell stops it 6.75 cm above that line.
+            // the hand) to 5 cm above or 20 cm below the Dummy's blade line. The bell (6.75 cm round that line) is solid
+            // in the contact solver (PER-122): a light press rests on its rim, the blade turning and bowing; a deep one
+            // slides off its front face. Never into it while the blade is the solver's. Pressed 20 cm down, the hand's
+            // blade also runs through the Dummy's hand and forearm behind the bell: that body holds the drawn blade off
+            // the hand (PR 70's lag and leash, bodies only), and that lag is not the solver's to keep out of the bell.
             var scene = new Scene(height, hand);
             var above = 0.15f;
+            var touched = 0;
             for (var frame = 0; frame < 108; frame++)
             {
-                above = Math.Max(-0.20f, above - (3.0f * FrameSeconds));
+                above = Math.Max(depth, above - (3.0f * FrameSeconds));
                 scene.Frame(() => scene.Across(-0.02f / BladePose.BladeLengthMeters, above));
-                Assert.That(scene.FindBellClearance(), Is.GreaterThan(DrawnBlade.BladeRadiusMeters - 0.001f), $"Frame {frame}: the Fencer's drawn blade went into the bell.");
+                touched += scene.Dummy.Contact.IsAOnHiltB ? 1 : 0;
+                if (scene.Fencer.IsDecoupled)
+                {
+                    Assert.That(depth, Is.LessThan(0.0f), $"Frame {frame}: only the deep press reaches the Dummy's hand.");
+                    continue;
+                }
+
+                Assert.That(scene.FindBellClearance(), Is.GreaterThan(DrawnBlade.BladeRadiusMeters - ToleranceMeters), $"Frame {frame}: the Fencer's drawn blade went into the bell.");
             }
 
-            Assert.That(scene.FindBellClearance(), Is.LessThan(DrawnBlade.BladeRadiusMeters + 0.01f), "The drawn blade lies on the bell.");
-            Assert.That(scene.Fencer.IsOnSide || scene.Fencer.IsDecoupled, Is.True, "It bends over the bell, or lags the hand (the bell is solid).");
+            Assert.That(touched, Is.GreaterThan(0), "The blade met the bell.");
+            if (depth > 0.0f)
+            {
+                Assert.That(scene.FindBellClearance(), Is.LessThan(DrawnBlade.BladeRadiusMeters + 0.01f), "A light press lies on the bell.");
+            }
         }
 
         [Test]
-        public void APointOnTheBellStopsOnIt([Values(1.5f, 2.1f)] float height, [Values(Hand.Right, Hand.Left)] Hand hand)
+        public void APointOnTheBellSkidsOffItsFace([Values(1.5f, 2.1f)] float height, [Values(Hand.Right, Hand.Left)] Hand hand)
         {
-            // The Fencer thrusts at the Dummy's guard along its blade, 4 cm above it: the point lands on the bell's face
-            // and pins there instead of reaching the hand behind it.
+            // The Fencer thrusts at the Dummy's guard along its blade, 4 cm above it, and on 5 cm past the bell's face:
+            // the point lands on the face and, end-on, skids along it toward the rim as the hand goes on (PER-122),
+            // never into the bell or the hand behind it, the drawn hilt in the Fencer's hand.
             var scene = new Scene(height, hand);
+            var touched = 0;
             for (var frame = 0; frame < 72; frame++)
             {
                 var reach = Math.Min(0.25f, frame * 1.0f * FrameSeconds);
                 scene.Frame(() => scene.ThrustAtTheGuard(0.20f - reach, 0.04f));
-                Assert.That(scene.FindBellClearance(), Is.GreaterThan(DrawnBlade.BladeRadiusMeters - 0.001f), $"Frame {frame}: the Fencer's drawn blade went into the bell.");
+                Assert.That(scene.FindBellClearance(), Is.GreaterThan(DrawnBlade.BladeRadiusMeters - ToleranceMeters), $"Frame {frame}: the Fencer's drawn blade went into the bell.");
+                Assert.That(scene.Fencer.IsDecoupled, Is.False, $"Frame {frame}: the bell never holds the drawn hilt off the hand.");
+                touched += scene.Dummy.Contact.IsAOnHiltB ? 1 : 0;
             }
 
-            Assert.That(scene.Fencer.Contact.IsPinned, Is.True, "The point is pinned on the bell's face.");
-            Assert.That(scene.FindBellClearance(), Is.LessThan(BladeContactBend.PointRadiusMeters + 0.005f), "On the bell, not stopped short of it.");
+            Assert.That(touched, Is.GreaterThan(0), "The point met the bell.");
+            Assert.That(scene.FindBellClearance(), Is.LessThan(DrawnBlade.BladeRadiusMeters + 0.01f), "Still on the bell, not pushed off it.");
         }
 
         [Test]
@@ -162,8 +184,10 @@ namespace VrFencing.Tests.Blade
             }
 
             TestContext.WriteLine($"Drawn blade step pressed near the Dummy's guard: {fencerMilliseconds:0.000} ms per frame; the Dummy's blade step: {dummyMilliseconds:0.000} ms.");
-            Assert.That(scene.Dummy.IsPressed, Is.True, "Setup: pressed on the Dummy's blade.");
-            Assert.That(fencerMilliseconds + dummyMilliseconds, Is.LessThan(0.40), "Both blades and their contact (PER-122) within the old budgets together: the drawn blade's 0.25 ms and the Dummy's blade's 0.15 ms.");
+            Assert.That(scene.Dummy.Contact.IsNear, Is.True, "Setup: at the Dummy's blade and bell (pressed, or sliding off past every limit).");
+            // 0.40 ms until the hilts became solid in the contact solver (PER-122 fix); pressed by the guard both bells are
+            // looked at too. Still about 3% of a 72 Hz frame.
+            Assert.That(fencerMilliseconds + dummyMilliseconds, Is.LessThan(0.45), "Both blades, their contact and the hilts together, near the Dummy's guard.");
         }
 
         /// <summary>The Armed Dummy en garde and the Fencer's blade, stepped as the app steps them each frame.</summary>
@@ -227,7 +251,6 @@ namespace VrFencing.Tests.Blade
                 }
 
                 _obstacles.Add(BladeObstacle.Floor);
-                Dummy.AddObstacles(_obstacles);
                 FencerWatch.Start();
                 if (Dummy.Contact.IsNear)
                 {

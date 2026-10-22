@@ -157,6 +157,12 @@ namespace VrFencing.Settings
         /// </summary>
         public bool ContactSound { get; set; } = true;
 
+        /// <summary>
+        /// The controller buzzes while the drawn point is pressed on the floor (PER-49). Off by default: Nikita found it
+        /// distracting. The blade still stops and bends on the floor; only that buzz goes. Missing from an older file: off.
+        /// </summary>
+        public bool FloorBuzz { get; set; }
+
         /// <summary>The reach Calibrate grip measured with the chosen grip, or null when it has not been measured yet.</summary>
         public float? GetMeasuredReachMeters()
         {
@@ -183,6 +189,7 @@ namespace VrFencing.Settings
                 ClashHaptic = ClashHaptic,
                 ClashHapticFloor = ClashHapticFloor,
                 ContactSound = ContactSound,
+                FloorBuzz = FloorBuzz,
             };
         }
     }
