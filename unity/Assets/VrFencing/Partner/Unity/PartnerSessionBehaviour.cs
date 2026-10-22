@@ -176,7 +176,34 @@ namespace VrFencing.Partner
             _ = JoinAsync(typedCode);
         }
 
-        /// <summary>Leave: the Host's leaving ends the session for both.</summary>
+        /// <summary>
+        /// "Mirror me" (PER-140): this Fencer's own frame goes through the partner streams on a pretend link and comes back
+        /// as the opponent. No sign-in, no Relay, no network; Leave ends it.
+        /// </summary>
+        public void Mirror()
+        {
+            if (!State.BeginMirror())
+            {
+                return;
+            }
+
+            Debug.Log($"{LogTag} Mirror me: showing this Fencer as the opponent, {State.MirrorDelaySeconds:0.0} s delay.");
+            NotifyChanged();
+        }
+
+        /// <summary>While mirroring: the next delay (PER-140).</summary>
+        public void CycleMirrorDelay()
+        {
+            if (!State.CycleMirrorDelay())
+            {
+                return;
+            }
+
+            Debug.Log($"{LogTag} Mirror delay set to {State.MirrorDelaySeconds:0.0} s.");
+            NotifyChanged();
+        }
+
+        /// <summary>Leave: the Host's leaving ends the session for both; leaving a mirror ends it here.</summary>
         public void Leave()
         {
             _ = LeaveAsync();
@@ -289,13 +316,24 @@ namespace VrFencing.Partner
         /// <summary>Leaves the session; exposed for the online test. The Host tells its Partner it left first.</summary>
         public async Task LeaveAsync()
         {
+            var isMirror = State.IsMirroring;
             if (!State.BeginLeave())
             {
                 return;
             }
 
+            if (isMirror)
+            {
+                // A mirror has no session or network to close (PER-140).
+                State.OnEnded(PartnerEnd.Left, string.Empty);
+                Debug.Log($"{LogTag} Mirror me ended.");
+                NotifyChanged();
+                return;
+            }
+
             NotifyChanged();
             Debug.Log($"{LogTag} Leaving the session.");
+
             await TellPartnerHostLeftAsync();
             await LeaveQuietlyAsync();
             State.OnEnded(PartnerEnd.Left, string.Empty);

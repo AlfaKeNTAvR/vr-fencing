@@ -23,6 +23,8 @@ namespace VrFencing.Partner
                     return "Connected";
                 case PartnerPhase.Leaving:
                     return "Leaving...";
+                case PartnerPhase.Mirroring:
+                    return "Mirror";
                 default:
                     return "Not connected";
             }
@@ -47,9 +49,17 @@ namespace VrFencing.Partner
                         : $"You joined the host (code {JoinCode.FormatForReading(session.Code)})";
                 case PartnerPhase.Leaving:
                     return "Closing the session";
+                case PartnerPhase.Mirroring:
+                    return FormatMirrorStatus(session.MirrorDelaySeconds);
                 default:
-                    return "Host a session, or Join your partner's with their code";
+                    return "Host, Join with your partner's code, or Mirror me";
             }
+        }
+
+        /// <summary>While mirroring (PER-140): what the opponent is, and the delay it comes with.</summary>
+        public static string FormatMirrorStatus(double delaySeconds)
+        {
+            return FormattableString.Invariant($"You as your partner sees you, {delaySeconds:0.0} s late. Not judged");
         }
 
         /// <summary>On the Host, when its Partner dropped or left: the page's message while it waits for a rejoin (PER-84).</summary>
@@ -102,6 +112,11 @@ namespace VrFencing.Partner
         /// <summary>The Home page's Partner button: names the state when in a session.</summary>
         public static string FormatHomeButton(PartnerSession session)
         {
+            if (session.IsMirroring)
+            {
+                return "Partner: mirror";
+            }
+
             return session.Phase == PartnerPhase.Connected ? "Partner: on" : session.IsInSession ? "Partner: ..." : "Partner";
         }
     }

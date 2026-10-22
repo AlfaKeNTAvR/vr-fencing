@@ -142,7 +142,7 @@ namespace VrFencing.Partner
 
         private void LateUpdate()
         {
-            var view = _link != null && _link.IsConnected ? _link.Link.Sample(Time.realtimeSinceStartupAsDouble) : null;
+            var view = _link != null && _link.IsStreaming ? _link.Link.Sample(Time.realtimeSinceStartupAsDouble) : null;
             DrawnView = view;
             SetShown(view != null);
             if (view == null)

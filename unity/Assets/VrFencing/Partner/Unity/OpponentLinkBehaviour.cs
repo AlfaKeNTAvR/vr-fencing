@@ -18,6 +18,12 @@ namespace VrFencing.Partner
     /// <c>NetworkCharacterRetargeter</c> stream: the rig is posed on joints (PER-78), and this keeps the format in the
     /// Core where it is tested.
     /// </para>
+    /// <para>
+    /// "Mirror me" (PER-140): with no partner, the same messages go into a <see cref="MirrorLoopback"/> instead of the
+    /// network and come back after the chosen delay into <see cref="Link"/>, so this Fencer sees their own body and blade
+    /// exactly as a partner's headset would draw them. Only the transport differs; the packing, unpacking, clock,
+    /// streams, legs and the Strip's turn are the partner path's own.
+    /// </para>
     /// </summary>
     [RequireComponent(typeof(PartnerSessionBehaviour))]
     // After the camera rig and body tracking have moved this frame (body tracking runs at -50).
@@ -47,13 +53,14 @@ namespace VrFencing.Partner
         private readonly SendSchedule _handSchedule = new SendSchedule(HandRatePerSecond);
         private readonly HandMotion _handMotion = new HandMotion();
         private readonly FootworkStateTracker _footwork = new FootworkStateTracker();
+        private readonly MirrorLoopback _loopback = new MirrorLoopback(MirrorDelay.DefaultSeconds);
 
         private PartnerSessionBehaviour _partner;
         private NetworkManager _network;
         private CustomMessagingManager _registeredWith;
         private FencerInfo? _sentInfo;
         private double _infoSentAt = double.NegativeInfinity;
-        private bool _wasConnected;
+        private StreamRoute _route = StreamRoute.None;
         private bool _hasLoggedFirstPose;
         private int _loggedRejectedMessages;
         private double _holdSendingUntilSeconds = double.NegativeInfinity;
@@ -66,6 +73,12 @@ namespace VrFencing.Partner
 
         /// <summary>Connected to the partner: the streams run.</summary>
         public bool IsConnected => _partner != null && _partner.State.Phase == PartnerPhase.Connected;
+
+        /// <summary>"Mirror me" (PER-140): the streams run through the loopback, back to this app.</summary>
+        public bool IsMirroring => _partner != null && _partner.State.IsMirroring;
+
+        /// <summary>The streams run (to a partner or mirrored): <see cref="Link"/> has an opponent to draw.</summary>
+        public bool IsStreaming => _route != StreamRoute.None;
 
         /// <summary>This Fencer's footwork as read this frame (PER-112), sent with each body.</summary>
         public FootworkState SentFootwork => _footwork.State;
@@ -117,39 +130,86 @@ namespace VrFencing.Partner
                 _footwork.Update(now, Local.Head?.Position, Local.Body.Get(VrFencing.Dummy.SkeletonJoint.HipCenter), Local.HeightMeters, Local.Hand);
             }
 
-            var isConnected = IsConnected && _network != null && _network.IsListening && _network.CustomMessagingManager != null;
-            if (isConnected != _wasConnected)
+            var route = ChooseRoute();
+            if (route != _route)
             {
-                OnConnectionChanged(isConnected);
+                OnRouteChanged(route);
             }
 
-            if (!isConnected)
+            if (route == StreamRoute.None)
             {
                 return;
             }
 
-            if (_registeredWith != _network.CustomMessagingManager)
+            if (route == StreamRoute.Network && _registeredWith != _network.CustomMessagingManager)
             {
                 Register();
             }
 
-            LogRejectedMessages();
-            if (Local == null || now < _holdSendingUntilSeconds)
+            if (route == StreamRoute.Mirror && _loopback.SetDelay(_partner.State.MirrorDelaySeconds))
             {
-                return;
+                // A new delay is a new link: the receiver's clock and streams start over (the opponent blinks out for it).
+                Debug.Log($"{LogTag} Mirror delay now {_loopback.DelaySeconds:0.0} s; the mirrored link starts over.");
+                ResetStreams();
             }
 
-            SendInfoIfDue(now);
-            SendHandIfDue(now);
-            if (_bodySchedule.TakeIfDue(now))
+            LogRejectedMessages();
+            if (Local != null && now >= _holdSendingUntilSeconds)
             {
-                Send(PartnerMessages.EncodeBody(new BodySample(now, Local.Body.WithFootwork(_footwork.State))), NetworkDelivery.UnreliableSequenced);
+                SendInfoIfDue(now);
+                SendHandIfDue(now);
+                if (_bodySchedule.TakeIfDue(now))
+                {
+                    Send(PartnerMessages.EncodeBody(new BodySample(now, Local.Body.WithFootwork(_footwork.State))), NetworkDelivery.UnreliableSequenced, now);
+                }
+            }
+
+            if (route == StreamRoute.Mirror)
+            {
+                foreach (var message in _loopback.TakeDue(now))
+                {
+                    Receive(message, now);
+                }
             }
         }
 
-        private void OnConnectionChanged(bool isConnected)
+        /// <summary>Where the streams go this frame: to the connected partner, round the mirror's loopback, or nowhere.</summary>
+        private StreamRoute ChooseRoute()
         {
-            _wasConnected = isConnected;
+            if (IsMirroring)
+            {
+                return StreamRoute.Mirror;
+            }
+
+            var isConnected = IsConnected && _network != null && _network.IsListening && _network.CustomMessagingManager != null;
+            return isConnected ? StreamRoute.Network : StreamRoute.None;
+        }
+
+        private void OnRouteChanged(StreamRoute route)
+        {
+            var wasNetwork = _route == StreamRoute.Network;
+            _route = route;
+            _loopback.Clear();
+            ResetStreams();
+            switch (route)
+            {
+                case StreamRoute.Network:
+                    Debug.Log($"{LogTag} Streaming to the partner: body {BodyRatePerSecond} and hand {HandRatePerSecond} per second{(IsSendingReplay ? ", from the Fencer replay" : string.Empty)}.");
+                    break;
+                case StreamRoute.Mirror:
+                    Debug.Log($"{LogTag} Mirroring this Fencer through the partner streams, {_partner.State.MirrorDelaySeconds:0.0} s delay{(IsSendingReplay ? ", from the Fencer replay" : string.Empty)}.");
+                    break;
+            }
+
+            if (wasNetwork)
+            {
+                Unregister();
+            }
+        }
+
+        /// <summary>Starts the streams over: the receiver forgets the opponent, and everything is sent afresh.</summary>
+        private void ResetStreams()
+        {
             _link.Clear();
             _sentInfo = null;
             _infoSentAt = double.NegativeInfinity;
@@ -157,14 +217,6 @@ namespace VrFencing.Partner
             _handSchedule.Reset();
             _handMotion.Reset();
             _hasLoggedFirstPose = false;
-            if (isConnected)
-            {
-                Debug.Log($"{LogTag} Streaming to the partner: body {BodyRatePerSecond} and hand {HandRatePerSecond} per second{(IsSendingReplay ? ", from the Fencer replay" : string.Empty)}.");
-            }
-            else
-            {
-                Unregister();
-            }
         }
 
         private void SendInfoIfDue(double now)
@@ -185,7 +237,7 @@ namespace VrFencing.Partner
                 Debug.Log($"{LogTag} Sending this Fencer: Strip {info.Strip.LengthMeters:0.00} m (rear end {info.Strip.RearEndZ:0.00} m), height {info.HeightMeters:0.00} m, {info.Hand}-handed.");
             }
 
-            Send(PartnerMessages.EncodeInfo(info), NetworkDelivery.ReliableSequenced);
+            Send(PartnerMessages.EncodeInfo(info), NetworkDelivery.ReliableSequenced, now);
             _sentInfo = info;
             _infoSentAt = now;
         }
@@ -216,11 +268,18 @@ namespace VrFencing.Partner
                 GripGeometry.GetActiveAngles(blade),
                 blade.SetSagittaMeters,
                 blade.Flex);
-            Send(PartnerMessages.EncodeHand(sample), NetworkDelivery.UnreliableSequenced);
+            Send(PartnerMessages.EncodeHand(sample), NetworkDelivery.UnreliableSequenced, now);
         }
 
-        private void Send(byte[] message, NetworkDelivery delivery)
+        /// <summary>Sends one partner message: to the partner over the network, or into the mirror's loopback.</summary>
+        private void Send(byte[] message, NetworkDelivery delivery, double nowSeconds)
         {
+            if (_route == StreamRoute.Mirror)
+            {
+                _loopback.Send(message, nowSeconds);
+                return;
+            }
+
             var messaging = _network.CustomMessagingManager;
             using (var writer = new FastBufferWriter(WriterCapacityBytes, Allocator.Temp))
             {
@@ -281,7 +340,13 @@ namespace VrFencing.Partner
                 }
             }
 
-            if (_link.Receive(message, Time.realtimeSinceStartupAsDouble) && !_hasLoggedFirstPose && _link.Partner.HasValue)
+            Receive(message, Time.realtimeSinceStartupAsDouble);
+        }
+
+        /// <summary>One message from the partner (or back from the mirror) into the link; the first readable pose is logged.</summary>
+        private void Receive(byte[] message, double nowSeconds)
+        {
+            if (_link.Receive(message, nowSeconds) && !_hasLoggedFirstPose && _link.Partner.HasValue)
             {
                 var partner = _link.Partner.Value;
                 var bout = _link.Bout;
@@ -300,6 +365,18 @@ namespace VrFencing.Partner
 
             Debug.LogWarning($"{LogTag} Dropped {_link.RejectedMessages - _loggedRejectedMessages} unreadable partner message(s) ({_link.RejectedMessages} in all).");
             _loggedRejectedMessages = _link.RejectedMessages;
+        }
+
+        /// <summary>Where this app's partner messages go.</summary>
+        private enum StreamRoute
+        {
+            None,
+
+            /// <summary>To the connected partner, over Netcode.</summary>
+            Network,
+
+            /// <summary>"Mirror me": into the loopback and back into this app's own <see cref="OpponentLink"/>.</summary>
+            Mirror,
         }
     }
 }

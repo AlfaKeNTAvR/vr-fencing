@@ -25,6 +25,12 @@ namespace VrFencing.Partner
 
         /// <summary>Leaving the session.</summary>
         Leaving,
+
+        /// <summary>
+        /// "Mirror me" (PER-140): no partner and no network; this Fencer's own frame goes through the partner streams on
+        /// a pretend link with a delay and comes back as the opponent. Nothing is judged and there are no bout calls.
+        /// </summary>
+        Mirroring,
     }
 
     /// <summary>This app's side of a session.</summary>
@@ -175,7 +181,13 @@ namespace VrFencing.Partner
         /// <summary>Whole seconds left to rejoin, as of the last <see cref="Tick"/>; null when not waiting for a rejoin.</summary>
         public int? RejoinSecondsLeft => IsWaitingForRejoin && _shownRejoinSeconds >= 0 ? _shownRejoinSeconds : (int?)null;
 
-        /// <summary>A session is starting, up, or being left: solo Drills wait, and the Dummy is hidden.</summary>
+        /// <summary>
+        /// The delay of a "Mirror me" session (PER-140): one of <see cref="MirrorDelay.Options"/>, kept from one mirror
+        /// session to the next while the app runs.
+        /// </summary>
+        public double MirrorDelaySeconds { get; private set; } = MirrorDelay.DefaultSeconds;
+
+        /// <summary>A session is starting, up, or being left, or mirroring: solo Drills wait, and the Dummy is hidden.</summary>
         public bool IsInSession => Phase != PartnerPhase.Idle && Phase != PartnerPhase.EnteringCode;
 
         public bool AreSoloDrillsAllowed => !IsInSession;
@@ -189,7 +201,12 @@ namespace VrFencing.Partner
 
         public bool CanJoin => Phase == PartnerPhase.Idle;
 
-        public bool CanLeave => Phase == PartnerPhase.WaitingForPartner || Phase == PartnerPhase.Connected;
+        /// <summary>"Mirror me" is offered when no session is on (PER-140).</summary>
+        public bool CanMirror => Phase == PartnerPhase.Idle;
+
+        public bool IsMirroring => Phase == PartnerPhase.Mirroring;
+
+        public bool CanLeave => Phase == PartnerPhase.WaitingForPartner || Phase == PartnerPhase.Connected || Phase == PartnerPhase.Mirroring;
 
         /// <summary>Only the Host picks the mode, once its session is up.</summary>
         public bool CanSwitchMode =>
@@ -311,6 +328,37 @@ namespace VrFencing.Partner
             return pausedAt.HasValue
                    && (Phase == PartnerPhase.Connected || Phase == PartnerPhase.WaitingForPartner)
                    && wallSeconds - pausedAt.Value >= SleepEndsSessionSeconds;
+        }
+
+        /// <summary>
+        /// "Mirror me" pressed (PER-140): mirroring starts at once, as there is no network to wait for. Returns false
+        /// (nothing changes) when not offered. Leave ends it like a session.
+        /// </summary>
+        public bool BeginMirror()
+        {
+            if (!CanMirror)
+            {
+                return false;
+            }
+
+            Phase = PartnerPhase.Mirroring;
+            Role = PartnerRole.None;
+            Code = string.Empty;
+            Mode = PartnerMode.Bout;
+            Message = string.Empty;
+            return true;
+        }
+
+        /// <summary>The delay button while mirroring: the next of <see cref="MirrorDelay.Options"/>. False when not mirroring.</summary>
+        public bool CycleMirrorDelay()
+        {
+            if (!IsMirroring)
+            {
+                return false;
+            }
+
+            MirrorDelaySeconds = MirrorDelay.Next(MirrorDelaySeconds);
+            return true;
         }
 
         /// <summary>Join pressed: the keypad opens.</summary>

@@ -359,7 +359,7 @@ namespace VrFencing.UI
             _home = new HomeScreen(_mainPanel, StartDrill, () => OpenPage(MenuScreen.Partner), () => OpenPage(MenuScreen.Settings),
                 () => OpenPage(MenuScreen.History), ReplaceStrip, CycleTolerance, CycleFreePractice);
             _partnerScreen = new PartnerScreen(_mainPanel, () => _partner?.Host(), () => _partner?.BeginEnteringCode(), code => _partner?.Join(code),
-                () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), ResetPairedPracticeTally, () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
+                () => _partner?.CancelEnteringCode(), () => _partner?.SwitchMode(), ResetPairedPracticeTally, () => _partner?.Mirror(), () => _partner?.CycleMirrorDelay(), () => _partner?.Leave(), () => OpenPage(MenuScreen.Home));
             _settingsScreen = new SettingsScreen(_mainPanel, ChangeSetting, OpenSettingsGroup, () => OpenPage(MenuScreen.Grip), GoBackFromSettings);
             _gripScreen = new GripScreen(_mainPanel, StartCalibration, ResetGripAngles, () => OpenSettingsGroup(SettingGroup.Blade));
             _calibrationTarget = new CalibrationTargetView(transform);
