@@ -105,7 +105,12 @@ namespace VrFencing.Partner
             _myBlade = _myBlade != null ? _myBlade : FindFirstObjectByType<BladeBehaviour>();
             _settings = SettingsFile.Load();
             _propertyBlock = new MaterialPropertyBlock();
+            BuildRoot();
+        }
 
+        /// <summary>The opponent's objects, hidden: a root in the active scene with the blade and the connection icon under it.</summary>
+        private void BuildRoot()
+        {
             _root = new GameObject("Opponent").transform;
             _bladeMount = new GameObject("Opponent Blade Mount").transform;
             _bladeMount.SetParent(_root, false);
@@ -113,6 +118,34 @@ namespace VrFencing.Partner
             _bladeVisual.SetVisible(false);
             _connectionIcon = new ConnectionIconView(_root);
             _root.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// The root lives in the active scene while this object may outlive it (the NetworkManager keeps its object across
+        /// scene loads): when a scene change destroyed the root, everything under it is built again, hidden, instead of
+        /// touching destroyed objects every frame (PER-143).
+        /// </summary>
+        private void RebuildRootIfDestroyed()
+        {
+            if (_root != null)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"{LogTag} The opponent's objects were destroyed with their scene; building them again.");
+            _bladeVisual?.Dispose();
+            if (_myBlade != null)
+            {
+                _myBlade.SetExtraObstacles(null);
+            }
+
+            _rig = null;
+            _rigBuiltFor = null;
+            _isShown = false;
+            _isBladeShown = false;
+            _drawnBlade.Reset();
+            _fade = null;
+            BuildRoot();
         }
 
         private void OnEnable()
@@ -142,6 +175,7 @@ namespace VrFencing.Partner
 
         private void LateUpdate()
         {
+            RebuildRootIfDestroyed();
             var view = _link != null && _link.IsStreaming ? _link.Link.Sample(Time.realtimeSinceStartupAsDouble) : null;
             DrawnView = view;
             SetShown(view != null);
