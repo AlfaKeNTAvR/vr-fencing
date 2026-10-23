@@ -27,7 +27,7 @@ namespace VrFencing.Partner
     /// streams. Every claim, verdict, light and flow change logs a <c>[Bout]</c> line.
     /// </summary>
     [RequireComponent(typeof(PartnerSessionBehaviour))]
-    // After the opponent view has drawn this frame's opponent (110).
+    // After the opponent view (-30) and this Fencer's Blade (0) have drawn this frame's blades.
     [DefaultExecutionOrder(120)]
     public sealed class BoutBehaviour : MonoBehaviour
     {
@@ -53,6 +53,7 @@ namespace VrFencing.Partner
 
         private readonly OpponentTouchSensor _sensor = new OpponentTouchSensor();
         private readonly TallyNumbering _tallyNumbering = new TallyNumbering();
+        private readonly ExtraLinkDelay _extraDelay = new ExtraLinkDelay();
 
         private PartnerSessionBehaviour _partner;
         private NetworkManager _network;
@@ -155,10 +156,12 @@ namespace VrFencing.Partner
                 _tallyNumbering.OnReconnected(_link.Tally.IsEmpty);
             }
 
+            FlushExtraDelay(now);
             _link.SetMyRules(new BoutRules(_settings.Blade.TouchPressure, _settings.BoutDoubleWindowSeconds));
             _link.SetMode(_partner.State.Mode, now);
             ReadStance();
             DetectTouches(now);
+            StepReplay(now);
             _link.Tick(now);
             SendOutgoing();
             FlushLog();
@@ -171,6 +174,12 @@ namespace VrFencing.Partner
             if (_link.TakeBeingTouched() && _blade != null)
             {
                 _blade.PlayBeingTouched();
+            }
+
+            if (_link.TakeMyTouchParried() && _blade != null)
+            {
+                // PER-145: the Touch this Fencer felt was ruled Parried; the box says so too.
+                _blade.PlayMyTouchParried();
             }
 
             SaveEndedTallies();
@@ -199,6 +208,7 @@ namespace VrFencing.Partner
         {
             _wasConnected = isConnected;
             _sensor.Reset();
+            _extraDelay.Clear();
             _loggedRejectedMessages = 0;
             if (isConnected)
             {
@@ -294,14 +304,36 @@ namespace VrFencing.Partner
             _link.SetMyStance(stance, FencerStance.GetBodiesApartMeters(local.Body, local.Head?.Position, opponentBody));
         }
 
-        /// <summary>This Fencer's blade against the opponent as drawn this frame; Touches are claimed, the rest only felt.</summary>
+        /// <summary>
+        /// On the Host, the replay judge (PER-145): this frame's own hand and body go into its history, and it steps on
+        /// as far as the partner's streams have come, on the Host's clock by the synced offset.
+        /// </summary>
+        private void StepReplay(double now)
+        {
+            var replay = _link.Replay;
+            var local = _opponentLink != null ? _opponentLink.Local : null;
+            if (replay == null || local == null)
+            {
+                return;
+            }
+
+            replay.AddHostFrame(local.TimeSeconds, local.SwordController, local.Blade, local.Hand, local.Body, local.HeightMeters);
+            replay.Advance(now, _link.Clock.OffsetSeconds, _opponentLink.Link);
+        }
+
+        /// <summary>
+        /// This Fencer's blade against the opponent as drawn this frame; Touches are claimed, the rest only felt. The blade
+        /// is the one the Blade solved against the partner's (PER-145): a parry seen here turns the point here.
+        /// </summary>
         private void DetectTouches(double now)
         {
             var local = _opponentLink != null ? _opponentLink.Local : null;
             var view = _opponentView != null ? _opponentView.DrawnView : null;
-            BladeSegment? blade = local != null && local.SwordController.HasValue
-                ? OpponentTouchSensor.GetBlade(local.SwordController.Value, local.Blade, local.Hand)
-                : (BladeSegment?)null;
+            BladeSegment? blade = _blade != null && _blade.isActiveAndEnabled
+                ? _blade.JudgedBladeOnStrip
+                : local != null && local.SwordController.HasValue
+                    ? OpponentTouchSensor.GetBlade(local.SwordController.Value, local.Blade, local.Hand)
+                    : (BladeSegment?)null;
             var body = view != null && !view.IsBodyStale ? view.Body : null;
             var rules = TouchRules.For(_settings.Blade.TouchRule, _link.Rules.Pressure);
             foreach (var bladeEvent in _sensor.Step(now, blade, body, view?.Info.HeightMeters ?? 0.0f, rules))
@@ -357,7 +389,12 @@ namespace VrFencing.Partner
                 _link.Box.IsOpponentsLampLit(now),
                 ScoringBox.FormatPing(_link.Clock.RoundTripSeconds));
             var info = _link.HasHostFlow ? BoutCall.FormatInfo(_link.FlowState, _link.Me, _link.Tally, _isOffOwnStrip) : string.Empty;
-            _box.DrawFlow(_link.Announcer.Word, _link.Announcer.Reason, info);
+
+            // A Parried verdict (PER-145) shows under the call, with any halt's reason.
+            var parried = _link.Box.GetParriedNote(now);
+            var reason = _link.Announcer.Reason;
+            reason = string.IsNullOrEmpty(parried) ? reason : string.IsNullOrEmpty(reason) ? parried : reason + "\n" + parried;
+            _box.DrawFlow(_link.Announcer.Word, reason, info);
         }
 
         /// <summary>The bout's En Garde Lines drawn on this Fencer's Strip; in Paired Practice, the opponent faded at corps-a-corps.</summary>
@@ -441,6 +478,37 @@ namespace VrFencing.Partner
 
         private void Send(byte[] message, NetworkDelivery delivery)
         {
+            if (_extraDelay.IsActive)
+            {
+                // The PC Editor's slower link (PER-145): pings, claims and lights wait as the streams do, both ways.
+                _extraDelay.Send(message, delivery == NetworkDelivery.ReliableSequenced, Time.realtimeSinceStartupAsDouble);
+                return;
+            }
+
+            SendNow(message, delivery);
+        }
+
+        /// <summary>The Editor's extra delay (PER-145): follows its setting, and sends and receives what is due.</summary>
+        private void FlushExtraDelay(double nowSeconds)
+        {
+            if (_extraDelay.DelaySeconds != _partner.ExtraLinkDelaySeconds)
+            {
+                _extraDelay.SetDelay(_partner.ExtraLinkDelaySeconds);
+            }
+
+            foreach (var due in _extraDelay.TakeDueOutgoing(nowSeconds))
+            {
+                SendNow(due.Message, due.IsReliable ? NetworkDelivery.ReliableSequenced : NetworkDelivery.Unreliable);
+            }
+
+            foreach (var message in _extraDelay.TakeDueIncoming(nowSeconds))
+            {
+                _link?.Receive(message, nowSeconds);
+            }
+        }
+
+        private void SendNow(byte[] message, NetworkDelivery delivery)
+        {
             var messaging = _network.CustomMessagingManager;
             using (var writer = new FastBufferWriter(WriterCapacityBytes, Allocator.Temp))
             {
@@ -503,6 +571,12 @@ namespace VrFencing.Partner
 
             if (_link == null)
             {
+                return;
+            }
+
+            if (_extraDelay.IsActive)
+            {
+                _extraDelay.Receive(message, Time.realtimeSinceStartupAsDouble);
                 return;
             }
 

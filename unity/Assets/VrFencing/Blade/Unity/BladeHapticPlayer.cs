@@ -20,6 +20,7 @@ namespace VrFencing.Blade
         private readonly Dictionary<HapticPattern, ClipPlayer> _clashPlayers = new Dictionary<HapticPattern, ClipPlayer>();
         private ClipPlayer _beingTouchedPlayer;
         private ClipPlayer _armedDummyHitPlayer;
+        private ClipPlayer _parriedPlayer;
         private float _eventEndsAt = float.NegativeInfinity;
         private bool _hasFailed;
 
@@ -140,6 +141,29 @@ namespace VrFencing.Blade
             PlayOnBothControllers(ref _armedDummyHitPlayer, BladeHaptics.ArmedDummyHit);
         }
 
+        /// <summary>
+        /// This Fencer's Touch was ruled Parried (<see cref="BladeHaptics.Parried"/>, PER-145) on the sword hand at full
+        /// strength; it replaces whatever is playing.
+        /// </summary>
+        public void PlayParried(Hand swordHand)
+        {
+            if (_hasFailed)
+            {
+                return;
+            }
+
+            try
+            {
+                _parriedPlayer ??= new ClipPlayer(BladeHaptics.BuildClipJson(BladeHaptics.Parried), BladeHaptics.Parried);
+                StartPlaying(_parriedPlayer, 1.0f, swordHand);
+                _eventEndsAt = Time.time + _parriedPlayer.DurationSeconds;
+            }
+            catch (Exception error)
+            {
+                Fail(error);
+            }
+        }
+
         private void PlayOnBothControllers(ref ClipPlayer player, IReadOnlyList<HapticSegment> segments)
         {
             if (_hasFailed)
@@ -199,6 +223,8 @@ namespace VrFencing.Blade
             _beingTouchedPlayer = null;
             _armedDummyHitPlayer?.Dispose();
             _armedDummyHitPlayer = null;
+            _parriedPlayer?.Dispose();
+            _parriedPlayer = null;
             _playing = null;
         }
 
