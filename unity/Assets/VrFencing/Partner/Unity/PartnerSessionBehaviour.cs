@@ -207,6 +207,25 @@ namespace VrFencing.Partner
             NotifyChanged();
         }
 
+        /// <summary>While mirroring: the next link noise, jitter and loss (PER-145).</summary>
+        public void CycleMirrorNoise()
+        {
+            if (!State.CycleMirrorNoise())
+            {
+                return;
+            }
+
+            Debug.Log($"{LogTag} Mirror link now {MirrorLinkNoise.FormatLabel(State.MirrorNoise)}.");
+            NotifyChanged();
+        }
+
+        /// <summary>
+        /// PC Editor only (PER-145): extra seconds every partner message this app sends or receives waits, each way, so a
+        /// headset sees this app's Fencer as over a slower link (the bout's pings, claims and lights too, so the synced
+        /// clock stays right). 0 for none.
+        /// </summary>
+        public double ExtraLinkDelaySeconds { get; set; }
+
         /// <summary>Leave: the Host's leaving ends the session for both; leaving a mirror ends it here.</summary>
         public void Leave()
         {

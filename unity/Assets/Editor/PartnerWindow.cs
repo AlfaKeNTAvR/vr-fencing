@@ -13,6 +13,9 @@ namespace VrFencing.EditorTools
     {
         private const double LagSpikeSeconds = 2.0;
 
+        // The Editor's extra link delay goes up past the slowest link the research's test plan covers (200 ms).
+        private const int MaxExtraLinkDelayMilliseconds = 500;
+
         private string _code = string.Empty;
         private string _versionOverride = string.Empty;
 
@@ -100,7 +103,18 @@ namespace VrFencing.EditorTools
                 {
                     partner.CycleMirrorDelay();
                 }
+
+                if (GUILayout.Button($"Mirror link: {MirrorLinkNoise.FormatLabel(session.MirrorNoise)} (cycle)"))
+                {
+                    partner.CycleMirrorNoise();
+                }
             }
+
+            // PER-145: the link to a real partner made slower by this much each way, so the headset sees this app's Fencer late.
+            var extraMilliseconds = EditorGUILayout.IntSlider(
+                new GUIContent("Extra delay each way (ms)", "Every partner message this app sends or receives (hand, body, info, pings, claims, lights) waits this long more, so the round trip grows by twice it. 0 for none."),
+                (int)System.Math.Round(partner.ExtraLinkDelaySeconds * 1000.0), 0, MaxExtraLinkDelayMilliseconds);
+            partner.ExtraLinkDelaySeconds = extraMilliseconds / 1000.0;
 
             using (new EditorGUI.DisabledScope(!session.CanSwitchMode))
             {
