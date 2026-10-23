@@ -93,6 +93,9 @@ namespace VrFencing.Partner
         /// <summary>The newest sample, for its grip settings; null before the first.</summary>
         public HandSample? Newest => _samples.Count > 0 ? _samples[_samples.Count - 1] : (HandSample?)null;
 
+        /// <summary>The oldest sample kept; null before the first.</summary>
+        public HandSample? Oldest => _samples.Count > 0 ? _samples[0] : (HandSample?)null;
+
         /// <summary>Keeps a sample; one older than the newest (it came late, out of order) is dropped.</summary>
         public void Add(HandSample sample)
         {
@@ -286,6 +289,15 @@ namespace VrFencing.Partner
             var body = Interpolate(time);
             var footwork = Interpolate(time + FootworkLookAhead.Seconds).Footwork;
             return body.WithFootwork(footwork ?? body.Footwork);
+        }
+
+        /// <summary>
+        /// The body as it was at <paramref name="senderSeconds"/> on the partner's clock, interpolated only (held at the
+        /// ends), for the Host's replay judge (PER-145); null before the first sample.
+        /// </summary>
+        public FencerBody SampleAt(double senderSeconds)
+        {
+            return _samples.Count == 0 ? null : Interpolate(senderSeconds);
         }
 
         private FencerBody Interpolate(double time)

@@ -15,22 +15,23 @@ namespace VrFencing.Partner
     /// joints, built for their height and sword hand. Its legs are built on the partner's footwork (PER-112,
     /// <see cref="RemoteFencerLegs"/>), not Meta's generated legs, so they show as solid as the rest; the whole body is a
     /// ghost while it is not coming (<see cref="OpponentFade"/>);</item>
-    /// <item>the blade: built from the partner's hand and grip settings and drawn with the same droop, flex and bend code as
-    /// this Fencer's own (<see cref="DrawnBlade"/>), bending against this Fencer's body, the floor and this Fencer's
-    /// blade. Cosmetic only: no Touch is judged here.</item>
+    /// <item>the blade: built from the partner's hand and grip settings (<see cref="HeldBlade"/>) and handed to this
+    /// Fencer's Blade (<see cref="IPartnerBladeSource"/>, PER-145), which solves both blades in one
+    /// <see cref="BladeContactSolver"/> as against the Armed Dummy and calls back to draw the partner's, with the same
+    /// droop, flex and bend code as this Fencer's own, keeping out of this Fencer's body and the floor. Without a Blade in
+    /// the scene (the PC Editor's replay) the partner's blade is drawn alone, as their hand holds it.</item>
     /// </list>
-    /// It also hands the opponent's body capsules to this Fencer's blade, so it bends on the opponent as on the Dummy.
-    /// Everything is placed in this Fencer's Strip frame (the room's origin when no Strip is placed).
+    /// It also hands the opponent's body capsules to this Fencer's blade, so it bends on the opponent as on the Dummy,
+    /// and logs where this headset's view of the blades' contact and the partner's own report disagree
+    /// (<see cref="ContactViewAgreement"/>). Everything is placed in this Fencer's Strip frame (the room's origin when no
+    /// Strip is placed).
     /// </summary>
-    // After the link has read and received this frame.
-    [DefaultExecutionOrder(110)]
-    public sealed class OpponentViewBehaviour : MonoBehaviour
+    // After the link has read and received this frame (-40), before this Fencer's Blade (0) solves both blades.
+    [DefaultExecutionOrder(-30)]
+    public sealed class OpponentViewBehaviour : MonoBehaviour, IPartnerBladeSource
     {
         private const string LogTag = "[Opponent]";
         private const string MaterialResourcePath = "VrFencingDummy";
-
-        /// <summary>This Fencer's blade as an obstacle for the opponent's: about the blade's half-width at the forte.</summary>
-        private const float MyBladeRadiusMeters = 0.005f;
 
         // The Dummy's silhouette color (DummyBehaviour), so the opponent reads as the same kind of figure.
         private static readonly Color SilhouetteColor = new Color(0.85f, 0.9f, 1.0f);
@@ -54,9 +55,13 @@ namespace VrFencing.Partner
 
         private readonly List<Capsule> _capsules = new List<Capsule>(FencerBodyShape.CapsuleCount);
         private readonly List<BladeObstacle> _opponentBodyObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount);
-        private readonly List<BladeObstacle> _opponentBladeObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount + 2);
+        private readonly List<BladeObstacle> _opponentBladeObstacles = new List<BladeObstacle>(FencerBodyShape.CapsuleCount + 1);
         private readonly DrawnBlade _drawnBlade = new DrawnBlade();
         private readonly BodyRigTargets _rigTargets = new BodyRigTargets();
+        private readonly ContactViewAgreement _agreement = new ContactViewAgreement();
+        private HeldBlade _partnerBlade;
+        private bool _hasPartnerBlade;
+        private TrackedPose _stripInRoom = new TrackedPose(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
 
         private Transform _root;
         private Transform _bladeMount;
@@ -91,6 +96,43 @@ namespace VrFencing.Partner
         /// <summary>The opponent as drawn this frame, in this Fencer's Strip frame; null while hidden. The bout judges Touches on it (PER-82).</summary>
         public OpponentView DrawnView { get; private set; }
 
+        /// <inheritdoc />
+        public bool IsMirror => _link != null && _link.IsMirroring;
+
+        /// <inheritdoc />
+        public TrackedPose StripInRoom => _stripInRoom;
+
+        /// <inheritdoc />
+        public bool TryGetPartnerBlade(out HeldBlade blade, out IReadOnlyList<BladeObstacle> obstacles)
+        {
+            blade = _partnerBlade;
+            obstacles = _opponentBladeObstacles;
+            return _hasPartnerBlade && _isShown;
+        }
+
+        /// <inheritdoc />
+        public BladeContactReport? GetPartnerReport()
+        {
+            return _link != null && _isShown ? _link.Link.GetPartnerContactReport(Time.realtimeSinceStartupAsDouble) : null;
+        }
+
+        /// <inheritdoc />
+        public void DrawPartnerBlade(PartnerBladeContact contact, TrackedPose stripInRoom)
+        {
+            if (contact == null || !_isBladeShown || _root == null)
+            {
+                return;
+            }
+
+            _bladeVisual.Draw(contact.PartnerDrawn, stripInRoom, Time.time);
+            var solver = contact.Contact;
+            _agreement.Step(Time.realtimeSinceStartupAsDouble, contact.HasStepped && solver.IsInContact, solver.Side ?? System.Numerics.Vector3.Zero, GetPartnerReport());
+            foreach (var line in _agreement.TakeLog())
+            {
+                Debug.Log(line);
+            }
+        }
+
         /// <summary>Takes changed Settings: the body's opacity, and this Fencer's height for their own capsules.</summary>
         public void ApplySettings(TrainerSettings settings)
         {
@@ -107,6 +149,11 @@ namespace VrFencing.Partner
             _settings = SettingsFile.Load();
             _propertyBlock = new MaterialPropertyBlock();
             BuildRoot();
+            if (_myBlade != null)
+            {
+                // PER-145: this Fencer's Blade solves both blades and calls back to draw the partner's.
+                _myBlade.SetPartnerBladeSource(this);
+            }
         }
 
         /// <summary>The opponent's objects, hidden: a root in the active scene with the blade and the connection icon under it.</summary>
@@ -180,12 +227,14 @@ namespace VrFencing.Partner
             var view = _link != null && _link.IsStreaming ? _link.Link.Sample(Time.realtimeSinceStartupAsDouble) : null;
             DrawnView = view;
             SetShown(view != null);
+            _hasPartnerBlade = false;
             if (view == null)
             {
                 return;
             }
 
             var stripInRoom = PlaceRoot();
+            _stripInRoom = stripInRoom;
             LogFootwork(view.Body?.Footwork);
             DrawBody(view, Time.deltaTime);
             DrawBlade(view, stripInRoom, Time.deltaTime);
@@ -263,6 +312,7 @@ namespace VrFencing.Partner
                 _myBlade.SetExtraObstacles(isShown ? _opponentBodyObstacles : null);
             }
             _drawnBlade.Reset();
+            _agreement.Reset();
             _fade = null;
             _isSignalLost = false;
             _connectionIcon.Draw(false, Vector3.zero, Vector3.zero);
@@ -355,33 +405,42 @@ namespace VrFencing.Partner
                 return;
             }
 
+            // The same blade as the partner's own: their grip on their controller, hanging by their set and flex.
             var grip = view.Grip.Value;
+            var controller = view.Controller.Value;
             var blade = grip.ToBladeSettings();
+            _partnerBlade = HeldBlade.FromController(controller, blade, grip.Hand);
+            GatherObstaclesForOpponentBlade();
+            _hasPartnerBlade = true;
+
+            // The mount sits where the partner's hand holds the blade, so the ghost hilt shows it when the drawn one lags.
+            var mountInController = BladePose.GetMountInController(blade, grip.Hand);
+            var mountOnStrip = new TrackedPose(BladePose.GetBlade(controller, mountInController).GuardPosition, controller.Rotation * mountInController.Rotation);
+            _bladeMount.SetPositionAndRotation(
+                StripFrame.ToRoom(stripInRoom, mountOnStrip.Position).ToUnity(),
+                (stripInRoom.Rotation * mountOnStrip.Rotation).ToUnity());
+            if (_myBlade != null && _myBlade.isActiveAndEnabled)
+            {
+                // This Fencer's Blade solves both blades and draws this one (DrawPartnerBlade), later this frame.
+                return;
+            }
+
+            // No Blade here (the PC Editor's replay): the partner's blade alone, as their hand holds it.
             if (_appliedFlex != grip.Flex)
             {
                 _drawnBlade.Flex.SetSoftness(grip.Flex);
                 _appliedFlex = grip.Flex;
             }
 
-            // The same blade as the partner's own: their grip on their controller, hanging by their set and flex.
-            var controller = view.Controller.Value;
-            var mountInController = BladePose.GetMountInController(blade, grip.Hand);
-            var forte = BladePose.GetBlade(controller, mountInController);
-            var bladeRotation = controller.Rotation * mountInController.Rotation;
-            var gripUp = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, bladeRotation);
-            var droop = BladeDroop.Create(forte.Direction, gripUp, -System.Numerics.Vector3.UnitY, blade);
-            _drawnBlade.Step(droop.GetChord(forte), GatherObstaclesForOpponentBlade(), gripUp, deltaSeconds, droop);
-
-            // The mount sits where the partner's hand holds the blade, so the ghost hilt shows it when the drawn one lags.
-            var mountOnStrip = new TrackedPose(forte.GuardPosition, bladeRotation);
-            _bladeMount.SetPositionAndRotation(
-                StripFrame.ToRoom(stripInRoom, mountOnStrip.Position).ToUnity(),
-                (stripInRoom.Rotation * mountOnStrip.Rotation).ToUnity());
+            _drawnBlade.Step(_partnerBlade.Chord, _opponentBladeObstacles, _partnerBlade.GripUp, deltaSeconds, _partnerBlade.Droop);
             _bladeVisual.Draw(_drawnBlade, stripInRoom, Time.time);
         }
 
-        /// <summary>The floor, this Fencer's body and this Fencer's blade, always in the same order and count.</summary>
-        private IReadOnlyList<BladeObstacle> GatherObstaclesForOpponentBlade()
+        /// <summary>
+        /// The floor and this Fencer's body, always in the same order and count. This Fencer's blade is not one: the two
+        /// blades are the contact solver's (PER-145).
+        /// </summary>
+        private void GatherObstaclesForOpponentBlade()
         {
             _opponentBladeObstacles.Clear();
             _opponentBladeObstacles.Add(BladeObstacle.Floor);
@@ -392,12 +451,6 @@ namespace VrFencing.Partner
             {
                 _opponentBladeObstacles.Add(BladeObstacle.FromCapsule(capsule));
             }
-
-            var myBlade = _myBlade != null ? _myBlade.DrawnBladeOnStrip : null;
-            _opponentBladeObstacles.Add(BladeObstacle.FromCapsule(myBlade.HasValue
-                ? new Capsule(myBlade.Value.GuardPosition, myBlade.Value.TipPosition, MyBladeRadiusMeters)
-                : FencerBodyShape.Parked));
-            return _opponentBladeObstacles;
         }
     }
 }

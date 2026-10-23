@@ -22,6 +22,7 @@ namespace VrFencing.Blade
         /// </summary>
         internal BladeLogEvents ReadForRecording(ref BladeContactSample sample)
         {
+            ReadPartnerView(ref sample);
             if (_settings == null || _drawnBlade == null || !_isTracked)
             {
                 BladeContactProbe.ClearFencer(ref sample);
@@ -34,6 +35,16 @@ namespace VrFencing.Blade
 
             BladeContactProbe.ReadFencer(ref sample, _handBladeOnStrip, _drawnBlade);
             sample.SwordHandVelocity = ReadSwordHandVelocityOnStrip();
+            if (_partnerBlade != null && _partnerBlade.IsActive && _partnerSource != null)
+            {
+                // A partner's blade (PER-145) in the Dummy's columns, from this headset's own solve.
+                BladeContactProbe.ReadPartner(ref sample, _partnerBlade.Contact, _drawnBlade);
+                sample.OpponentHand = _settings.ArmedDummy.OpponentHand;
+                sample.DummyMode = _partnerSource.IsMirror ? "mirror" : "partner";
+                sample.DummyAction = "none";
+                return BladeLogEvents.None;
+            }
+
             if (_armedDummy == null)
             {
                 BladeContactProbe.ClearArmed(ref sample);
@@ -44,6 +55,17 @@ namespace VrFencing.Blade
             }
 
             return _armedDummy.ReadForRecording(ref sample, _drawnBlade, Time.timeAsDouble);
+        }
+
+        /// <summary>The partner's own view of the contact as they last reported it (PER-145), or empty with none.</summary>
+        private void ReadPartnerView(ref BladeContactSample sample)
+        {
+            var report = _partnerBlade != null && _partnerBlade.IsActive ? _partnerSource?.GetPartnerReport() : null;
+            sample.PartnerViewInContact = report?.IsInContact;
+            sample.PartnerViewPressMeters = report?.PressMeters ?? 0.0f;
+
+            // Theirs is from this blade toward theirs; the log's side runs from theirs toward this one.
+            sample.PartnerViewSide = report.HasValue ? -report.Value.Side : System.Numerics.Vector3.Zero;
         }
 
         /// <summary>Forgets the Armed Dummy's events so far: a recording starts with none from before it.</summary>

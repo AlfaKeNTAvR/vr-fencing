@@ -42,7 +42,8 @@ namespace VrFencing.Partner
             BladeMount mount,
             GripAngles angles,
             float setSagittaMeters,
-            BladeFlexSoftness flex)
+            BladeFlexSoftness flex,
+            BladeContactReport? contact = null)
         {
             SenderTimeSeconds = senderTimeSeconds;
             Controller = controller;
@@ -53,6 +54,7 @@ namespace VrFencing.Partner
             Angles = angles;
             SetSagittaMeters = setSagittaMeters;
             Flex = flex;
+            Contact = contact;
         }
 
         public double SenderTimeSeconds { get; }
@@ -77,6 +79,12 @@ namespace VrFencing.Partner
 
         public BladeFlexSoftness Flex { get; }
 
+        /// <summary>
+        /// The sender's own view of the two blades' contact at this moment (PER-145), for logging where the two views
+        /// disagree; null when the sender had no partner blade to solve against. Never drawn or judged.
+        /// </summary>
+        public BladeContactReport? Contact { get; }
+
         /// <summary>The grip settings as Blade settings, for the same mount, droop and flex code the Fencer's own blade uses.</summary>
         public BladeSettings ToBladeSettings()
         {
@@ -100,7 +108,53 @@ namespace VrFencing.Partner
                 Mount,
                 Angles,
                 SetSagittaMeters,
-                Flex);
+                Flex,
+                Contact?.Turned(turn));
+        }
+    }
+
+    /// <summary>
+    /// One headset's own view of the two blades' contact (PER-145), sent with its hand in 6 bytes so the other headset can
+    /// log where their views disagree: whether the blades press, how far, which side of the receiver's blade the sender's
+    /// is on, and whether either blade is sliding off. Each headset solves both blades itself; this never moves anything.
+    /// Side in the sender's Strip frame until <see cref="Turned"/>.
+    /// </summary>
+    public readonly struct BladeContactReport
+    {
+        /// <summary>The press goes in 0.1 mm steps, up to 6.5 m: far past any press.</summary>
+        public const float PressMetersPerUnit = 0.0001f;
+
+        public BladeContactReport(bool isInContact, float pressMeters, Vector3 side, bool isSenderSliding, bool isReceiverSliding)
+        {
+            IsInContact = isInContact;
+            PressMeters = pressMeters;
+            Side = side;
+            IsSenderSliding = isSenderSliding;
+            IsReceiverSliding = isReceiverSliding;
+        }
+
+        /// <summary>The blades press into each other in the sender's view.</summary>
+        public bool IsInContact { get; }
+
+        /// <summary>How far they press, meters.</summary>
+        public float PressMeters { get; }
+
+        /// <summary>
+        /// Which way from the receiver's blade the sender's is (unit, in steps of 1/127); zero when the sender knows no
+        /// side yet.
+        /// </summary>
+        public Vector3 Side { get; }
+
+        /// <summary>The sender's own blade is sliding off (or swinging back after it).</summary>
+        public bool IsSenderSliding { get; }
+
+        /// <summary>The receiver's blade, in the sender's view, is sliding off (or swinging back after it).</summary>
+        public bool IsReceiverSliding { get; }
+
+        /// <summary>This report with its side turned by <paramref name="turn"/> (into the receiver's Strip frame).</summary>
+        public BladeContactReport Turned(Quaternion turn)
+        {
+            return new BladeContactReport(IsInContact, PressMeters, Vector3.Transform(Side, turn), IsSenderSliding, IsReceiverSliding);
         }
     }
 
@@ -129,9 +183,10 @@ namespace VrFencing.Partner
         /// <summary>
         /// Bumped whenever a layout below changes; the app's Version must be bumped with it. 2: the body carries the
         /// footwork state (PER-112, Version 1.4). 3: the body carries the back wrist's turn, and its footwork state is
-        /// the one <see cref="FootworkLookAhead.Seconds"/> before the body (PER-142, Version 1.5).
+        /// the one <see cref="FootworkLookAhead.Seconds"/> before the body (PER-142, Version 1.5). 4: the hand carries the
+        /// sender's view of the blades' contact (<see cref="BladeContactReport"/>, 6 bytes, PER-145, Version 1.6).
         /// </summary>
-        public const byte FormatVersion = 3;
+        public const byte FormatVersion = 4;
 
         public const byte InfoKind = 1;
         public const byte HandKind = 2;
@@ -143,6 +198,13 @@ namespace VrFencing.Partner
         private const byte NoFidelity = 0;
         private const byte LowFidelity = 1;
         private const byte HighFidelity = 2;
+
+        // The contact report's flag bits (PER-145).
+        private const byte ContactPresentFlag = 1;
+        private const byte ContactPressingFlag = 2;
+        private const byte SenderSlidingFlag = 4;
+        private const byte ReceiverSlidingFlag = 8;
+        private const float SidePerUnit = 1.0f / sbyte.MaxValue;
 
         public static byte[] EncodeInfo(FencerInfo info)
         {
@@ -169,6 +231,7 @@ namespace VrFencing.Partner
                 writer.Write(sample.Angles.YawDegrees);
                 writer.Write(sample.SetSagittaMeters);
                 writer.Write((byte)sample.Flex);
+                WriteContact(writer, sample.Contact);
             });
         }
 
@@ -277,7 +340,8 @@ namespace VrFencing.Partner
                 ReadEnum<BladeMount>(reader.ReadByte()),
                 new GripAngles(ReadFinite(reader), ReadFinite(reader)),
                 ReadFinite(reader),
-                ReadEnum<BladeFlexSoftness>(reader.ReadByte())));
+                ReadEnum<BladeFlexSoftness>(reader.ReadByte()),
+                ReadContact(reader)));
         }
 
         /// <exception cref="InvalidDataException">Not a body message of this format, or cut short.</exception>
@@ -482,6 +546,40 @@ namespace VrFencing.Partner
             var lift = reader.ReadByte() * MetersPerUnit;
             var pitch = reader.ReadSByte() * RadiansPerPitchUnit;
             return new FootPlacement(x, z, lift, pitch);
+        }
+
+        /// <summary>The contact report in 6 bytes: flags, the press (0.1 mm, 16 bits) and the side (3 signed bytes); all zero for none.</summary>
+        private static void WriteContact(BinaryWriter writer, BladeContactReport? contact)
+        {
+            var report = contact ?? default;
+            var flags = contact.HasValue ? ContactPresentFlag : (byte)0;
+            flags |= report.IsInContact ? ContactPressingFlag : (byte)0;
+            flags |= report.IsSenderSliding ? SenderSlidingFlag : (byte)0;
+            flags |= report.IsReceiverSliding ? ReceiverSlidingFlag : (byte)0;
+            writer.Write(flags);
+            writer.Write((ushort)Math.Max(0.0, Math.Min(ushort.MaxValue, Math.Round(report.PressMeters / BladeContactReport.PressMetersPerUnit))));
+            writer.Write(ToSideUnit(report.Side.X));
+            writer.Write(ToSideUnit(report.Side.Y));
+            writer.Write(ToSideUnit(report.Side.Z));
+        }
+
+        private static BladeContactReport? ReadContact(BinaryReader reader)
+        {
+            var flags = reader.ReadByte();
+            var press = reader.ReadUInt16() * BladeContactReport.PressMetersPerUnit;
+            var side = new Vector3(reader.ReadSByte() * SidePerUnit, reader.ReadSByte() * SidePerUnit, reader.ReadSByte() * SidePerUnit);
+            if ((flags & ContactPresentFlag) == 0)
+            {
+                return null;
+            }
+
+            return new BladeContactReport(
+                (flags & ContactPressingFlag) != 0, press, side, (flags & SenderSlidingFlag) != 0, (flags & ReceiverSlidingFlag) != 0);
+        }
+
+        private static sbyte ToSideUnit(float value)
+        {
+            return (sbyte)Math.Max(-sbyte.MaxValue, Math.Min(sbyte.MaxValue, Math.Round(value / SidePerUnit)));
         }
 
         private static void WritePose(BinaryWriter writer, TrackedPose pose)

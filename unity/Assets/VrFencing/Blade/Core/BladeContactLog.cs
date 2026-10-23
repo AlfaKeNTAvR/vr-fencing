@@ -19,7 +19,8 @@ namespace VrFencing.Blade
     /// </summary>
     public sealed class BladeContactLog
     {
-        public const int FormatVersion = 2;
+        /// <summary>3: the partner-view columns, and the Dummy's columns hold a partner's blade in a Partner session (PER-145).</summary>
+        public const int FormatVersion = 3;
 
         public const string FilePrefix = "blade-";
 
@@ -92,7 +93,9 @@ namespace VrFencing.Blade
             writer.Write("# Strip frame: +x the Fencer's right, +y up, +z toward the Dummy. Units in the column names. " +
                 "side: unit vector from the Dummy's blade to the Fencer's. bell_gap: the other drawn blade's clearance from this " +
                 "blade's bell guard (negative: through it), handle_gap the same for its grip behind the bell. drawn_gap: the drawn " +
-                "blades' clearance (negative: through each other).\n");
+                "blades' clearance (negative: through each other). With a partner (dummy_mode partner or mirror) the dummy columns are " +
+                "the partner's blade from this headset's own solve, and partner_view the partner's own view as they reported it " +
+                "(partner_view_side in the side convention).\n");
             writer.Write(ColumnLine);
             writer.Write("\n");
             RowCount = 0;
@@ -145,6 +148,19 @@ namespace VrFencing.Blade
             AppendVector(sample.DummyHandGive, MeterDecimals, sample.IsDummyArmed);
             _row.Append(sample.IsDummyArmed ? GetName(DeflectionPhaseNames, (int)sample.DummyDeflectionPhase) : null);
             AppendVector(sample.DummyTipOffset, MeterDecimals, sample.IsDummyArmed);
+
+            var hasPartnerView = sample.PartnerViewInContact.HasValue;
+            if (hasPartnerView)
+            {
+                _row.Append(sample.PartnerViewInContact.Value);
+            }
+            else
+            {
+                _row.AppendEmpty();
+            }
+
+            AppendNumber(sample.PartnerViewPressMeters, MeterDecimals, hasPartnerView);
+            AppendVector(sample.PartnerViewSide, FractionDecimals, hasPartnerView && sample.PartnerViewSide != Vector3.Zero);
 
             AppendVector(sample.SwordHandVelocity, SpeedDecimals, true);
             _row.Append(sample.SwordHandVelocity.Length(), SpeedDecimals);
@@ -252,6 +268,10 @@ namespace VrFencing.Blade
             AddVectorColumns(columns, "dummy_hand_give", "_m");
             columns.Add("dummy_deflection_phase");
             AddVectorColumns(columns, "dummy_tip_offset", "_m");
+
+            columns.Add("partner_view_contact");
+            columns.Add("partner_view_overlap_m");
+            AddVectorColumns(columns, "partner_view_side", string.Empty);
 
             AddVectorColumns(columns, "sword_hand_velocity", "_mps");
             columns.Add("sword_hand_speed_mps");

@@ -87,6 +87,60 @@ namespace VrFencing.Blade
             sample.DummyTipOffset = dummy.Deflection.TipOffset;
         }
 
+        /// <summary>
+        /// Fills the contact and the Dummy's blade fields with the partner's blade from this headset's own solve (PER-145),
+        /// and the Fencer's give, slide-off and bell gap; call after <see cref="ReadFencer"/> and after the Fencer's drawn
+        /// blade stepped. The Dummy's hand fields stay empty: a partner's hand is never moved.
+        /// </summary>
+        public static void ReadPartner(ref BladeContactSample sample, PartnerBladeContact partner, DrawnBlade fencerDrawn)
+        {
+            if (partner == null)
+            {
+                throw new ArgumentNullException(nameof(partner));
+            }
+
+            if (fencerDrawn == null)
+            {
+                throw new ArgumentNullException(nameof(fencerDrawn));
+            }
+
+            var contact = partner.Contact;
+            var partnerDrawn = partner.PartnerDrawn;
+            sample.IsDummyArmed = true;
+            sample.Fencer.GripTurnDegrees = contact.GiveA.TurnDegrees;
+            sample.Fencer.BowMeters = contact.GiveA.BowMeters;
+            sample.Fencer.SlideOff = GetSlideOff(contact, 0);
+
+            sample.Dummy.Guard = partner.PartnerHandChord.GuardPosition;
+            sample.Dummy.RealPoint = partner.PartnerHandChord.TipPosition;
+            sample.Dummy.DrawnPoint = partnerDrawn.HasShape ? partnerDrawn.GetSample(DrawnBlade.SampleCount) : partner.PartnerChord.TipPosition;
+            sample.Dummy.GripTurnDegrees = contact.GiveB.TurnDegrees;
+            sample.Dummy.BowMeters = contact.GiveB.BowMeters;
+            sample.Dummy.SlideOff = GetSlideOff(contact, 1);
+
+            var hasBoth = fencerDrawn.HasShape && partnerDrawn.HasShape;
+            sample.Fencer.BellGapMeters = hasBoth ? FindBellGap(fencerDrawn, partnerDrawn) : float.NaN;
+            sample.Dummy.BellGapMeters = hasBoth ? FindBellGap(partnerDrawn, fencerDrawn) : float.NaN;
+            sample.Fencer.HandleGapMeters = hasBoth ? FindHandleGap(fencerDrawn, partnerDrawn) : float.NaN;
+            sample.Dummy.HandleGapMeters = hasBoth ? FindHandleGap(partnerDrawn, fencerDrawn) : float.NaN;
+            sample.DrawnGapMeters = hasBoth ? FindDrawnGap(fencerDrawn, partnerDrawn) : float.NaN;
+
+            sample.IsInContact = contact.IsInContact;
+            sample.IsEngaged = contact.IsEngaged;
+            sample.ContactPoint = contact.ContactPoint;
+            sample.ContactOnFencer = contact.FractionA;
+            sample.ContactOnDummy = contact.FractionB;
+            sample.OverlapMeters = contact.PressMeters;
+            sample.PressNewtons = contact.PressNewtons;
+            sample.Side = contact.Side ?? Vector3.Zero;
+            sample.SaturatedStages = contact.SaturatedStages;
+            sample.ClosestMeters = contact.ClosestMeters;
+
+            sample.DummyHandGive = Vector3.Zero;
+            sample.DummyDeflectionPhase = DeflectionPhase.Spring;
+            sample.DummyTipOffset = Vector3.Zero;
+        }
+
         /// <summary>Empties the Fencer's blade (written as empty cells): the sword-hand controller is not tracked.</summary>
         public static void ClearFencer(ref BladeContactSample sample)
         {
@@ -113,6 +167,9 @@ namespace VrFencing.Blade
             sample.DummyHandGive = Vector3.Zero;
             sample.DummyDeflectionPhase = DeflectionPhase.Spring;
             sample.DummyTipOffset = Vector3.Zero;
+            sample.PartnerViewInContact = null;
+            sample.PartnerViewPressMeters = 0.0f;
+            sample.PartnerViewSide = Vector3.Zero;
         }
 
         /// <summary>
