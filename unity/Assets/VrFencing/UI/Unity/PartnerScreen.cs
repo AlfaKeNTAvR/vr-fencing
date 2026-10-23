@@ -8,7 +8,7 @@ namespace VrFencing.UI
     /// <summary>
     /// The Partner page (PER-80, decided in PER-58), next to Drills: Host shows the session's code in large letters to
     /// read out, Join opens a large keypad to type the Host's code, the Host switches Bout / Paired Practice, Mirror me
-    /// shows this Fencer as their own opponent with a delay button (PER-140), Leave ends the session. What it says comes from <see cref="PartnerPageText"/>; what is offered from
+    /// shows this Fencer as their own opponent with delay and link-noise buttons (PER-140, PER-145), Leave ends the session. What it says comes from <see cref="PartnerPageText"/>; what is offered from
     /// <see cref="PartnerSession"/>.
     /// </summary>
     internal sealed class PartnerScreen
@@ -33,6 +33,7 @@ namespace VrFencing.UI
         private readonly UiButton _join;
         private readonly UiButton _mirror;
         private readonly UiButton _mirrorDelay;
+        private readonly UiButton _mirrorNoise;
         private readonly UiButton _leave;
         private readonly UiButton _back;
         private readonly UiButton _mode;
@@ -56,6 +57,7 @@ namespace VrFencing.UI
             Action resetTally,
             Action mirror,
             Action cycleMirrorDelay,
+            Action cycleMirrorNoise,
             Action leave,
             Action back)
         {
@@ -80,8 +82,10 @@ namespace VrFencing.UI
             _resetTally = UiButton.Create(page, "Reset Tally", new Vector2(0.255f, -0.035f), new Vector2(0.2f, 0.065f), UiKit.SmallFontSize, resetTally);
             _resetTally.SetLabel("Reset tally");
 
-            // Mirroring only (PER-140), where the mode button stands in a session: cycles the pretend link's delay.
-            _mirrorDelay = UiButton.Create(page, "Mirror Delay", new Vector2(0.0f, -0.035f), new Vector2(0.3f, 0.065f), UiKit.BodyFontSize, cycleMirrorDelay);
+            // Mirroring only (PER-140), where the mode button stands in a session: cycles the pretend link's delay, and
+            // beside it its jitter and loss (PER-145).
+            _mirrorDelay = UiButton.Create(page, "Mirror Delay", new Vector2(-0.16f, -0.035f), new Vector2(0.3f, 0.065f), UiKit.BodyFontSize, cycleMirrorDelay);
+            _mirrorNoise = UiButton.Create(page, "Mirror Noise", new Vector2(0.16f, -0.035f), new Vector2(0.3f, 0.065f), UiKit.BodyFontSize, cycleMirrorNoise);
 
             var buttonSize = new Vector2(0.165f, 0.07f);
             _host = UiButton.Create(page, "Host", new Vector2(-0.27f, -0.135f), buttonSize, UiKit.BodyFontSize, host);
@@ -191,6 +195,8 @@ namespace VrFencing.UI
             _leave.SetInteractable(session.CanLeave);
             _mirrorDelay.SetVisible(session.IsMirroring);
             _mirrorDelay.SetLabel(MirrorDelay.FormatLabel(session.MirrorDelaySeconds));
+            _mirrorNoise.SetVisible(session.IsMirroring);
+            _mirrorNoise.SetLabel(MirrorLinkNoise.FormatLabel(session.MirrorNoise));
             _back.SetInteractable(!session.IsBusy);
             var isModeShown = session.Phase == PartnerPhase.WaitingForPartner || session.Phase == PartnerPhase.Connected;
             _mode.SetVisible(isModeShown);

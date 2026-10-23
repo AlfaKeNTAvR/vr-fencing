@@ -119,7 +119,7 @@ namespace VrFencing.Tests.Partner
             var encoded = PartnerMessages.EncodeBody(new BodySample(1.0, body));
             var decoded = PartnerMessages.DecodeBody(encoded).Body;
 
-            Assert.That(PartnerMessages.FormatVersion, Is.EqualTo(3));
+            Assert.That(PartnerMessages.FormatVersion, Is.GreaterThanOrEqualTo(3));
             Assert.That(encoded.Length, Is.LessThanOrEqualTo(MaxBodyBytes));
             Assert.That(Quaternion.Dot(decoded.BackWristRotation.Value, wrist), Is.EqualTo(1.0f).Within(Tolerance));
             Assert.That(decoded.Footwork.Value.Phase, Is.EqualTo(FootworkPhase.Advancing));

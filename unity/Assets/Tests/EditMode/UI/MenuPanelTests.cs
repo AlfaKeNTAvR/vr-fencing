@@ -138,7 +138,7 @@ namespace VrFencing.Tests.UI
         public void TheKeypadJoinsOnlyAFullCode()
         {
             var joined = new List<string>();
-            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, joined.Add, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, joined.Add, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var session = new VrFencing.Partner.PartnerSession();
             session.BeginEnteringCode();
             screen.SetVisible(true);
@@ -163,7 +163,7 @@ namespace VrFencing.Tests.UI
         [Test]
         public void OnlyTheHostCanSwitchTheMode()
         {
-            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
+            var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { }, () => { });
             var guest = new VrFencing.Partner.PartnerSession();
             guest.BeginJoin("FGR78N");
             guest.OnJoined(VrFencing.Partner.PartnerMode.Bout);
@@ -181,7 +181,7 @@ namespace VrFencing.Tests.UI
         {
             var session = new VrFencing.Partner.PartnerSession();
             var screen = new PartnerScreen(CreatePanel(), () => { }, () => { }, _ => { }, () => { }, () => { }, () => { },
-                () => session.BeginMirror(), () => session.CycleMirrorDelay(), () => { }, () => { });
+                () => session.BeginMirror(), () => session.CycleMirrorDelay(), () => session.CycleMirrorNoise(), () => { }, () => { });
             screen.SetVisible(true);
             screen.Refresh(session, "1.0");
 
@@ -201,6 +201,14 @@ namespace VrFencing.Tests.UI
             delay.Press();
             screen.Refresh(session, "1.0");
             Assert.That(session.MirrorDelaySeconds, Is.EqualTo(0.2));
+
+            // PER-145: the link-noise button beside it cycles jitter and loss while mirroring.
+            var noise = buttons.First(button => button.name == "Mirror Noise");
+            Assert.That(noise.gameObject.activeSelf, Is.True);
+            noise.Press();
+            screen.Refresh(session, "1.0");
+            Assert.That(session.MirrorNoise, Is.EqualTo(VrFencing.Partner.MirrorNoise.Jitter));
+            Assert.That(Mathf.Abs(noise.transform.localPosition.x - delay.transform.localPosition.x), Is.GreaterThan(0.3f), "The two mirror buttons do not overlap.");
 
             // Host, Join, Mirror me and Leave sit in one row without overlapping.
             var row = new[] { "Host", "Join", "Mirror Me", "Leave" }.Select(name => buttons.First(button => button.name == name).transform.localPosition.x).ToArray();

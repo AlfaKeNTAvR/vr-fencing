@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Numerics;
+using VrFencing.Blade;
 using VrFencing.Dummy;
 using VrFencing.Settings;
 
@@ -45,7 +46,7 @@ namespace VrFencing.Partner
     /// stays on the drawn hilt. The body's legs are built on the partner's footwork (<see cref="RemoteFencerLegs"/>,
     /// PER-112) instead of their generated ones. The Unity layer only moves bytes and draws.
     /// </summary>
-    public sealed class OpponentLink
+    public sealed class OpponentLink : IPartnerReplaySource
     {
         private readonly RemoteClock _clock = new RemoteClock();
         private readonly HandStream _hand = new HandStream();
@@ -181,6 +182,72 @@ namespace VrFencing.Partner
                 _body.IsStale(senderNow.Value),
                 controller.HasValue ? bout.ToMyStripFrame(controller.Value) : (TrackedPose?)null,
                 _hand.Newest);
+        }
+
+        /// <summary>The partner's clock when the newest hand sample was sent; null before the first.</summary>
+        public double? NewestHandSenderSeconds => _hand.Newest?.SenderTimeSeconds;
+
+        /// <summary>
+        /// The partner's newest report of their own view of the blades' contact (PER-145), its side turned into this
+        /// Fencer's Strip frame (from this Fencer's blade toward the partner's); null before one came, or when the hand
+        /// is lost.
+        /// </summary>
+        public BladeContactReport? GetPartnerContactReport(double localSeconds)
+        {
+            var bout = Bout;
+            var senderNow = _clock.ToSenderTime(localSeconds);
+            var newest = _hand.Newest;
+            if (bout == null || !senderNow.HasValue || !newest.HasValue || !newest.Value.Contact.HasValue
+                || senderNow.Value - newest.Value.SenderTimeSeconds > HandStream.StaleSeconds)
+            {
+                return null;
+            }
+
+            var report = newest.Value.Contact.Value;
+            return new BladeContactReport(
+                report.IsInContact, report.PressMeters, bout.DirectionToMyStripFrame(report.Side), report.IsSenderSliding, report.IsReceiverSliding);
+        }
+
+        /// <summary>
+        /// The partner's blade as their hand held it at <paramref name="senderSeconds"/> on their clock (interpolated
+        /// only, never predicted), in this Fencer's Strip frame, with their grip: what the Host's replay judge solves
+        /// (PER-145). False before the bout Strip is known, or when that moment is not inside the samples kept (older
+        /// than the oldest, or not arrived yet).
+        /// </summary>
+        public bool TryGetPartnerBladeAt(double senderSeconds, out HeldBlade blade)
+        {
+            blade = default;
+            var bout = Bout;
+            var oldest = _hand.Oldest;
+            var newest = _hand.Newest;
+            if (bout == null || !oldest.HasValue || !newest.HasValue
+                || senderSeconds < oldest.Value.SenderTimeSeconds || senderSeconds > newest.Value.SenderTimeSeconds
+                || !_hand.TryInterpolate(senderSeconds, out var controller))
+            {
+                return false;
+            }
+
+            var grip = newest.Value;
+            blade = HeldBlade.FromController(bout.ToMyStripFrame(controller), grip.ToBladeSettings(), grip.Hand);
+            return true;
+        }
+
+        /// <summary>
+        /// The partner's body as sent for <paramref name="senderSeconds"/> on their clock (interpolated only, their
+        /// tracked legs), in this Fencer's Strip frame, with their height: the Host's replay judge's target (PER-145).
+        /// Null before the bout Strip and a body are known.
+        /// </summary>
+        public (FencerBody Body, float HeightMeters)? GetPartnerBodyAt(double senderSeconds)
+        {
+            var bout = Bout;
+            var body = _body.SampleAt(senderSeconds);
+            if (bout == null || body == null)
+            {
+                return null;
+            }
+
+            var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, (float)Math.PI);
+            return (body.Transform(bout.ToMyStripFrame, turn), _partner.Value.HeightMeters);
         }
 
         /// <summary>

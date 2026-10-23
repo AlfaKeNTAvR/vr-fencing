@@ -20,7 +20,7 @@ namespace VrFencing.Tests.Blade
         {
             "fencer_slide_off", "fencer_slide_phase", "dummy_slide_off", "dummy_slide_phase", "dummy_armed", "in_contact",
             "engaged", "side_x", "side_y", "side_z", "saturated", "dummy_mode", "dummy_action", "opponent_hand",
-            "dummy_deflection_phase", "events",
+            "dummy_deflection_phase", "partner_view_contact", "partner_view_side_x", "partner_view_side_y", "partner_view_side_z", "events",
         };
 
         [Test]
@@ -82,6 +82,28 @@ namespace VrFencing.Tests.Blade
             Assert.That(cells["contact_on_fencer_frac"], Is.Empty);
             Assert.That(cells["dummy_deflection_phase"], Is.Empty, "Unarmed: no Dummy hand.");
             Assert.That(cells["events"], Is.Empty);
+            Assert.That(cells["partner_view_contact"], Is.Empty, "No partner: no partner view.");
+            Assert.That(cells["partner_view_side_x"], Is.Empty);
+        }
+
+        [Test]
+        public void APartnersOwnViewIsWrittenBesideThisOne()
+        {
+            // PER-145: with a partner, their reported view of the contact sits beside this headset's own.
+            var sample = Pressing(1.0);
+            sample.DummyMode = "partner";
+            sample.PartnerViewInContact = false;
+            sample.PartnerViewPressMeters = 0.0f;
+            sample.PartnerViewSide = new System.Numerics.Vector3(0.0f, -1.0f, 0.0f);
+
+            var lines = WriteLines(sample);
+            var cells = ToCells(lines[3], lines[4]);
+
+            Assert.That(cells["dummy_mode"], Is.EqualTo("partner"));
+            Assert.That(cells["partner_view_contact"], Is.EqualTo("0"));
+            Assert.That(cells["partner_view_overlap_m"], Is.EqualTo("0.0000"));
+            Assert.That(cells["partner_view_side_y"], Is.EqualTo("-1.000"));
+            Assert.That(lines[0], Does.Contain("format 3"));
         }
 
         [Test]

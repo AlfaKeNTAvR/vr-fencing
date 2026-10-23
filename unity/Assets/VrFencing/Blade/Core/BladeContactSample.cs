@@ -89,7 +89,9 @@ namespace VrFencing.Blade
 
     /// <summary>
     /// Everything the blade-contact log keeps for one rendered frame (PER-136): both blades, their contact, the Dummy's
-    /// hand, the sword hand's speed and the frame's events. A plain record filled in place each frame (no allocation).
+    /// hand, the sword hand's speed and the frame's events. In a Partner session or "Mirror me" (PER-145) the Dummy's
+    /// blade and contact fields hold the partner's blade from this headset's own solve, and the partner-view fields the
+    /// partner's own report of it. A plain record filled in place each frame (no allocation).
     /// Strip frame (+x the Fencer's right, +y up, +z toward the Dummy), meters, degrees, newtons, seconds.
     /// </summary>
     public struct BladeContactSample
@@ -143,7 +145,7 @@ namespace VrFencing.Blade
         /// </summary>
         public float DrawnGapMeters;
 
-        /// <summary>What the Dummy is armed for: unarmed, drill, free_guard or free_attacks.</summary>
+        /// <summary>What the Dummy is armed for: unarmed, drill, free_guard or free_attacks; partner or mirror for a partner's blade (PER-145).</summary>
         public string DummyMode;
 
         /// <summary>What the Dummy's arm is doing: en_garde, blade_in_line, or its attack's phase.</summary>
@@ -158,6 +160,21 @@ namespace VrFencing.Blade
 
         /// <summary>The Dummy's point off its line from its hand (<see cref="BladeDeflection.TipOffset"/>).</summary>
         public Vector3 DummyTipOffset;
+
+        /// <summary>
+        /// In a Partner session (PER-145): whether the blades pressed in the partner's own view, as last reported with
+        /// their hand; null with no report (no partner, or their hand is lost).
+        /// </summary>
+        public bool? PartnerViewInContact;
+
+        /// <summary>How far the blades pressed in the partner's view; meaningful with <see cref="PartnerViewInContact"/>.</summary>
+        public float PartnerViewPressMeters;
+
+        /// <summary>
+        /// Which way from the partner's blade this Fencer's was in the partner's view, in this Fencer's Strip frame (the
+        /// <see cref="Side"/> convention, so the two compare directly); zero when unknown.
+        /// </summary>
+        public Vector3 PartnerViewSide;
 
         /// <summary>The sword-hand controller's velocity, m/s; NaN when it is not tracked.</summary>
         public Vector3 SwordHandVelocity;

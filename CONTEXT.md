@@ -126,12 +126,12 @@ _Avoid_: Room code, invite, password
 The menu page next to Drills that connects two Fencers: Host, Join (the keypad), the Bout / Paired Practice switch (Host only) and Leave. While connected, solo Drills are off and the Dummy is hidden.
 
 **Mirror me**:
-A Partner page mode with no partner and no network: the Fencer's own live frame goes through the partner streams on a pretend link with a chosen delay (0, 0.1, 0.2 or 0.5 s) and comes back as the Opponent, placed exactly as a partner's headset would place them. Nothing is judged; Leave ends it. Used to check how body tracking and the blade carry over before a real Partner joins.
+A Partner page mode with no partner and no network: the Fencer's own live frame goes through the partner streams on a pretend link with a chosen delay (0, 0.1, 0.2 or 0.5 s), optionally with jitter and lost messages, and comes back as the Opponent, placed exactly as a partner's headset would place them. The two blades touch as with a Partner; Touches are not judged; Leave ends it. Used to check how body tracking and the blades carry over before a real Partner joins.
 _Avoid_: Mirror mode (it is a half turn, never a left-right reflection), loopback, self-view
 _Avoid_: Lobby, multiplayer menu
 
 **Opponent**:
-The Partner as shown in this Fencer's room: the Dummy's rigged body driven by the Partner's tracked body (its legs built on the Partner's own footwork, not guessed), holding a blade drawn from the Partner's hand and grip settings, standing on the far side of the shared Strip.
+The Partner as shown in this Fencer's room: the Dummy's rigged body driven by the Partner's tracked body (its legs built on the Partner's own footwork, not guessed), holding a blade drawn from the Partner's hand and grip settings, standing on the far side of the shared Strip. Its blade and the Fencer's touch as against the Armed Dummy's, both solved on this headset; the two headsets' views may differ for about one lag in fast actions and are never corrected.
 _Avoid_: Avatar, remote player, enemy
 
 **Bout**:
@@ -141,6 +141,10 @@ _Avoid_: Match, game
 **Light**:
 The virtual judge's call that a Touch counted in a Bout, shown on the Scoring Box. The first Touch of a Phrase lights; in a Bout nothing counts again until the next "Allez!".
 _Avoid_: Point, score, hit
+
+**Parried** (verdict):
+The virtual judge's call that a claimed Touch did not count because the defender's blade kept the point off the body: the blades met within 0.15 s before the press, and the point as the blade contact left it missed the body while the hand's line would have reached it. Decided once, on the Host, by replaying both Fencers' real hands at the same moment, so it favors neither view. No lamp lights and the Phrase goes on; "Parried" shows under the Scoring Box and the attacker feels two soft knocks. A Beat never changes a verdict.
+_Avoid_: Blocked, refused, no-touch
 
 **Double**:
 Both Fencers' Touches within the double window of each other (50 ms, up to 150 ms if the Host sets it): both lamps light.

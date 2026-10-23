@@ -52,6 +52,8 @@ namespace VrFencing.Blade
         private BladeVisual _visual;
         private BladeHapticPlayer _haptics;
         private ArmedDummyPrototype _armedDummy;
+        private PartnerBlade _partnerBlade;
+        private IPartnerBladeSource _partnerSource;
         private TrackedPose? _lastEnGardeLine;
         private float? _lastDummyDistanceMeters;
         private float _lastFlatHapticAt = float.NegativeInfinity;
@@ -65,10 +67,26 @@ namespace VrFencing.Blade
         public event System.Action<BladeEvent> Contact;
 
         /// <summary>
-        /// The drawn blade this frame in the Strip frame, from the drawn guard to the drawn point, or null while the
-        /// controller is not tracked. The opponent's blade bends against it (PER-81).
+        /// The blade a bout judges this Fencer's Touches with this frame, in the Strip frame (PER-145): the hand's chord
+        /// as the contact with the partner's blade leaves it (turned, bowed, slid off), as drawn before any body bends
+        /// it; the hand's chord with no partner blade. Null while the controller is not tracked.
         /// </summary>
-        public BladeSegment? DrawnBladeOnStrip { get; private set; }
+        public BladeSegment? JudgedBladeOnStrip { get; private set; }
+
+        /// <summary>
+        /// This headset's own view of the contact with the partner's blade (PER-145), sent with the hand so the partner
+        /// can log where their views disagree; null with no partner blade.
+        /// </summary>
+        public VrFencing.Partner.BladeContactReport? PartnerContactReport => _partnerBlade?.Report;
+
+        /// <summary>
+        /// The partner view that hands this Blade the partner's blade each frame (PER-145), or null for none. It must
+        /// sample the partner before this behaviour's frame (it runs earlier) and draws their blade when called back.
+        /// </summary>
+        public void SetPartnerBladeSource(IPartnerBladeSource source)
+        {
+            _partnerSource = source;
+        }
 
         /// <summary>
         /// More bodies the drawn blade cannot pass besides the Dummy and the floor, in the Strip frame: the opponent's
@@ -123,12 +141,16 @@ namespace VrFencing.Blade
                 _armedDummy = new ArmedDummyPrototype(_dummy, drillRunner.Runner, () => drillRunner.FreePracticeNow, _haptics, _cameraRig);
             }
 
+            // A partner's blade (PER-145), live while a Partner session or "Mirror me" hands one in.
+            _partnerBlade = new PartnerBlade(_haptics);
+
             ApplySettings(SettingsFile.Load());
         }
 
         private void OnDestroy()
         {
             _armedDummy?.Dispose();
+            _partnerBlade?.Dispose();
             _haptics?.Dispose();
             _visual?.Dispose();
         }
@@ -145,19 +167,40 @@ namespace VrFencing.Blade
                 RestartMotion();
             }
 
-            if (!isTracked)
-            {
-                DrawnBladeOnStrip = null;
-                return;
-            }
-
             var now = Time.timeAsDouble;
             var hasDummy = _dummy != null && _strip != null && _strip.EnGardeLine != null;
 
+            // The Dummy is hidden while in a Partner session (PER-80): nothing to touch or bend on then. A partner's blade
+            // (PER-145) is sampled by the partner view before this frame, in its Strip frame.
+            var isDummyShown = hasDummy && _dummy.gameObject.activeInHierarchy;
+            System.Collections.Generic.IReadOnlyList<BladeObstacle> partnerObstacles = null;
+            var partner = default(HeldBlade);
+            var isPartnerShown = !isDummyShown && _partnerSource != null && _partnerSource.TryGetPartnerBlade(out partner, out partnerObstacles);
+
             // Everything runs in the Strip frame, where the Dummy's capsules are. Without a Strip the room frame stands in.
-            var stripInRoom = hasDummy
-                ? new TrackedPose(_strip.EnGardeLine.position.ToNumerics(), _strip.EnGardeLine.rotation.ToNumerics())
-                : new TrackedPose(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+            // Against a partner, the frame the partner is drawn in (the placed Strip's).
+            var stripInRoom = isPartnerShown
+                ? _partnerSource.StripInRoom
+                : hasDummy
+                    ? new TrackedPose(_strip.EnGardeLine.position.ToNumerics(), _strip.EnGardeLine.rotation.ToNumerics())
+                    : new TrackedPose(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity);
+            if (!isPartnerShown)
+            {
+                _partnerBlade?.Stop();
+            }
+
+            if (!isTracked)
+            {
+                JudgedBladeOnStrip = null;
+                if (isPartnerShown && _partnerBlade != null)
+                {
+                    // No blade of this Fencer's: the partner's is drawn as their hand holds it.
+                    _partnerBlade.StepAlone(partner, partnerObstacles, Time.deltaTime);
+                    _partnerSource.DrawPartnerBlade(_partnerBlade.Contact, stripInRoom);
+                }
+
+                return;
+            }
             var controllerAnchor = _mount.parent;
             var controllerInRoom = new TrackedPose(controllerAnchor.position.ToNumerics(), controllerAnchor.rotation.ToNumerics());
             var forteInStrip = BladePose.GetBlade(StripFrame.ToStripFrame(stripInRoom, controllerInRoom), _mountInController);
@@ -170,9 +213,6 @@ namespace VrFencing.Blade
             var droop = BladeDroop.Create(forteInStrip.Direction, gripUp, down, _settings.Blade);
             var bladeInStrip = droop.GetChord(forteInStrip);
             _handBladeOnStrip = bladeInStrip;
-
-            // The Dummy is hidden while in a Partner session (PER-80): nothing to touch or bend on then.
-            var isDummyShown = hasDummy && _dummy.gameObject.activeInHierarchy;
             if (hasDummy)
             {
                 RestartOnJump(stripInRoom);
@@ -203,6 +243,21 @@ namespace VrFencing.Blade
                     _drawnBlade.Flex.Reset();
                 }
             }
+            else if (isPartnerShown && _partnerBlade != null)
+            {
+                // Against the partner's blade the same way (PER-145): one solve here draws both blades, the partner being
+                // just another Fencer; haptics and the scrape come from this solve only.
+                var mine = new HeldBlade(bladeInStrip, droop, gripUp, _settings.Blade.Flex);
+                _partnerBlade.Step(now, Time.deltaTime, mine, partner, partnerObstacles, stripInRoom, _settings);
+                give = _partnerBlade.Contact.MyGive;
+                if (_partnerBlade.IsBladeNear)
+                {
+                    _drawnBlade.Flex.Reset();
+                }
+            }
+
+            // A bout judges this Fencer's point on the blade as the contact leaves it (PER-145).
+            JudgedBladeOnStrip = give.Chord;
 
             var wasDecoupled = _drawnBlade.IsDecoupled;
             var wasOnSide = _drawnBlade.IsOnSide;
@@ -234,7 +289,10 @@ namespace VrFencing.Blade
 
             PlayPressHaptic((float)now);
             _visual.Draw(_drawnBlade, stripInRoom, (float)now);
-            DrawnBladeOnStrip = new BladeSegment(_drawnBlade.GetSample(0), _drawnBlade.GetSample(DrawnBlade.SampleCount));
+            if (isPartnerShown && _partnerBlade != null)
+            {
+                _partnerSource.DrawPartnerBlade(_partnerBlade.Contact, stripInRoom);
+            }
         }
 
         /// <summary>
@@ -270,7 +328,7 @@ namespace VrFencing.Blade
         /// </summary>
         private void PlayPressHaptic(float now)
         {
-            var pressMeters = _armedDummy?.PressMeters ?? 0.0f;
+            var pressMeters = Mathf.Max(_armedDummy?.PressMeters ?? 0.0f, _partnerBlade?.PressMeters ?? 0.0f);
             if (pressMeters > 0.0f)
             {
                 if (now - _lastPressHapticAt < BladeHaptics.BindPulseIntervalSeconds)
@@ -365,6 +423,15 @@ namespace VrFencing.Blade
             _haptics?.PlayBeingTouched();
         }
 
+        /// <summary>This Fencer's Touch was ruled Parried in a bout (PER-145): two soft knocks on the sword hand.</summary>
+        public void PlayMyTouchParried()
+        {
+            if (_settings != null)
+            {
+                _haptics?.PlayParried(_settings.Hand);
+            }
+        }
+
         /// <summary>The event's haptic (a flat contact at most once per cooldown) and the point's flash.</summary>
         private void PlayFeedback(BladeEvent bladeEvent, float now)
         {
@@ -406,6 +473,7 @@ namespace VrFencing.Blade
             _detector.Reset();
             _drawnBlade.Reset();
             _armedDummy?.Restart();
+            _partnerBlade?.Restart();
         }
 
         private static bool IsJump(TrackedPose before, TrackedPose after)

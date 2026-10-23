@@ -84,6 +84,7 @@ namespace VrFencing.Partner
         private BoutRules? _hostRules;
         private int _nextClaimSequence = 1;
         private bool _isTouched;
+        private bool _isMyTouchParried;
         private FencerStance? _myStance;
         private FencerStance? _partnerStance;
         private double _partnerStanceAtSeconds = double.NegativeInfinity;
@@ -99,6 +100,7 @@ namespace VrFencing.Partner
             Announcer = new BoutAnnouncer(me);
             Judge = me == BoutSide.Host ? new BoutJudge() : null;
             Flow = Judge != null ? new BoutFlow(Judge) : null;
+            Replay = me == BoutSide.Host ? new ParryReplay() : null;
         }
 
         public BoutSide Me { get; }
@@ -107,6 +109,12 @@ namespace VrFencing.Partner
 
         /// <summary>The judge, on the Host only (null on the Partner).</summary>
         public BoutJudge Judge { get; }
+
+        /// <summary>
+        /// The replay judge, on the Host only (null on the Partner, PER-145): the Unity side feeds it the Host's own
+        /// hand and body each frame and advances it on the partner's streams; the judge waits for its rulings.
+        /// </summary>
+        public ParryReplay Replay { get; }
 
         /// <summary>The bout flow, on the Host only (null on the Partner).</summary>
         public BoutFlow Flow { get; private set; }
@@ -199,17 +207,23 @@ namespace VrFencing.Partner
             }
 
             SendRulesIfDue(nowSeconds);
+            Judge.SetRoundTrip(Clock.RoundTripSeconds);
             var before = Flow.State;
-            var light = Judge.Step(nowSeconds);
+            var light = Judge.Step(nowSeconds, Replay);
+            LogRulings();
             if (light.HasValue)
             {
                 Show(light.Value, nowSeconds);
                 _outgoing.Add(new BoutOutgoing(BoutMessages.EncodeLight(light.Value), true));
-                Flow.OnLight(light.Value, nowSeconds);
-                if (FlowState.Mode == PartnerMode.PairedPractice)
+                if (light.Value.Kind != LightKind.Parried)
                 {
-                    Tally.CountLight(light.Value);
-                    _isFlowChanged = true;
+                    // A parry lights nothing and halts nothing: the phrase goes on (PER-145).
+                    Flow.OnLight(light.Value, nowSeconds);
+                    if (FlowState.Mode == PartnerMode.PairedPractice)
+                    {
+                        Tally.CountLight(light.Value);
+                        _isFlowChanged = true;
+                    }
                 }
             }
 
@@ -396,6 +410,14 @@ namespace VrFencing.Partner
             return taken;
         }
 
+        /// <summary>True once after a Parried verdict on this Fencer's own Touch (PER-145): play the parried cue.</summary>
+        public bool TakeMyTouchParried()
+        {
+            var isParried = _isMyTouchParried;
+            _isMyTouchParried = false;
+            return isParried;
+        }
+
         /// <summary>True once after a light that touched this Fencer: buzz both controllers.</summary>
         public bool TakeBeingTouched()
         {
@@ -425,6 +447,7 @@ namespace VrFencing.Partner
 
             Clock.Reset();
             Judge?.Reset();
+            Replay?.Reset();
             if (Judge != null)
             {
                 Flow = new BoutFlow(Judge);
@@ -447,6 +470,7 @@ namespace VrFencing.Partner
             _areRulesChanged = true;
             _isFlowChanged = true;
             _isTouched = false;
+            _isMyTouchParried = false;
         }
 
         /// <summary>
@@ -576,6 +600,7 @@ namespace VrFencing.Partner
 
         private void Show(BoutLight light, double nowSeconds)
         {
+            _isMyTouchParried |= light.ParriedAttacker == Me;
             _isTouched |= Box.Show(light, nowSeconds);
             _log.Add($"{LogTag} Light {light.Sequence}: {ScoringBox.Describe(light, Me)}.");
         }
@@ -618,6 +643,28 @@ namespace VrFencing.Partner
                 default:
                     _log.Add($"{LogTag} Paired Practice: lights with no lock-out, no halts.");
                     break;
+            }
+        }
+
+        /// <summary>The replay judge's reasons, and each Touch it could not rule on in time (it stood).</summary>
+        private void LogRulings()
+        {
+            foreach (var line in Replay.TakeLog())
+            {
+                _log.Add(line);
+            }
+
+            foreach (var ruling in Judge.TakeRulings())
+            {
+                var who = ruling.Claim.Attacker == Me ? "this Fencer" : "the partner";
+                if (ruling.IsTimedOut)
+                {
+                    _log.Add($"{LogTag} Touch {ruling.Claim.Sequence} by {who}: the replay judge did not reach it within {FormatMilliseconds(Judge.MaxRulingWaitSeconds)}; the Touch stands.");
+                }
+                else if (ruling.Ruling == ParryRuling.Parried)
+                {
+                    _log.Add($"{LogTag} Touch {ruling.Claim.Sequence} by {who} ({ruling.Claim.Zone}): {ClaimVerdict.Parried}.");
+                }
             }
         }
 

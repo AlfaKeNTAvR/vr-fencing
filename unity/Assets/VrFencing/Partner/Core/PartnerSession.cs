@@ -187,6 +187,12 @@ namespace VrFencing.Partner
         /// </summary>
         public double MirrorDelaySeconds { get; private set; } = MirrorDelay.DefaultSeconds;
 
+        /// <summary>
+        /// The jitter and loss of a "Mirror me" session (PER-145), besides its delay; kept from one mirror session to the
+        /// next while the app runs.
+        /// </summary>
+        public MirrorNoise MirrorNoise { get; private set; } = MirrorNoise.Clean;
+
         /// <summary>A session is starting, up, or being left, or mirroring: solo Drills wait, and the Dummy is hidden.</summary>
         public bool IsInSession => Phase != PartnerPhase.Idle && Phase != PartnerPhase.EnteringCode;
 
@@ -358,6 +364,18 @@ namespace VrFencing.Partner
             }
 
             MirrorDelaySeconds = MirrorDelay.Next(MirrorDelaySeconds);
+            return true;
+        }
+
+        /// <summary>The link-noise button while mirroring (PER-145): the next <see cref="MirrorNoise"/>. False when not mirroring.</summary>
+        public bool CycleMirrorNoise()
+        {
+            if (!IsMirroring)
+            {
+                return false;
+            }
+
+            MirrorNoise = MirrorLinkNoise.Next(MirrorNoise);
             return true;
         }
 

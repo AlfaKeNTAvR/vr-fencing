@@ -26,8 +26,9 @@ namespace VrFencing.Partner
     /// </para>
     /// </summary>
     [RequireComponent(typeof(PartnerSessionBehaviour))]
-    // After the camera rig and body tracking have moved this frame (body tracking runs at -50).
-    [DefaultExecutionOrder(100)]
+    // After the camera rig and body tracking have moved this frame (body tracking runs at -50), and before the opponent
+    // view (-30) and this Fencer's Blade (0), which solves both blades on what arrived (PER-145).
+    [DefaultExecutionOrder(-40)]
     public sealed class OpponentLinkBehaviour : MonoBehaviour
     {
         /// <summary>The Netcode named message every partner stream goes through; the first byte says which stream.</summary>
@@ -54,8 +55,10 @@ namespace VrFencing.Partner
         private readonly HandMotion _handMotion = new HandMotion();
         private readonly FootworkLookAhead _footwork = new FootworkLookAhead();
         private readonly MirrorLoopback _loopback = new MirrorLoopback(MirrorDelay.DefaultSeconds);
+        private readonly ExtraLinkDelay _extraDelay = new ExtraLinkDelay();
 
         private PartnerSessionBehaviour _partner;
+        private VrFencing.Blade.BladeBehaviour _blade;
         private NetworkManager _network;
         private CustomMessagingManager _registeredWith;
         private FencerInfo? _sentInfo;
@@ -109,6 +112,7 @@ namespace VrFencing.Partner
         {
             _partner = GetComponent<PartnerSessionBehaviour>();
             _network = GetComponent<NetworkManager>();
+            _blade = FindFirstObjectByType<VrFencing.Blade.BladeBehaviour>();
         }
 
         private void Start()
@@ -156,6 +160,17 @@ namespace VrFencing.Partner
                 ResetStreams();
             }
 
+            var noise = _partner.State.MirrorNoise;
+            if (route == StreamRoute.Mirror && _loopback.SetNoise(MirrorLinkNoise.GetJitterSeconds(noise), MirrorLinkNoise.GetLossFraction(noise)))
+            {
+                Debug.Log($"{LogTag} Mirror link now {MirrorLinkNoise.FormatLabel(noise)} (jitter up to {_loopback.JitterSeconds * 1000.0:0} ms, {_loopback.LossFraction * 100.0:0}% of hand and body messages lost).");
+            }
+
+            if (route == StreamRoute.Network)
+            {
+                FlushExtraDelay(now);
+            }
+
             LogRejectedMessages();
             if (Local != null && now >= _holdSendingUntilSeconds)
             {
@@ -193,6 +208,7 @@ namespace VrFencing.Partner
             var wasNetwork = _route == StreamRoute.Network;
             _route = route;
             _loopback.Clear();
+            _extraDelay.Clear();
             ResetStreams();
             switch (route)
             {
@@ -270,19 +286,56 @@ namespace VrFencing.Partner
                 blade.Mount,
                 GripGeometry.GetActiveAngles(blade),
                 blade.SetSagittaMeters,
-                blade.Flex);
+                blade.Flex,
+                // This headset's view of the blades' contact (PER-145), as its Blade solved it last frame: for logging only.
+                _blade != null ? _blade.PartnerContactReport : null);
             Send(PartnerMessages.EncodeHand(sample), NetworkDelivery.UnreliableSequenced, now);
         }
 
-        /// <summary>Sends one partner message: to the partner over the network, or into the mirror's loopback.</summary>
+        /// <summary>
+        /// Sends one partner message: to the partner over the network (through the Editor's extra delay when one is set,
+        /// PER-145), or into the mirror's loopback, where an unreliable one may be lost.
+        /// </summary>
         private void Send(byte[] message, NetworkDelivery delivery, double nowSeconds)
         {
+            var isReliable = delivery == NetworkDelivery.Reliable || delivery == NetworkDelivery.ReliableSequenced || delivery == NetworkDelivery.ReliableFragmentedSequenced;
             if (_route == StreamRoute.Mirror)
             {
-                _loopback.Send(message, nowSeconds);
+                _loopback.Send(message, nowSeconds, mayBeLost: !isReliable);
                 return;
             }
 
+            if (_extraDelay.IsActive)
+            {
+                _extraDelay.Send(message, isReliable, nowSeconds);
+                return;
+            }
+
+            SendNow(message, delivery);
+        }
+
+        /// <summary>The Editor's extra delay (PER-145): follows its setting, and sends and receives what is due.</summary>
+        private void FlushExtraDelay(double nowSeconds)
+        {
+            if (_extraDelay.DelaySeconds != _partner.ExtraLinkDelaySeconds)
+            {
+                _extraDelay.SetDelay(_partner.ExtraLinkDelaySeconds);
+                Debug.Log($"{LogTag} Extra link delay now {_extraDelay.DelaySeconds * 1000.0:0} ms each way.");
+            }
+
+            foreach (var due in _extraDelay.TakeDueOutgoing(nowSeconds))
+            {
+                SendNow(due.Message, due.IsReliable ? NetworkDelivery.ReliableSequenced : NetworkDelivery.UnreliableSequenced);
+            }
+
+            foreach (var message in _extraDelay.TakeDueIncoming(nowSeconds))
+            {
+                Receive(message, nowSeconds);
+            }
+        }
+
+        private void SendNow(byte[] message, NetworkDelivery delivery)
+        {
             var messaging = _network.CustomMessagingManager;
             using (var writer = new FastBufferWriter(WriterCapacityBytes, Allocator.Temp))
             {
@@ -341,6 +394,12 @@ namespace VrFencing.Partner
                     message = new byte[length];
                     reader.ReadBytes(ref message, length);
                 }
+            }
+
+            if (_extraDelay.IsActive)
+            {
+                _extraDelay.Receive(message, Time.realtimeSinceStartupAsDouble);
+                return;
             }
 
             Receive(message, Time.realtimeSinceStartupAsDouble);

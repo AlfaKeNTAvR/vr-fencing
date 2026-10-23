@@ -11,9 +11,14 @@ namespace VrFencing.Partner
     /// </summary>
     public sealed class ScoringBox
     {
+        /// <summary>How long "Parried" shows under the box (PER-145): as long as a lamp.</summary>
+        public const double ParriedNoteSeconds = BoutJudge.LampSeconds;
+
         private double _litUntilSeconds = double.NegativeInfinity;
         private bool _isMineLit;
         private bool _isOpponentsLit;
+        private double _parriedUntilSeconds = double.NegativeInfinity;
+        private BoutSide? _parriedAttacker;
 
         public ScoringBox(BoutSide me)
         {
@@ -33,6 +38,14 @@ namespace VrFencing.Partner
         /// </summary>
         public bool Show(BoutLight light, double nowSeconds)
         {
+            if (light.Kind == LightKind.Parried)
+            {
+                // No lamp: a note under the box (PER-145); lamps already lit stay lit.
+                _parriedAttacker = light.ParriedAttacker;
+                _parriedUntilSeconds = nowSeconds + ParriedNoteSeconds;
+                return false;
+            }
+
             var wasOpponentsLit = IsOpponentsLampLit(nowSeconds) && LastLight.HasValue && LastLight.Value.Sequence == light.Sequence;
             _isMineLit = light.Lights(Me);
             _isOpponentsLit = light.Lights(Other(Me));
@@ -53,12 +66,28 @@ namespace VrFencing.Partner
             return _isOpponentsLit && nowSeconds < _litUntilSeconds;
         }
 
+        /// <summary>
+        /// The note under the box for the last Parried verdict, while it shows (PER-145): "Parried: your Touch" for the
+        /// attacker, "You parried" for the defender; empty otherwise.
+        /// </summary>
+        public string GetParriedNote(double nowSeconds)
+        {
+            if (!_parriedAttacker.HasValue || nowSeconds >= _parriedUntilSeconds)
+            {
+                return string.Empty;
+            }
+
+            return _parriedAttacker.Value == Me ? "Parried: your Touch" : "You parried";
+        }
+
         /// <summary>Turns both lamps off (the partner left).</summary>
         public void Clear()
         {
             _litUntilSeconds = double.NegativeInfinity;
             _isMineLit = false;
             _isOpponentsLit = false;
+            _parriedUntilSeconds = double.NegativeInfinity;
+            _parriedAttacker = null;
             LastLight = null;
         }
 
@@ -88,6 +117,10 @@ namespace VrFencing.Partner
                     return $"Double (host {light.HostZone}, partner {light.PartnerZone})";
                 case LightKind.HostTouch:
                     return $"{(me == BoutSide.Host ? "Your" : "Opponent's")} Touch ({light.HostZone})";
+                case LightKind.Parried:
+                    return light.ParriedAttacker == me
+                        ? $"Parried: your Touch ({light.HostZone ?? light.PartnerZone}) was kept off by the opponent's parry"
+                        : $"Parried: you parried the opponent's Touch ({light.HostZone ?? light.PartnerZone})";
                 default:
                     return $"{(me == BoutSide.Partner ? "Your" : "Opponent's")} Touch ({light.PartnerZone})";
             }

@@ -127,6 +127,19 @@ namespace VrFencing.Blade
         };
 
         /// <summary>
+        /// This Fencer's Touch was ruled Parried by the Host's replay judge (PER-145), on the sword hand only: two quick
+        /// soft knocks, a "no" unlike the Touch's single pulse or the being-touched rumble, 0.17 s in all. It comes about
+        /// one lag after the Touch's own buzz, so the Fencer knows the hit they felt did not count.
+        /// </summary>
+        public static IReadOnlyList<HapticSegment> Parried { get; } = new[]
+        {
+            new HapticSegment(0.7f, 0.6f, 0.045f),
+            new HapticSegment(0.0f, 0.0f, 0.040f),
+            new HapticSegment(0.7f, 0.6f, 0.045f),
+            new HapticSegment(0.0f, 0.0f, 0.040f),
+        };
+
+        /// <summary>
         /// The Armed Dummy's point landing on the Fencer (PER-99, decided in PER-23 as a sharp buzz unlike a Touch): on
         /// both controllers, a hard sharp jab and then a low rumble that fades, 0.28 s in all. The reverse of
         /// <see cref="BeingTouched"/> (rumble first, jab last), longer and lower than any blade event or the clash.

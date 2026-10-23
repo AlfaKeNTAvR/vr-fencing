@@ -26,7 +26,7 @@ namespace VrFencing.Partner
     /// <list type="bullet">
     /// <item>Ping: the sender's time. Pong: that time echoed, and the answering app's time (<see cref="ClockSync"/>).</item>
     /// <item>Claim (Partner to Host): a Touch on the Host's clock.</item>
-    /// <item>Light (Host to Partner): what the judge lit.</item>
+    /// <item>Light (Host to Partner): what the judge lit, or a Parried verdict (PER-145).</item>
     /// <item>Rules (Host to Partner): the bout's Touch pressure rule and double window.</item>
     /// <item>Stance (Partner to Host, PER-83): behind the En Garde Line or not, off the Strip or not.</item>
     /// <item>Flow (Host to Partner, PER-83): the mode, the bout flow's phase and last halt, and the Paired Practice tally.</item>
@@ -35,8 +35,11 @@ namespace VrFencing.Partner
     /// </summary>
     public static class BoutMessages
     {
-        /// <summary>Bumped whenever a layout below changes; the app's Version must be bumped with it.</summary>
-        public const byte FormatVersion = 1;
+        /// <summary>
+        /// Bumped whenever a layout below changes; the app's Version must be bumped with it. 2: a light may be a
+        /// <see cref="LightKind.Parried"/> verdict, its zone the parried attacker's (PER-145, Version 1.6).
+        /// </summary>
+        public const byte FormatVersion = 2;
 
         public const byte PingKind = 1;
         public const byte PongKind = 2;
