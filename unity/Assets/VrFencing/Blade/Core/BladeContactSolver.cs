@@ -92,10 +92,16 @@ namespace VrFencing.Blade
     /// passes its share on to the others; two more looks take what is left along a long bind.</item>
     /// <item><b>Release.</b> When every stage is at its limit, the weaker blade (the more compliant at the contact)
     /// slides off toward its point: it turns aside in the grip, square to the press, as the press goes on past the
-    /// limits, until the other blade is past its point, and any overlap left meanwhile turns it further away. Then the
-    /// side follows the hands and the blade swings back to the hand over <see cref="ReleaseSeconds"/>. It never holds and
-    /// never jumps through. Within <see cref="LatchSeconds"/> of a fast hit it is not let go: it stays slid off while the
-    /// hands stay pressed past, and swings back once they are not.</item>
+    /// limits (its point no faster than a flick, PER-147), until the other blade is past its point, and any overlap left
+    /// meanwhile turns it further away. Then the side follows the hands and both blades swing back to their hands: their
+    /// bows spring out, then their turns ease out over <see cref="ReleaseSeconds"/>. It never holds and never jumps.
+    /// Within <see cref="LatchSeconds"/> of a fast hit it is not let go: it stays slid off while the hands stay pressed
+    /// past, and swings back once they are not.</item>
+    /// <item><b>Through (PER-147).</b> Hands pushed past every give, the slide and <see cref="ThroughMarginMeters"/> are
+    /// through each other, latched or not: the press and the latch are dropped, the side is read from the hands, and both
+    /// blades swing back to their hands from where they were drawn, visibly passing through each other. No turn in the
+    /// grip ever passes <see cref="MaxReleaseDegrees"/>, and the press stays on the same spot of the blades unless another
+    /// is clearly deeper, so the give does not swing to and fro between frames.</item>
     /// <item><b>Hilts.</b> Each blade's hilt, its bell guard (<see cref="BellGuard"/>) and the grip behind it
     /// (<see cref="GripRadiusMeters"/>), is solid for the other blade, held in its hand as the blade is (PER-122 fix):
     /// the other blade meets it by the same rules. A side memory per hilt, the overlap taken by that blade's grip turn
@@ -145,8 +151,43 @@ namespace VrFencing.Blade
         /// </summary>
         public const float ReleaseSpanMeters = 0.04f;
 
-        /// <summary>A released blade swings back to the hand over this long (on the side the hands are now on).</summary>
+        /// <summary>
+        /// The through depth (PER-147): past all the give at the contact (the most this press has had: both grips' 5
+        /// degrees and both bows) and the slide's span (<see cref="ReleaseSpanMeters"/>), the hands pressing this much
+        /// further are through each other, latched or not: the press and the side latch are dropped, the side is read from
+        /// the hands again, and both drawn blades swing back to their hands (<see cref="ReleaseSeconds"/>). Pressed square
+        /// at the same spot of both blades, that is about 10 cm of press a tenth of the way from the guards, 20 cm at a
+        /// fifth, 27 to 30 cm in the middle and 33 to 36 cm toward the points. A slow press slides off before it.
+        /// </summary>
+        public const float ThroughMarginMeters = 0.02f;
+
+        /// <summary>
+        /// A released blade swings back to the hand over this long (on the side the hands are now on): since PER-147 its
+        /// bows spring out first (a few hundredths of a second) and then its turn in the grip eases out over this long,
+        /// longer only for a turn so large its point would move faster than a sliding blade's.
+        /// </summary>
         public const float ReleaseSeconds = 0.2f;
+
+        /// <summary>
+        /// A blade let go springs out of its bows in at least this long (PER-147): an épée's foible springs back in a few
+        /// hundredths of a second, well before the turn in the grip has eased out, so a blade bowed toward the other never
+        /// swings back through it while still bowed.
+        /// </summary>
+        private const float BowReleaseSeconds = 0.06f;
+
+        /// <summary>
+        /// ... and with its point moving at most this fast (PER-147: under 5 cm a frame at 72 Hz), so a bow pressed near
+        /// the guard, whose point stands out up to five times as far, springs back over a little longer, up to
+        /// <see cref="ReleaseSeconds"/>.
+        /// </summary>
+        private const float ReturnTipMetersPerSecond = 3.5f;
+
+        /// <summary>
+        /// A blade sliding off turns aside with its point moving at most this fast (PER-147: about 8 cm a frame at 72 Hz).
+        /// Over the slide's 4 cm of press the turn moves the point about 13 times as far, so a hand pressing at 1 m/s would
+        /// flick it 20 cm a frame; the press left over meanwhile turns it only as far as keeps the blades apart.
+        /// </summary>
+        private const float SlideTipMetersPerSecond = 7.0f;
 
         /// <summary>The most a sliding-off blade turns aside in the grip: as far as lying along the other blade.</summary>
         public const float MaxReleaseDegrees = 90.0f;
@@ -200,6 +241,9 @@ namespace VrFencing.Blade
         // Overlap left after the split smaller than this is not looked at again.
         private const float SettledMeters = 0.0005f;
 
+        // Another spot of the hands' blades must press this much deeper than last frame's to be taken as the press.
+        private const float StickyMeters = 0.005f;
+
         // A held side follows the blades round each other only while the drawn blades are at least this far apart
         // along it, and the turn is less than 60 degrees in one frame.
         private const float FollowAgreement = 0.5f;
@@ -217,10 +261,11 @@ namespace VrFencing.Blade
         private const float AtPointShare = 0.999f;
 
         /// <summary>
-        /// After a fast hit (<see cref="LatchSpeedMetersPerSecond"/>), the side stays latched this long once the blades are
-        /// apart (PER-138): a hand that swept past the other blade's reach and comes straight back is still on the side it
-        /// hit from. Only a disengage round a blade's point changes it sooner (<see cref="FollowRoundCrossing"/>). About a
-        /// pull-back's length after a beat (0.1 to 0.2 s).
+        /// After a fast hit (<see cref="LatchSpeedMetersPerSecond"/>), the side stays latched this long from the hit
+        /// (PER-138; since PER-147 only the hit, the first fast frame of an engagement, starts it, not every fast frame
+        /// after it): a hand that swept past the other blade's reach and comes straight back is still on the side it hit
+        /// from. Only a disengage round a blade's point, or a push through (<see cref="ThroughMarginMeters"/>), changes it
+        /// sooner. About a pull-back's length after a beat (0.1 to 0.2 s).
         /// </summary>
         public const float LatchSeconds = 0.3f;
 
@@ -249,6 +294,9 @@ namespace VrFencing.Blade
         private static readonly float GripTurnMaxRadians = GripTurnMaxDegrees * (float)Math.PI / 180.0f;
         private static readonly float MaxReleaseRadians = MaxReleaseDegrees * (float)Math.PI / 180.0f;
 
+        // The cosine of half the most turn: a turn's quaternion with a smaller |w| turns further.
+        private static readonly float MaxReleaseHalfCosine = (float)Math.Cos(MaxReleaseRadians * 0.5f);
+
         private readonly Vector3[] _shapeA = new Vector3[PieceCount + 1];
         private readonly Vector3[] _shapeB = new Vector3[PieceCount + 1];
         private readonly Vector3[] _turned = new Vector3[PieceCount + 1];
@@ -264,7 +312,11 @@ namespace VrFencing.Blade
         private bool _hasLastShapes;
         private bool _hasPriorShapes;
         private float _relativeMotion;
+        private float _deltaSeconds;
         private float _sinceHitSeconds = LatchSeconds;
+
+        // This engagement's hit already started the side latch (PER-147: only the hit does, not every fast frame after it).
+        private bool _hasLatchedHit;
 
         // The hands' blades were on the other side of each other from the side held, last frame.
         private bool _areHandsAcross;
@@ -280,11 +332,28 @@ namespace VrFencing.Blade
         private Vector3? _side;
         private int _slidingWeaker = -1;
         private int _returningBlade = -1;
-        private Vector3 _returningAxis;
         private Vector3 _slideAxis;
         private float _slideRadians;
-        private float _returningRadians;
+
+        // What each blade swings back to its hand from (PER-147: both blades' whole give after a release or a push
+        // through, only the slide's turn after a slide-off that stopped short), eased out over ReleaseSeconds.
+        private bool _isReturning;
+        private GiveMemory _returnA;
+        private GiveMemory _returnB;
         private float _returningSeconds;
+        private float _bowReturnSeconds = BowReleaseSeconds;
+        private float _turnReturnSeconds = ReleaseSeconds;
+
+        // The pieces of the hands' blades pressed last frame (-2 for none): the press stays there (StickyMeters).
+        private int _lastPieceA = -2;
+        private int _lastPieceB = -2;
+
+        // The most give the stages had at the contact during this press (PER-147): the through depth is past it.
+        private float _pressGiveMeters;
+
+        // Each blade's give as last drawn: where a push through starts swinging back from.
+        private GiveMemory _lastGiveA;
+        private GiveMemory _lastGiveB;
         private readonly HiltMemory _onHiltA = new HiltMemory();
         private readonly HiltMemory _onHiltB = new HiltMemory();
         private readonly Vector3[] _otherPoints = new Vector3[PieceCount + 1];
@@ -354,8 +423,14 @@ namespace VrFencing.Blade
         /// <summary>The way the press pushes blade B (unit, square to the contact): blade A is pushed the other way.</summary>
         public Vector3 PushOnB { get; private set; }
 
-        /// <summary>True while the weaker blade slides off or swings back after sliding off.</summary>
-        public bool IsReleasing => _slidingWeaker >= 0 || _returningBlade >= 0;
+        /// <summary>True while the weaker blade slides off, or the blades swing back after sliding off or a push through.</summary>
+        public bool IsReleasing => _slidingWeaker >= 0 || _isReturning;
+
+        /// <summary>
+        /// True on the frame the hands pushed the blades through each other (PER-147: past every give, the slide's span
+        /// and <see cref="ThroughMarginMeters"/>): the press and the side latch were dropped and both blades swing back.
+        /// </summary>
+        public bool IsThrough { get; private set; }
 
         /// <summary>For the blade-contact log (PER-136): the blade sliding off now, 0 for A, 1 for B, -1 for none.</summary>
         public int SlidingBlade => _slidingWeaker;
@@ -385,11 +460,19 @@ namespace VrFencing.Blade
             _hasPriorShapes = false;
             _relativeMotion = 0.0f;
             _sinceHitSeconds = LatchSeconds;
+            _hasLatchedHit = false;
+            _pressGiveMeters = 0.0f;
+            _lastPieceA = -2;
+            _lastPieceB = -2;
             _areHandsAcross = false;
             Array.Clear(_isBehind, 0, _isBehind.Length);
             Array.Clear(_wasBehind, 0, _wasBehind.Length);
             _slidingWeaker = -1;
             _returningBlade = -1;
+            _isReturning = false;
+            _lastGiveA = GiveMemory.None;
+            _lastGiveB = GiveMemory.None;
+            IsThrough = false;
             IsInContact = false;
             IsEngaged = false;
             PressMeters = 0.0f;
@@ -401,15 +484,21 @@ namespace VrFencing.Blade
         /// <summary>Solves this frame's contact of the two hands' blades into <see cref="GiveA"/> and <see cref="GiveB"/>.</summary>
         public void Solve(BladeHold a, BladeHold b, float deltaSeconds)
         {
+            _deltaSeconds = Math.Max(0.0f, deltaSeconds);
             _a.Start(a);
             _b.Start(b);
-            StepReturn(Math.Max(0.0f, deltaSeconds));
-
             FillShape(_a, _shapeA, _unitA);
             FillShape(_b, _shapeB, _unitB);
 
-            // Also keeps this frame's hands' blades (the rest shapes) for the side's update.
+            // Also keeps this frame's hands' blades (the rest shapes) for the side's update. Measured before a blade
+            // swinging back is turned (PER-147): its swing is not the hands moving, and must not count as a hit.
             _relativeMotion = FindRelativeMotion();
+            if (StepReturn(Math.Max(0.0f, deltaSeconds)))
+            {
+                FillShape(_a, _shapeA, _unitA);
+                FillShape(_b, _shapeB, _unitB);
+            }
+
             _sinceHitSeconds += Math.Max(0.0f, deltaSeconds);
             _engagedMeters = EngagedMeters + Math.Min(MaxMotionBandMeters, MotionReach * _relativeMotion);
             ClosestMeters = float.MaxValue;
@@ -427,6 +516,7 @@ namespace VrFencing.Blade
             var side = _side.Value;
 
             IsInContact = false;
+            IsThrough = false;
             PressMeters = 0.0f;
             PressNewtons = 0.0f;
             SaturatedStages = 0;
@@ -434,12 +524,21 @@ namespace VrFencing.Blade
             var first = FindDeepest(_shapeA, _shapeB, _unitA, _unitB, side, _engagedMeters, isHands: true);
             _lastHit = first;
             IsEngaged = first.IsFound;
-            if (IsEngaged && deltaSeconds > 0.0f && _relativeMotion >= LatchSpeedMetersPerSecond * deltaSeconds)
+            if (!IsEngaged)
             {
+                _hasLatchedHit = false;
+            }
+            else if (!_hasLatchedHit && deltaSeconds > 0.0f && _relativeMotion >= LatchSpeedMetersPerSecond * deltaSeconds)
+            {
+                // The hit (PER-147): the first fast frame of this engagement starts the latch, and nothing after it
+                // restarts it until the blades part, so a fast slide along the blades never postpones a release.
                 _sinceHitSeconds = 0.0f;
+                _hasLatchedHit = true;
             }
 
-            var isReleased = false;
+            var outcome = ContactOutcome.Held;
+            _lastPieceA = first.IsFound && first.Overlap > 0.0f ? first.PieceA : -2;
+            _lastPieceB = first.IsFound && first.Overlap > 0.0f ? first.PieceB : -2;
             if (first.IsFound && first.Overlap > 0.0f)
             {
                 IsInContact = true;
@@ -448,11 +547,21 @@ namespace VrFencing.Blade
                 FractionA = first.FractionA;
                 FractionB = first.FractionB;
                 PushOnB = -first.Normal;
-                isReleased = SolveContact(first);
+                outcome = SolveContact(first);
             }
             else
             {
                 EndSlide();
+            }
+
+            if (outcome != ContactOutcome.Held || !IsInContact)
+            {
+                _pressGiveMeters = 0.0f;
+            }
+
+            if (outcome == ContactOutcome.Through)
+            {
+                LetGoThrough(first);
             }
 
             // Then each blade against the other's hilt, slid off the side it is on of the other blade.
@@ -465,9 +574,62 @@ namespace VrFencing.Blade
                 LookAgainAtBlades();
             }
 
+            if (outcome == ContactOutcome.Released)
+            {
+                // Slid all the way off: both blades swing back to their hands from all their give, not only the slide's
+                // turn: no bow is dropped in one frame (PER-147).
+                StartReturn(_a.Remember(), _b.Remember(), _returningBlade);
+            }
+
             GiveA = _a.ToGive();
             GiveB = _b.ToGive();
-            UpdateSide(isReleased);
+            _lastGiveA = _a.Remember();
+            _lastGiveB = _b.Remember();
+            UpdateSide(outcome != ContactOutcome.Held);
+        }
+
+        /// <summary>
+        /// The hands pushed the blades through each other (PER-147): the press and the side latch are dropped, nothing of
+        /// this frame's give is kept, and both blades swing back to their hands over <see cref="ReleaseSeconds"/> from
+        /// where they were last drawn, so neither jumps. The side is then read from the hands (<see cref="UpdateSide"/>),
+        /// and no pair is remembered as through, so nothing carries the old side on.
+        /// </summary>
+        private void LetGoThrough(Hit first)
+        {
+            var returning = _slidingWeaker >= 0 ? _slidingWeaker : FindWeaker(first);
+            _a.Restart();
+            _b.Restart();
+            StartReturn(_lastGiveA, _lastGiveB, returning);
+            _a.Apply(_returnA, 1.0f, 1.0f);
+            _b.Apply(_returnB, 1.0f, 1.0f);
+            _slidingWeaker = -1;
+            _slideRadians = 0.0f;
+            _sinceHitSeconds = LatchSeconds;
+            _areHandsAcross = false;
+            Array.Clear(_isBehind, 0, _isBehind.Length);
+            IsThrough = true;
+            IsInContact = false;
+            IsEngaged = false;
+            PressMeters = 0.0f;
+            PressNewtons = 0.0f;
+            SaturatedStages = 0;
+        }
+
+        /// <summary>Both blades swing back to their hands from <paramref name="a"/> and <paramref name="b"/>, starting this frame.</summary>
+        private void StartReturn(GiveMemory a, GiveMemory b, int returningBlade)
+        {
+            _isReturning = !a.IsNone || !b.IsNone;
+            _returnA = a;
+            _returnB = b;
+            _returningSeconds = 0.0f;
+            var mostTip = Math.Max(a.TipBowMeters, b.TipBowMeters);
+            _bowReturnSeconds = mostTip > 0.0f ? Math.Clamp(mostTip / ReturnTipMetersPerSecond, BowReleaseSeconds, ReleaseSeconds) : 0.0f;
+
+            // The turn eases out over ReleaseSeconds, longer for a turn so large its point would pass the slide's pace
+            // (an eased turn's point moves at most 1.5 times its mean pace).
+            var mostTurnTip = Math.Max(a.TurnRadians * _a.Length, b.TurnRadians * _b.Length);
+            _turnReturnSeconds = Math.Max(ReleaseSeconds, 1.5f * mostTurnTip / SlideTipMetersPerSecond);
+            _returningBlade = _isReturning ? returningBlade : -1;
         }
 
         /// <summary>
@@ -499,20 +661,35 @@ namespace VrFencing.Blade
 
         /// <summary>
         /// Shares the overlap of <paramref name="first"/> out, then looks again for what is left; past every limit the
-        /// weaker blade slides off. True when it slid all the way off this frame and is let go.
+        /// weaker blade slides off. <see cref="ContactOutcome.Released"/> when it slid all the way off this frame and is
+        /// let go; <see cref="ContactOutcome.Through"/> when the hands are past even that by
+        /// <see cref="ThroughMarginMeters"/> (PER-147), whatever the latch: nothing of this frame's give is kept then.
         /// </summary>
-        private bool SolveContact(Hit first)
+        private ContactOutcome SolveContact(Hit first)
         {
             var isReleased = false;
-            var excess = Split(first, out var newtons);
+            var excess = Split(first, out var newtons, out var giveMeters);
             PressNewtons = newtons;
             SaturatedStages = _splitSaturated;
-            var weaker = -1;
-            if (excess > 0.0f)
+
+            // The through depth is taken from the most give seen at the contact during this press: the deepest spot may
+            // move to a stiffer part of a blade (toward its guard) as the other slides, and that is no push through.
+            _pressGiveMeters = Math.Max(_pressGiveMeters, giveMeters);
+            if (first.Overlap > _pressGiveMeters + ReleaseSpanMeters + ThroughMarginMeters)
             {
-                weaker = _slidingWeaker >= 0 ? _slidingWeaker : FindWeaker(first);
+                return ContactOutcome.Through;
+            }
+
+            var weaker = -1;
+            if (excess > 0.0f || (_slidingWeaker >= 0 && _slideRadians > 0.0f))
+            {
+                // Past every limit, or sliding and still pressed (PER-147): a press that fits the give again for a frame
+                // (the deepest spot moved to a softer part of a blade) eases the slide back at its own pace rather than
+                // ending it, so it never stops and starts again from frame to frame.
+                var wasSliding = _slidingWeaker >= 0;
+                weaker = wasSliding ? _slidingWeaker : FindWeaker(first);
                 _slidingWeaker = weaker;
-                isReleased = SlideOff(weaker, first, excess);
+                isReleased = SlideOff(weaker, first, excess, wasSliding);
             }
             else
             {
@@ -538,7 +715,7 @@ namespace VrFencing.Blade
                 }
             }
 
-            return isReleased;
+            return isReleased ? ContactOutcome.Released : ContactOutcome.Held;
         }
 
         /// <summary>
@@ -569,11 +746,18 @@ namespace VrFencing.Blade
         /// </summary>
         private float Split(Hit hit, out float newtons)
         {
+            return Split(hit, out newtons, out _);
+        }
+
+        /// <summary>As <see cref="Split(Hit, out float)"/>; <paramref name="giveMeters"/> is all the four stages could take there.</summary>
+        private float Split(Hit hit, out float newtons, out float giveMeters)
+        {
             Span<Stage> stages = stackalloc Stage[4];
             stages[0] = _a.FindTurnStage(hit.OnA, hit.FractionA, hit.Normal);
             stages[1] = _a.FindBowStage(hit.FractionA, hit.Normal);
             stages[2] = _b.FindTurnStage(hit.OnB, hit.FractionB, -hit.Normal);
             stages[3] = _b.FindBowStage(hit.FractionB, -hit.Normal);
+            giveMeters = stages[0].Limit + stages[1].Limit + stages[2].Limit + stages[3].Limit;
             Span<float> taken = stackalloc float[4];
             var remaining = ShareOut(stages, hit.Overlap, taken, out newtons, out _splitSaturated);
 
@@ -651,9 +835,12 @@ namespace VrFencing.Blade
         /// the hands and the release swings it back. Within <see cref="LatchSeconds"/> of a fast hit it is not let go
         /// (PER-138): the hand swept through in the hit, the side holds, and swinging back to the hand would carry it
         /// through the other blade; it stays off while pressed past and swings back once the press is gone
-        /// (<see cref="EndSlide"/>).
+        /// (<see cref="EndSlide"/>), or until the hands push through (<see cref="ThroughMarginMeters"/>). A blade that was
+        /// already sliding goes on the way it was going (PER-147): the way round is not chosen afresh each frame, which
+        /// let it swing to and fro; and it turns with its point no faster than <see cref="SlideTipMetersPerSecond"/>, so it
+        /// is let go only once it has turned all the way.
         /// </summary>
-        private bool SlideOff(int weaker, Hit hit, float excess)
+        private bool SlideOff(int weaker, Hit hit, float excess, bool wasSliding)
         {
             FillShape(_a, _shapeA, _unitA);
             FillShape(_b, _shapeB, _unitB);
@@ -663,21 +850,40 @@ namespace VrFencing.Blade
             var work = weaker == 0 ? _a : _b;
             var otherPiece = weaker == 0 ? hit.PieceB : hit.PieceA;
             var axis = FindSlideAxis(sliding, other, otherPiece, normal);
-            var clearRadians = FindClearingTurn(sliding, other, work.Guard, axis, normal);
+            if (wasSliding && Vector3.Dot(axis, _slideAxis) < 0.0f)
+            {
+                axis = -axis;
+            }
+
+            // Easing back (the press fits the give again): no turn to look for.
             var share = Math.Min(1.0f, excess / ReleaseSpanMeters);
-            var radians = clearRadians * share * share * (3.0f - (2.0f * share));
+            var clearRadians = share > 0.0f ? FindClearingTurn(sliding, other, work.Guard, axis, normal) : 0.0f;
+            var target = clearRadians * SmoothStep(share);
+            var radians = target;
+            if (_deltaSeconds > 0.0f)
+            {
+                var step = SlideTipMetersPerSecond * _deltaSeconds / work.Length;
+                var from = wasSliding ? _slideRadians : 0.0f;
+                radians = Math.Clamp(target, from - step, from + step);
+            }
+
             work.TurnAbout(axis, radians);
             _slideAxis = axis;
             _slideRadians = radians;
-            if (share < 1.0f || _sinceHitSeconds < LatchSeconds)
+            if (radians <= 0.0f && excess <= 0.0f)
+            {
+                // Eased all the way back while still pressed: no longer sliding.
+                _slidingWeaker = -1;
+                return false;
+            }
+
+            if (share < 1.0f || radians < target || _sinceHitSeconds < LatchSeconds)
             {
                 return false;
             }
 
+            // Let go: both blades swing back from all their give once the frame is solved (Solve).
             _returningBlade = weaker;
-            _returningAxis = axis;
-            _returningRadians = radians;
-            _returningSeconds = 0.0f;
             _slidingWeaker = -1;
             _slideRadians = 0.0f;
             return true;
@@ -686,15 +892,14 @@ namespace VrFencing.Blade
         /// <summary>
         /// No longer pressed past every limit: a blade that was sliding off swings back to the hand from where it slid to,
         /// over <see cref="ReleaseSeconds"/> (it starts there this frame, so it never jumps back), and it never holds.
+        /// Only the slide's turn swings back: the press still bends both blades.
         /// </summary>
         private void EndSlide()
         {
             if (_slidingWeaker >= 0 && _slideRadians > 0.0f)
             {
-                _returningBlade = _slidingWeaker;
-                _returningAxis = _slideAxis;
-                _returningRadians = _slideRadians;
-                _returningSeconds = 0.0f;
+                var slide = GiveMemory.FromTurn(Quaternion.CreateFromAxisAngle(_slideAxis, _slideRadians));
+                StartReturn(_slidingWeaker == 0 ? slide : GiveMemory.None, _slidingWeaker == 0 ? GiveMemory.None : slide, _slidingWeaker);
                 (_slidingWeaker == 0 ? _a : _b).TurnAbout(_slideAxis, _slideRadians);
             }
 
@@ -702,7 +907,10 @@ namespace VrFencing.Blade
             _slideRadians = 0.0f;
         }
 
-        /// <summary>The left-over overlap of <paramref name="hit"/> taken by the blade turning on in its grip past its limit.</summary>
+        /// <summary>
+        /// The left-over overlap of <paramref name="hit"/> taken by the blade turning on in its grip past its limit; its
+        /// whole turn stays within <see cref="MaxReleaseDegrees"/> (PER-147), whatever is left over.
+        /// </summary>
         private void TurnAway(int blade, Hit hit, float overlap)
         {
             if (blade == 0)
@@ -810,24 +1018,37 @@ namespace VrFencing.Blade
             return true;
         }
 
-        /// <summary>A blade that slid off swings back to the hand: the turn left eases out over <see cref="ReleaseSeconds"/>.</summary>
-        private void StepReturn(float deltaSeconds)
+        /// <summary>
+        /// Blades let go swing back to their hands: the give they were let go with eases out over
+        /// <see cref="ReleaseSeconds"/>. True when some give was put on this frame.
+        /// </summary>
+        private bool StepReturn(float deltaSeconds)
         {
-            if (_returningBlade < 0)
+            if (!_isReturning)
             {
-                return;
+                return false;
             }
 
             _returningSeconds += deltaSeconds;
-            var fraction = Math.Min(1.0f, _returningSeconds / ReleaseSeconds);
-            if (fraction >= 1.0f)
+            if (_returningSeconds >= _bowReturnSeconds + _turnReturnSeconds)
             {
+                _isReturning = false;
                 _returningBlade = -1;
-                return;
+                return false;
             }
 
-            var radians = _returningRadians * (1.0f - (fraction * fraction * (3.0f - (2.0f * fraction))));
-            (_returningBlade == 0 ? _a : _b).TurnAbout(_returningAxis, radians);
+            // The bows spring straight out at a steady pace first, the turns held meanwhile: a blade let go clear of the
+            // other (slid off past its point, or turned aside) stays clear while it unbends, and only then swings back.
+            var bowLeft = _bowReturnSeconds > 0.0f ? 1.0f - Math.Min(1.0f, _returningSeconds / _bowReturnSeconds) : 0.0f;
+            var turnLeft = 1.0f - SmoothStep(Math.Clamp((_returningSeconds - _bowReturnSeconds) / _turnReturnSeconds, 0.0f, 1.0f));
+            _a.Apply(_returnA, turnLeft, bowLeft);
+            _b.Apply(_returnB, turnLeft, bowLeft);
+            return true;
+        }
+
+        private static float SmoothStep(float fraction)
+        {
+            return fraction * fraction * (3.0f - (2.0f * fraction));
         }
 
         /// <summary>
@@ -838,11 +1059,12 @@ namespace VrFencing.Blade
         /// past in the hit and comes straight back is still on the side it hit from. Only a disengage round a blade's
         /// point changes it sooner (<see cref="FollowRoundCrossing"/>).
         /// </summary>
-        private void UpdateSide(bool isReleased)
+        private void UpdateSide(bool isLetGo)
         {
-            if (isReleased)
+            if (isLetGo)
             {
-                // Slid all the way off its point, out of a slow press: it went round, and the side follows the hands.
+                // Slid all the way off its point, out of a slow press (it went round), or pushed through (PER-147): the
+                // side follows the hands.
                 _side = FindGeometricSide(_lastShapeA, _lastShapeB, out var releasedClosest, out _);
                 ClosestMeters = releasedClosest;
                 return;
@@ -893,6 +1115,7 @@ namespace VrFencing.Blade
         {
             var best = default(Hit);
             best.Overlap = -float.MaxValue;
+            var bestRank = -float.MaxValue;
             for (var pieceA = 0; pieceA < PieceCount; pieceA++)
             {
                 for (var pieceB = 0; pieceB < PieceCount; pieceB++)
@@ -952,11 +1175,21 @@ namespace VrFencing.Blade
                         _isBehind[(pieceA * PieceCount) + pieceB] = true;
                     }
 
-                    if (overlap <= best.Overlap)
+                    // The hands' press stays where it was last frame (on or next to the same pieces) unless another spot is
+                    // clearly deeper (PER-147): along a shallow bind two spots press nearly alike, and hopping between them
+                    // swung the give back and forth from frame to frame.
+                    var rank = overlap;
+                    if (isHands && overlap > 0.0f && Math.Abs(pieceA - _lastPieceA) <= 1 && Math.Abs(pieceB - _lastPieceB) <= 1)
+                    {
+                        rank += StickyMeters;
+                    }
+
+                    if (rank <= bestRank)
                     {
                         continue;
                     }
 
+                    bestRank = rank;
                     best = new Hit
                     {
                         IsFound = true,
@@ -1548,6 +1781,60 @@ namespace VrFencing.Blade
             }
         }
 
+        /// <summary>What a frame's press came to (<see cref="SolveContact"/>).</summary>
+        private enum ContactOutcome
+        {
+            /// <summary>Taken by the give, or sliding off: the side is held.</summary>
+            Held,
+
+            /// <summary>Slid all the way off its point and let go.</summary>
+            Released,
+
+            /// <summary>Pushed through past every give, the slide and the margin (PER-147).</summary>
+            Through,
+        }
+
+        /// <summary>
+        /// A blade's give as a <see cref="Work"/> held it: its turn in the grip and its bows. What a blade let go swings
+        /// back from (<see cref="StepReturn"/>).
+        /// </summary>
+        private readonly struct GiveMemory
+        {
+            public static readonly GiveMemory None = new GiveMemory(Quaternion.Identity, Vector3.Zero, 1.0f, Vector3.Zero, 1.0f);
+
+            public GiveMemory(Quaternion turn, Vector3 firstBow, float firstFraction, Vector3 secondBow, float secondFraction)
+            {
+                Turn = turn;
+                FirstBow = firstBow;
+                FirstFraction = firstFraction;
+                SecondBow = secondBow;
+                SecondFraction = secondFraction;
+            }
+
+            public Quaternion Turn { get; }
+
+            public Vector3 FirstBow { get; }
+
+            public float FirstFraction { get; }
+
+            public Vector3 SecondBow { get; }
+
+            public float SecondFraction { get; }
+
+            public bool IsNone => Turn.IsIdentity && FirstBow == Vector3.Zero && SecondBow == Vector3.Zero;
+
+            /// <summary>How far the blade is turned in the grip, radians.</summary>
+            public float TurnRadians => 2.0f * (float)Math.Acos(Math.Min(1.0f, Math.Abs(Turn.W)));
+
+            /// <summary>How far the bows put the point aside.</summary>
+            public float TipBowMeters => new ContactBow(FirstBow, FirstFraction, SecondBow, SecondFraction).TipDeflection.Length();
+
+            public static GiveMemory FromTurn(Quaternion turn)
+            {
+                return new GiveMemory(turn, Vector3.Zero, 1.0f, Vector3.Zero, 1.0f);
+            }
+        }
+
         /// <summary>How the hands' blades went across each other between two frames (<see cref="FindSweptCrossing"/>).</summary>
         private enum Crossing
         {
@@ -1881,6 +2168,12 @@ namespace VrFencing.Blade
             public void Start(BladeHold hold)
             {
                 _hold = hold;
+                Restart();
+            }
+
+            /// <summary>Drops the give put on so far this frame: the blade as the hand holds it.</summary>
+            public void Restart()
+            {
                 _turn = Quaternion.Identity;
                 _limitedTurnRadians = 0.0f;
                 _firstBow = Vector3.Zero;
@@ -1892,7 +2185,7 @@ namespace VrFencing.Blade
 
             public Vector3 Guard => _hold.Chord.GuardPosition;
 
-            private float Length => Math.Max(1e-3f, Vector3.Distance(_hold.Chord.GuardPosition, _hold.Chord.TipPosition));
+            public float Length => Math.Max(1e-3f, Vector3.Distance(_hold.Chord.GuardPosition, _hold.Chord.TipPosition));
 
             /// <summary>The grip's turn: lever square to the push, squared, over its stiffness; up to the turn left.</summary>
             public Stage FindTurnStage(Vector3 contact, float fraction, Vector3 push)
@@ -1951,6 +2244,11 @@ namespace VrFencing.Blade
                 TurnAbout(axis / leverSquare, radians);
             }
 
+            /// <summary>
+            /// Turns the blade about the hand (its guard) by <paramref name="radians"/> about <paramref name="axis"/>, on top
+            /// of its turn so far. The whole turn never passes <see cref="MaxReleaseDegrees"/> (PER-147): as far as lying
+            /// along the other blade, whatever the slide, the overlap left over or a hilt asks.
+            /// </summary>
             public void TurnAbout(Vector3 axis, float radians)
             {
                 if (radians == 0.0f)
@@ -1958,8 +2256,61 @@ namespace VrFencing.Blade
                     return;
                 }
 
-                _turn = Quaternion.Normalize(Quaternion.Concatenate(_turn, Quaternion.CreateFromAxisAngle(axis, radians)));
+                _turn = CapTurn(Quaternion.Normalize(Quaternion.Concatenate(_turn, Quaternion.CreateFromAxisAngle(axis, radians))));
                 _isGiveStale = true;
+            }
+
+            /// <summary>This blade's give as it stands: its turn and its bows.</summary>
+            public GiveMemory Remember()
+            {
+                return new GiveMemory(_turn, _firstBow, _firstBowFraction, _secondBow, _secondBowFraction);
+            }
+
+            /// <summary>
+            /// Puts <paramref name="turnShare"/> (0 none to 1 all) of <paramref name="give"/>'s turn and
+            /// <paramref name="bowShare"/> of its bows on a blade with no give yet this frame (just started); the bows square
+            /// to the blade as the hand now holds it.
+            /// </summary>
+            public void Apply(GiveMemory give, float turnShare, float bowShare)
+            {
+                if (give.IsNone)
+                {
+                    return;
+                }
+
+                if (turnShare > 0.0f)
+                {
+                    _turn = CapTurn(Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, give.Turn, turnShare)));
+                }
+
+                if (bowShare > 0.0f)
+                {
+                    var direction = Vector3.Normalize(Vector3.Transform(_hold.Chord.TipPosition - Guard, _turn));
+                    _firstBow = MakeSquareTo(give.FirstBow, direction) * bowShare;
+                    _firstBowFraction = give.FirstFraction;
+                    _secondBow = MakeSquareTo(give.SecondBow, direction) * bowShare;
+                    _secondBowFraction = give.SecondFraction;
+                }
+
+                _isGiveStale = true;
+            }
+
+            private static Vector3 MakeSquareTo(Vector3 bow, Vector3 direction)
+            {
+                return bow - (Vector3.Dot(bow, direction) * direction);
+            }
+
+            /// <summary><paramref name="turn"/>, or as far round the same axis as <see cref="MaxReleaseDegrees"/> when it is further.</summary>
+            private static Quaternion CapTurn(Quaternion turn)
+            {
+                var halfCosine = Math.Abs(turn.W);
+                if (halfCosine >= MaxReleaseHalfCosine)
+                {
+                    return turn;
+                }
+
+                var axis = new Vector3(turn.X, turn.Y, turn.Z) * (turn.W < 0.0f ? -1.0f : 1.0f);
+                return axis.LengthSquared() > 1e-12f ? Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), MaxReleaseRadians) : Quaternion.Identity;
             }
 
             /// <summary>Bows the blade at <paramref name="fraction"/> so that spot moves <paramref name="meters"/> along <paramref name="push"/>.</summary>

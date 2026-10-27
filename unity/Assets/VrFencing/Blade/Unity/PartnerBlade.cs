@@ -164,11 +164,15 @@ namespace VrFencing.Blade
                     : $"{LogTag} Blades let go of the partner's");
             }
 
-            if (solver.IsReleasing != wasReleasing)
+            if (solver.IsThrough)
+            {
+                Debug.Log($"{LogTag} Pushed through the partner's blade past every give (PER-147): let go, both blades swing back to the hands");
+            }
+            else if (solver.IsReleasing != wasReleasing)
             {
                 Debug.Log(solver.IsReleasing
                     ? $"{LogTag} Pressed past every give ({solver.PressMeters * 100.0f:0} cm): the {(solver.SlidingBlade == 0 ? "this" : "partner's")} blade slides off toward its point"
-                    : $"{LogTag} Slide-off over");
+                    : $"{LogTag} Slide-off or swing back over");
             }
         }
 

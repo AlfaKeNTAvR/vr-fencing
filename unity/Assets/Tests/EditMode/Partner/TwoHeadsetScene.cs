@@ -2,7 +2,8 @@
 // other's as its OpponentLink draws it after the link's delay, jitter and loss), each claiming its Touches on its own
 // solved blade against the other's body as drawn there, and the Host's replay judge ruling every claim on both real
 // hands at the claim's moment. Both Fencers are scripted in the Host's Strip frame (the "world"); the Partner sends
-// its poses in its own Strip frame (the bout Strip's half turn), with a clock 500 s behind the Host's. Meters, seconds.
+// its poses in its own Strip frame (the bout Strip's half turn), with a clock 500 s behind the Host's. Each view's own
+// solve is traced (GiveTrace, PER-147). Meters, seconds.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,6 +13,7 @@ using VrFencing.Dummy;
 using VrFencing.Partner;
 using VrFencing.Session;
 using VrFencing.Settings;
+using VrFencing.Tests.Blade;
 
 namespace VrFencing.Tests.Partner
 {
@@ -135,6 +137,18 @@ namespace VrFencing.Tests.Partner
         public float WorstHostGapMeters => _host.WorstGapMeters;
 
         public float WorstPartnerGapMeters => _partner.WorstGapMeters;
+
+        /// <summary>
+        /// Each view's own solve as its contact gives it (PER-147): turns, drawn points' moves beyond their hands, and
+        /// reversals; and the deepest the hands pressed while the side was held.
+        /// </summary>
+        public GiveTrace HostTrace => _host.Trace;
+
+        public GiveTrace PartnerTrace => _partner.Trace;
+
+        public float DeepestHostPressMeters => _host.DeepestPressMeters;
+
+        public float DeepestPartnerPressMeters => _partner.DeepestPressMeters;
 
         /// <summary>Frames both views had the blades pressing, and of those, frames they had this Fencer's blade on the same side.</summary>
         public int BothPressingFrames { get; private set; }
@@ -365,6 +379,10 @@ namespace VrFencing.Tests.Partner
 
             public float WorstGapMeters { get; private set; } = float.MaxValue;
 
+            public GiveTrace Trace { get; } = new GiveTrace();
+
+            public float DeepestPressMeters { get; private set; }
+
             public Stopwatch BladeWatch { get; } = new Stopwatch();
 
             public void Frame(double now, TrackedPose controller, BladeSettings blade)
@@ -374,6 +392,7 @@ namespace VrFencing.Tests.Partner
                 if (view == null || !view.Controller.HasValue || !view.Grip.HasValue)
                 {
                     Contact.Reset();
+                    Trace.Break();
                     return;
                 }
 
@@ -387,6 +406,9 @@ namespace VrFencing.Tests.Partner
 
                 _myDrawn.Step(Contact.MyGive.Chord, _floor, mine.GripUp, (float)FrameSeconds, Contact.MyGive.Droop);
                 BladeWatch.Stop();
+                var solver = Contact.Contact;
+                Trace.Add(now, mine.Chord, Contact.MyGive, partner.Chord, solver.GiveB, solver.IsInContact ? solver.PressMeters : 0.0f);
+                DeepestPressMeters = Math.Max(DeepestPressMeters, solver.IsInContact ? solver.PressMeters : 0.0f);
                 if (_myDrawn.HasShape && Contact.PartnerDrawn.HasShape)
                 {
                     WorstGapMeters = Math.Min(WorstGapMeters, BladeContactProbe.FindDrawnGap(_myDrawn, Contact.PartnerDrawn));

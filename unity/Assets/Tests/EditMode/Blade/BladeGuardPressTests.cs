@@ -31,7 +31,9 @@ namespace VrFencing.Tests.Blade
             // its guard (about 9 cm), to depth past its line and holds there. It used to be taken as through the Dummy's
             // blade after about 0.3 s and kicked its point 7 to 12 cm a frame, until the blades overlapped. Since PER-122
             // a press this deep near the guard is past every give, so a blade may slide off: the side may change once, the
-            // blades clear of each other, never through.
+            // blades clear of each other, never through. Since PER-147 a push past every give, the slide and the margin
+            // is through instead: the side changes with the hands, and only then, and while the blades swing back to their
+            // hands after any let-go, may the drawn blades cross.
             var scene = new Scene(height, hand);
             var mostPointMove = 0.0f;
             var mostHeldPointMove = 0.0f;
@@ -46,10 +48,22 @@ namespace VrFencing.Tests.Blade
                 var sideBefore = scene.Dummy.Contact.Side;
                 scene.Frame(() => scene.Across(0.1f, above));
 
-                if (sideBefore.HasValue && Vector3.Dot(sideBefore.Value, scene.Dummy.Contact.Side.Value) < 0.0f)
+                var contact = scene.Dummy.Contact;
+                if (sideBefore.HasValue && Vector3.Dot(sideBefore.Value, contact.Side.Value) < 0.0f)
                 {
-                    // The blade slid off and the side changed over this frame: the blades apart, not through.
-                    Assert.That(BladePairScene.FindDistance(scene.FencerSamples(), BladePairScene.Samples(scene.Dummy.Drawn)), Is.GreaterThan(BladeContactSolver.ContactMeters - ToleranceMeters), $"Frame {frame}: changed sides through.");
+                    // The blade slid off and the side changed over this frame: the blades apart, not through (pushed
+                    // through, PER-147, they may be).
+                    if (!contact.IsThrough)
+                    {
+                        Assert.That(BladePairScene.FindDistance(scene.FencerSamples(), BladePairScene.Samples(scene.Dummy.Drawn)), Is.GreaterThan(BladeContactSolver.ContactMeters - ToleranceMeters), $"Frame {frame}: changed sides through.");
+                    }
+
+                    continue;
+                }
+
+                if (!contact.IsInContact && contact.ReturningBlade >= 0)
+                {
+                    // Let go and swinging back to the hands, which are past each other now: they may cross (PER-147).
                     continue;
                 }
 
