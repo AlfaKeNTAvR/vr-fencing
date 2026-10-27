@@ -629,11 +629,15 @@ namespace VrFencing.Blade
                     : "[ArmedDummy] Blades let go");
             }
 
-            if (contact.IsReleasing != wasReleasing)
+            if (contact.IsThrough)
+            {
+                Debug.Log("[ArmedDummy] Pushed through the Dummy's blade past every give (PER-147): let go, both blades swing back to the hands");
+            }
+            else if (contact.IsReleasing != wasReleasing)
             {
                 Debug.Log(contact.IsReleasing
                     ? $"[ArmedDummy] Pressed past every give ({contact.PressMeters * 100.0f:0} cm): the weaker blade slides off toward its point"
-                    : "[ArmedDummy] Slide-off over");
+                    : "[ArmedDummy] Slide-off or swing back over");
             }
         }
 

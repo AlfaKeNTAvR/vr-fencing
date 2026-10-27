@@ -64,9 +64,11 @@ namespace VrFencing.Tests.Blade
         public void PressedPastEveryLimitTheWeakerBladeSlidesOffTowardItsPointAndNeverJumpsThrough()
         {
             // A's forte presses down across B's foible, on and on, 40 cm past B's line: more than every grip and bow takes.
+            // Slowly (5 mm a frame), so B slides all the way off before the press is past the through depth (PER-147).
             var solver = new BladeContactSolver();
             var startSide = Vector3.UnitY;
             var wasReleasing = false;
+            var wasThrough = false;
             var mostFractionB = 0.0f;
             var firstFractionB = float.NaN;
             var flips = 0;
@@ -75,6 +77,7 @@ namespace VrFencing.Tests.Blade
                 var sideBefore = solver.Side;
                 SolveAcross(solver, 0.2f, 0.7f, depth);
                 wasReleasing |= solver.IsReleasing;
+                wasThrough |= solver.IsThrough;
                 if (solver.IsInContact)
                 {
                     firstFractionB = float.IsNaN(firstFractionB) ? solver.FractionB : firstFractionB;
@@ -90,8 +93,10 @@ namespace VrFencing.Tests.Blade
                     Assert.That(BladePairScene.FindDistance(a, b), Is.GreaterThan(BladeContactSolver.ContactMeters - 0.0025f), $"Depth {depth:0.000}: changed sides through the other blade.");
                     Assert.That(solver.GiveB.TurnDegrees, Is.GreaterThan(BladeContactSolver.GripTurnMaxDegrees), "B turned aside past its grip's limit to slide off.");
                 }
-                else if (sideBefore.HasValue)
+                else if (sideBefore.HasValue && (solver.IsInContact || solver.ReturningBlade < 0))
                 {
+                    // Pressed, sliding off, or apart and back in the hands; swinging back from the slide-off, the blades
+                    // may cross as B straightens on the hands' side (PER-147).
                     Assert.That(BladePairScene.FindSeparation(a, b, sideBefore.Value), Is.GreaterThan(BladeContactSolver.ContactMeters - 0.0025f), $"Depth {depth:0.000}: through.");
                 }
             }
@@ -102,6 +107,7 @@ namespace VrFencing.Tests.Blade
             }
 
             Assert.That(wasReleasing, Is.True, "Past every limit the weaker blade slides off.");
+            Assert.That(wasThrough, Is.False, "A slow press slides off; it is not pushed through.");
             Assert.That(flips, Is.EqualTo(1), "Once off its point, the side follows the hands.");
             Assert.That(solver.Side.Value.Y, Is.LessThan(-0.9f), "A is now below B, as the hands are.");
             Assert.That(solver.IsInContact, Is.False, "Released: it never holds.");
