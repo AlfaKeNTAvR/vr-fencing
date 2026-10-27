@@ -2,13 +2,18 @@
 // clean or with 20 ms jitter, 2% loss and a 15 ms clock offset error, and the Host's replay judge ruling the Touches.
 // In every view the drawn blades never pass through each other, a slow bind is seen alike in both views, a parry inside
 // the watch keeps the attack from lighting (no claim, or a Parried verdict), a parry after the point arrived does not,
-// and a clean hit lights. The two headsets' frame cost is measured and kept within the blades' budget.
+// and a clean hit lights. The two headsets' frame cost is measured and kept within the blades' budget. A "Mirror me"
+// sweep (PER-147: the partner this Fencer's own hand mirrored, at 0, 100 and 200 ms, clean and rough) pushes the blades
+// 60 cm through each other and back: in both views no turn passes the release's, no drawn point jumps beyond its hand,
+// nothing shakes, and the hands never press on past the through depth.
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using NUnit.Framework;
+using VrFencing.Blade;
 using VrFencing.Partner;
+using VrFencing.Tests.Blade;
 
 namespace VrFencing.Tests.Partner
 {
@@ -100,6 +105,33 @@ namespace VrFencing.Tests.Partner
             Assert.That(scene.BothPressingFrames, Is.GreaterThan(72), "Both views press for over a second. " + Describe(scene, link));
             Assert.That(scene.AnyPressingFrames - scene.BothPressingFrames, Is.LessThanOrEqualTo(lagFrames), "They press together but for about one lag. " + Describe(scene, link));
             Assert.That(scene.SameSideFrames, Is.EqualTo(scene.BothPressingFrames), "On the same side all along. " + Describe(scene, link));
+        }
+
+        /// <summary>"Mirror me": each hand speed at each one-way delay, clean and with jitter, loss and a clock error.</summary>
+        public static IEnumerable<TestCaseData> MirrorSweeps()
+        {
+            foreach (var speed in new[] { 0.5f, 1.0f, 1.5f })
+            {
+                foreach (var oneWay in new[] { 0.0, 0.1, 0.2 })
+                {
+                    yield return new TestCaseData(speed, new TwoHeadsetLink(oneWay, 0.0, 0.0, 0.0)).SetName($"Mirror {speed:0.0} m/s clean {oneWay * 1000:0} ms");
+                    yield return new TestCaseData(speed, new TwoHeadsetLink(oneWay, 0.02, 0.02, 0.015)).SetName($"Mirror {speed:0.0} m/s rough {oneWay * 1000:0} ms");
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(MirrorSweeps))]
+        public void AMirroredSweepThroughAndBackStaysBoundedInBothViews(float speedMetersPerSecond, TwoHeadsetLink link)
+        {
+            var scene = Run(HostSweep(speedMetersPerSecond), PartnerMirroring(HostSweep(speedMetersPerSecond)), link, 4.0);
+
+            var context = $"Link {link}: host {scene.HostTrace} (deepest {scene.DeepestHostPressMeters * 100:0.0} cm); partner {scene.PartnerTrace} (deepest {scene.DeepestPartnerPressMeters * 100:0.0} cm).";
+            TestContext.WriteLine(context);
+            Assert.That(scene.AnyPressingFrames, Is.GreaterThan(0), "Setup: the blades press. " + context);
+            scene.HostTrace.AssertBounded("The Host's view. " + context);
+            scene.PartnerTrace.AssertBounded("The Partner's view. " + context);
+            Assert.That(scene.DeepestHostPressMeters, Is.LessThanOrEqualTo(DeepCrossingTests.MostThroughMeters), "The Host's view lets go by the through depth. " + context);
+            Assert.That(scene.DeepestPartnerPressMeters, Is.LessThanOrEqualTo(DeepCrossingTests.MostThroughMeters), "The Partner's view lets go by the through depth. " + context);
         }
 
         [Test]
@@ -204,6 +236,29 @@ namespace VrFencing.Tests.Partner
             var guardZ = HostChest.Z + 0.35f;
             var onLine = PartnerGuard + (direction * ((guardZ - PartnerGuard.Z) / direction.Z));
             return new BladeAim(onLine + new Vector3(sidewaysMeters, 0.0f, 0.0f), -direction, Vector3.UnitY);
+        }
+
+        /// <summary>
+        /// The Host's blade on the line toward the partner, rising a little, swept side to side 30 cm each way through the
+        /// middle of the Strip, its guard at most <paramref name="speedMetersPerSecond"/> fast; from 30 cm to the left.
+        /// </summary>
+        private static Func<double, BladeAim> HostSweep(float speedMetersPerSecond)
+        {
+            const float Reach = 0.3f;
+            var guard = new Vector3(0.0f, HostChest.Y - 0.05f, HostChest.Z + 0.25f);
+            return t => new BladeAim(guard + new Vector3(-Reach * (float)Math.Cos(speedMetersPerSecond / Reach * t), 0.0f, 0.0f), new Vector3(0.0f, 0.15f, 1.0f), Vector3.UnitY);
+        }
+
+        /// <summary>The partner as "Mirror me" draws them: the Host's own hand turned half round the middle of the Strip.</summary>
+        private static Func<double, BladeAim> PartnerMirroring(Func<double, BladeAim> host)
+        {
+            var middle = (HostChest + PartnerChest) * 0.5f;
+            return t =>
+            {
+                var aim = host(t);
+                var guard = aim.Guard - middle;
+                return new BladeAim(middle + new Vector3(-guard.X, guard.Y, -guard.Z), new Vector3(-aim.Direction.X, aim.Direction.Y, -aim.Direction.Z), aim.Up);
+            };
         }
 
         private static float SmoothStep(double x)
